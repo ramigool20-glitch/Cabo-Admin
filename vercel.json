@@ -1,5 +1,7 @@
 {
   "crons": [
-    { "path": "/api/cron/recurrentes", "schedule": "0 13 * * *" }
+    { "path": "/api/cron/recurrentes",              "schedule": "0 13 * * *" },
+    { "path": "/api/cron/programar-notificaciones", "schedule": "30 13 * * *" },
+    { "path": "/api/cron/notificaciones",           "schedule": "0 * * * *" }
   ]
 }

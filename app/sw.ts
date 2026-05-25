@@ -20,3 +20,62 @@ const serwist = new Serwist({
 })
 
 serwist.addEventListeners()
+
+// ====================================================================
+// Push notifications
+// ====================================================================
+
+type PushPayload = {
+  title: string
+  body: string
+  icon?: string
+  badge?: string
+  url?: string
+  tag?: string
+  data?: Record<string, unknown>
+}
+
+self.addEventListener('push', (event: PushEvent) => {
+  let payload: PushPayload = {
+    title: 'Cabo Admin',
+    body: 'Tienes una nueva notificación',
+  }
+
+  try {
+    if (event.data) payload = { ...payload, ...event.data.json() }
+  } catch {
+    // Si no es JSON, intentamos como texto
+    payload.body = event.data?.text() || payload.body
+  }
+
+  const options: NotificationOptions = {
+    body: payload.body,
+    icon: payload.icon || '/icons/icon-192.png',
+    badge: payload.badge || '/icons/icon-192.png',
+    tag: payload.tag,
+    data: { url: payload.url || '/dashboard', ...payload.data },
+  }
+
+  event.waitUntil(self.registration.showNotification(payload.title, options))
+})
+
+self.addEventListener('notificationclick', (event: NotificationEvent) => {
+  event.notification.close()
+  const data = event.notification.data as { url?: string } | undefined
+  const targetUrl = data?.url || '/dashboard'
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      // Si ya hay una ventana abierta, la enfocamos y navegamos
+      for (const client of clients) {
+        if ('focus' in client && 'navigate' in client) {
+          ;(client as WindowClient).focus()
+          ;(client as WindowClient).navigate(targetUrl)
+          return
+        }
+      }
+      // Si no, abrimos una nueva
+      return self.clients.openWindow(targetUrl)
+    })
+  )
+})
