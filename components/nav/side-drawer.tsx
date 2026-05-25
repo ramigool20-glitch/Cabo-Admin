@@ -23,6 +23,7 @@ import { logoutAction } from '@/app/(auth)/login/actions'
 const HERRAMIENTAS = [
   { href: '/dashboard',     label: 'Dashboard',   icon: LayoutDashboard, emoji: '🏠' },
   { href: '/chat',          label: 'Captura IA',  icon: MessageCircle,   emoji: '💬', badge: 'IA' },
+  { href: '/cobros',        label: 'Cobros Stripe', icon: Receipt,       emoji: '💳', badge: 'NEW' },
   { href: '/transacciones', label: 'Transacciones', icon: Receipt,       emoji: '📋' },
   { href: '/negocios',      label: 'Negocios',    icon: Building2,       emoji: '🏢' },
   { href: '/tareas',        label: 'Tareas',      icon: CheckSquare,     emoji: '✅' },

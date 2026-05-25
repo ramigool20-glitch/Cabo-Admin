@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 const TABS = [
   { href: '/dashboard',     emoji: '🏠', label: 'Dashboard' },
   { href: '/chat',          emoji: '💬', label: 'Captura IA' },
+  { href: '/cobros',        emoji: '💳', label: 'Cobros' },
   { href: '/transacciones', emoji: '📋', label: 'Transacciones' },
   { href: '/negocios',      emoji: '🏢', label: 'Negocios' },
   { href: '/tareas',        emoji: '✅', label: 'Tareas' },
