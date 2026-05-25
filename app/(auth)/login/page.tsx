@@ -1,24 +1,15 @@
 import { LoginForm } from './login-form'
 import { Clock } from './clock'
+import { VideoBg } from './video-bg'
 
 export default function LoginPage() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-[var(--bg-base)] flex items-center justify-center p-5">
-      {/* Video de fondo en loop */}
-      <video
-        className="absolute inset-0 h-full w-full object-cover opacity-60"
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="auto"
-        poster="/media/login-bg-poster.jpg"
-      >
-        <source src="/media/login-bg.mp4" type="video/mp4" />
-      </video>
+      {/* Video de fondo en loop infinito */}
+      <VideoBg />
 
-      {/* Overlay gradiente para legibilidad */}
-      <div className="absolute inset-0 bg-gradient-to-b from-[var(--bg-base)]/40 via-[var(--bg-base)]/60 to-[var(--bg-base)]/80" />
+      {/* Overlay gradiente para legibilidad sobre el video */}
+      <div className="absolute inset-0 bg-gradient-to-b from-[var(--bg-base)]/30 via-[var(--bg-base)]/45 to-[var(--bg-base)]/75" />
 
       {/* Card de login */}
       <div className="relative z-10 w-full max-w-md">
