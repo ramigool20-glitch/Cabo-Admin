@@ -24,9 +24,25 @@ export async function updateSession(request: NextRequest) {
   )
 
   // IMPORTANTE: getUser() refresca la sesión y debe llamarse aquí.
-  await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  // Auth enforcement se activa en Fase 1 cuando exista /login.
-  // Por ahora solo refrescamos cookies de sesión.
+  const pathname = request.nextUrl.pathname
+  const isPublic =
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/api/auth')
+
+  if (!user && !isPublic) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
+
+  if (user && pathname === '/login') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
+  }
+
   return supabaseResponse
 }
