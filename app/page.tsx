@@ -6,10 +6,15 @@ import { createAdminClient } from '@/lib/supabase/admin'
 export default async function Home() {
   const supabase = createAdminClient()
 
-  const [{ data: negocios, error: nErr }, { data: cuentas, error: cErr }] = await Promise.all([
-    supabase.from('negocios').select('id, nombre, tipo, moneda_principal').order('nombre'),
-    supabase.from('cuentas').select('id, nombre, moneda, tipo').order('nombre'),
-  ])
+  const { data: negocios, error: nErr } = await supabase
+    .from('negocios')
+    .select('id, nombre, tipo, moneda_principal')
+    .order('nombre')
+
+  const { data: cuentas, error: cErr } = await supabase
+    .from('cuentas')
+    .select('id, nombre, moneda, tipo')
+    .order('nombre')
 
   return (
     <main className="min-h-screen p-6 bg-zinc-50 dark:bg-zinc-950">
