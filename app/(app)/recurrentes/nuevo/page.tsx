@@ -16,10 +16,10 @@ export default async function NuevoRecurrentePage() {
 
   return (
     <div className="px-4 pt-4 pb-6 space-y-4">
-      <Link href="/recurrentes" className="inline-flex items-center gap-1 text-sm text-zinc-600">
-        <ChevronLeft className="h-4 w-4" /> Recurrentes
+      <Link href="/recurrentes" className="inline-flex items-center gap-1 text-sm text-zinc-400">
+        <ChevronLeft className="h-4 w-4" /> Gastos Fijos
       </Link>
-      <header><h1 className="text-2xl font-bold tracking-tight">Nuevo recurrente</h1></header>
+      <header><h1 className="text-2xl font-black heading-gradient">Nuevo gasto fijo</h1></header>
       <RecurrenteForm
         negocios={negocios ?? []}
         cuentas={cuentas ?? []}

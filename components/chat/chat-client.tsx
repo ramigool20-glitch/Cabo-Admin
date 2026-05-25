@@ -3,14 +3,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Camera, Mic, MicOff, Loader2, Check, AlertCircle, Bot, Send,
+  Camera, Mic, MicOff, Loader2, Check, AlertCircle, Bot, Send, Image as ImageIcon,
 } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { formatMoney } from '@/lib/utils'
 import { hoyEnCabos } from '@/lib/fechas'
 import { ConfirmCard, type Draft, type Negocio, type Cuenta } from './confirm-card'
-import type { ChatMessage, ChatDraft } from '@/lib/ai/prompts'
+import { ConfirmGastoFijoCard } from './confirm-gasto-fijo-card'
+import type { ChatMessage, ChatDraft, ChatGastoFijoDraft } from '@/lib/ai/prompts'
+
+type Profile = { id: string; nombre: string }
 
 type Mensaje =
   | { id: string; rol: 'user'; tipo: 'foto'; foto_url: string }
@@ -19,6 +22,7 @@ type Mensaje =
   | { id: string; rol: 'system'; tipo: 'pensando' }
   | { id: string; rol: 'assistant'; tipo: 'texto'; texto: string }
   | { id: string; rol: 'assistant'; tipo: 'confirmar'; draft: Draft; introTexto?: string }
+  | { id: string; rol: 'assistant'; tipo: 'confirmar-gasto-fijo'; draft: ChatGastoFijoDraft; introTexto?: string }
   | { id: string; rol: 'assistant'; tipo: 'guardado'; resumen: string }
   | { id: string; rol: 'assistant'; tipo: 'error'; mensaje: string }
 
@@ -39,7 +43,15 @@ function draftFromChatDraft(d: ChatDraft): Draft {
   }
 }
 
-export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas: Cuenta[] }) {
+export function ChatClient({
+  negocios,
+  cuentas,
+  perfiles,
+}: {
+  negocios: Negocio[]
+  cuentas: Cuenta[]
+  perfiles: Profile[]
+}) {
   const router = useRouter()
   const [mensajes, setMensajes] = useState<Mensaje[]>([])
   const [conversation, setConversation] = useState<ChatMessage[]>([])
@@ -49,7 +61,8 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const chatBottomRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)       // cámara directa
+  const galleryInputRef = useRef<HTMLInputElement>(null)   // galería de fotos
   const textInputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -100,8 +113,14 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
 
       const reply: string = data.reply || ''
       const chatDraft: ChatDraft | null = data.draft
+      const gastoFijoDraft: ChatGastoFijoDraft | null = data.gastoFijoDraft
 
-      if (chatDraft) {
+      if (gastoFijoDraft) {
+        replaceLast(
+          (m) => m.id === pensandoId,
+          { id: pensandoId, rol: 'assistant', tipo: 'confirmar-gasto-fijo', draft: gastoFijoDraft, introTexto: reply }
+        )
+      } else if (chatDraft) {
         const draft = draftFromChatDraft(chatDraft)
         replaceLast(
           (m) => m.id === pensandoId,
@@ -294,7 +313,7 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
   const sugerencias = [
     '¿Cuánto llevo gastado este mes?',
     'Pagué 350 de gasolina con MP Sergio',
-    '¿Qué utilidad tiene Cvu Pharmacy?',
+    'Agrega gasto fijo: renta farmacia $25000 al mes el día 1, paga Sergio',
     'Registra 1500 USD de IV Therapy en Stripe',
   ]
 
@@ -422,6 +441,34 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
               </div>
             )
           }
+          if (m.rol === 'assistant' && m.tipo === 'confirmar-gasto-fijo') {
+            return (
+              <div key={m.id} className="flex justify-start">
+                <div className="w-full space-y-2">
+                  {m.introTexto && (
+                    <div className="card max-w-[85%] px-3.5 py-2.5 text-sm text-zinc-200 whitespace-pre-wrap">
+                      {m.introTexto}
+                    </div>
+                  )}
+                  <ConfirmGastoFijoCard
+                    draft={m.draft}
+                    negocios={negocios.map((n) => ({ id: n.id, nombre: n.nombre }))}
+                    cuentas={cuentas.map((c) => ({ id: c.id, nombre: c.nombre, moneda: c.moneda }))}
+                    perfiles={perfiles}
+                    onSaved={() => {
+                      const resumen = `${m.draft.nombre} ${formatMoney(m.draft.monto, m.draft.moneda)} ${m.draft.frecuencia}`
+                      replaceLast(
+                        (x) => x.id === m.id,
+                        { id: m.id, rol: 'assistant', tipo: 'guardado', resumen }
+                      )
+                      router.refresh()
+                    }}
+                    onCancel={() => setMensajes((prev) => prev.filter((x) => x.id !== m.id))}
+                  />
+                </div>
+              </div>
+            )
+          }
           if (m.rol === 'assistant' && m.tipo === 'guardado') {
             return (
               <div key={m.id} className="flex justify-start">
@@ -481,8 +528,9 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
           </div>
         </form>
 
-        {/* Botones grandes: cámara y mic */}
-        <div className="max-w-3xl mx-auto flex items-center justify-center gap-4 px-4 py-3">
+        {/* Botones grandes: galería, cámara, mic */}
+        <div className="max-w-3xl mx-auto flex items-center justify-center gap-3 px-4 py-3">
+          {/* Inputs ocultos */}
           <input
             ref={fileInputRef}
             type="file"
@@ -491,16 +539,37 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
             className="hidden"
             onChange={handlePhotoChange}
           />
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handlePhotoChange}
+          />
+
+          {/* Galería */}
+          <button
+            type="button"
+            onClick={() => galleryInputRef.current?.click()}
+            disabled={procesando || grabando}
+            aria-label="Elegir de galería"
+            className="h-11 w-11 inline-flex items-center justify-center rounded-full border border-[var(--border-glow)] bg-[var(--bg-card)] text-purple-300 hover:bg-[var(--bg-card-hover)] disabled:opacity-40 transition-colors"
+          >
+            <ImageIcon className="h-5 w-5" />
+          </button>
+
+          {/* Cámara */}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={procesando || grabando}
             aria-label="Tomar foto"
-            className="h-12 w-12 inline-flex items-center justify-center rounded-full border border-[var(--border-glow)] bg-[var(--bg-card)] text-cyan-300 hover:bg-[var(--bg-card-hover)] disabled:opacity-40 transition-colors"
+            className="h-11 w-11 inline-flex items-center justify-center rounded-full border border-[var(--border-glow)] bg-[var(--bg-card)] text-cyan-300 hover:bg-[var(--bg-card-hover)] disabled:opacity-40 transition-colors"
           >
             <Camera className="h-5 w-5" />
           </button>
 
+          {/* Mic grande */}
           <button
             type="button"
             onClick={grabando ? stopRecording : startRecording}
@@ -515,8 +584,6 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
           >
             {grabando ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
           </button>
-
-          <div className="h-12 w-12" />
         </div>
 
         {grabando && (

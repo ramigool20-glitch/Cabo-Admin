@@ -1,11 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { ChatClient } from '@/components/chat/chat-client'
 
 export default async function ChatPage() {
   const supabase = await createClient()
-  const [{ data: negocios }, { data: cuentas }] = await Promise.all([
+  const admin = createAdminClient()
+
+  const [{ data: negocios }, { data: cuentas }, { data: perfiles }] = await Promise.all([
     supabase.from('negocios').select('id, nombre, tipo').eq('activo', true).order('nombre'),
     supabase.from('cuentas').select('id, nombre, moneda, tipo').eq('activo', true).order('nombre'),
+    admin.from('profiles').select('id, nombre').eq('activo', true).order('nombre'),
   ])
 
   return (
@@ -19,7 +23,7 @@ export default async function ChatPage() {
           </span>
         </div>
         <p className="text-sm text-zinc-400">
-          Texto, voz, foto o pregunta lo que quieras. La IA convierte en transacción y contesta dudas.
+          Texto, voz, foto o pregunta lo que quieras. Captura transacciones, gastos fijos o consulta datos.
         </p>
       </header>
 
@@ -30,6 +34,7 @@ export default async function ChatPage() {
           moneda: c.moneda as 'MXN' | 'USD',
           tipo: c.tipo as string | null,
         }))}
+        perfiles={perfiles ?? []}
       />
     </div>
   )

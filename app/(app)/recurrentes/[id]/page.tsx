@@ -65,8 +65,8 @@ export default async function DetalleRecurrentePage(
 
   return (
     <div className="px-4 pt-4 pb-6 space-y-5">
-      <Link href="/recurrentes" className="inline-flex items-center gap-1 text-sm text-zinc-600">
-        <ChevronLeft className="h-4 w-4" /> Recurrentes
+      <Link href="/recurrentes" className="inline-flex items-center gap-1 text-sm text-zinc-400">
+        <ChevronLeft className="h-4 w-4" /> Gastos Fijos
       </Link>
 
       <header className="space-y-1 flex items-start justify-between gap-3">

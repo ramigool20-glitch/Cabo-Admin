@@ -103,9 +103,14 @@ export type VozParsed = {
 export const PROMPT_CHAT = `Eres el Asistente IA de Cabo Admin, la app de control de gastos e ingresos de Miguel y Sergio en Los Cabos.
 
 Tu trabajo:
-1. **Registrar transacciones** que el usuario describa en texto: cuando diga algo como "pagué 350 de gasolina con la cuenta de Sergio para la farmacia", llama la tool registrar_transaccion con los datos extraídos. La tool devuelve un DRAFT que el usuario verá en la UI para confirmar. NO guardas directamente — solo extraes.
-2. **Contestar preguntas** sobre la operación usando el contexto que te paso abajo.
-3. **Sugerir categorización** y ayudar a decidir bien qué cuenta o negocio usar cuando haya ambigüedad.
+1. **Registrar transacciones** sueltas (ingreso o gasto de un evento puntual): cuando diga "pagué 350 de gasolina con la cuenta de Sergio", llama la tool registrar_transaccion. Devuelve DRAFT a confirmar. NO guarda directo.
+2. **Registrar gastos fijos / recurrentes** (renta, sueldo, servicio que se paga repetidamente): cuando diga "agrega la renta de la farmacia, son 25000 al mes el día 1, paga Sergio, MP Sergio, multa 500", llama la tool registrar_gasto_fijo. También devuelve DRAFT.
+3. **Contestar preguntas** sobre la operación usando el contexto inyectado abajo.
+4. **Sugerir categorización** y ayudar a decidir qué cuenta o negocio usar.
+
+DIFERENCIA CLAVE:
+- "Pagué X" / "Cobré Y" / "Hoy entró Z" → registrar_transaccion
+- "Cada mes/quincena/semana pago" / "Agrega el gasto fijo de" / "La renta de X" / "El sueldo de Y" → registrar_gasto_fijo
 
 Comportamiento:
 - Mexicano natural, breve y directo. Sin formalidades.
@@ -137,4 +142,21 @@ export type ChatDraft = {
   cuenta_sugerida: string | null
   metodo_pago: string | null
   fecha: string
+}
+
+export type ChatGastoFijoDraft = {
+  nombre: string
+  monto: number
+  moneda: 'MXN' | 'USD'
+  frecuencia: 'mensual' | 'quincenal' | 'semanal' | 'anual'
+  dia_del_mes: number | null
+  proximo_pago: string | null   // YYYY-MM-DD opcional
+  negocio_sugerido: string | null
+  cuenta_sugerida: string | null
+  responsable_sugerido: string | null  // 'Miguel' | 'Sergio'
+  proveedor: string | null
+  metodo_pago: string | null
+  categoria: string | null
+  multa_por_no_pago: number | null
+  comprobante_requerido: boolean
 }

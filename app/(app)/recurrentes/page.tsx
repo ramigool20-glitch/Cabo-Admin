@@ -18,9 +18,9 @@ export default async function RecurrentesPage() {
   return (
     <div className="px-4 pt-6 pb-4 space-y-4">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight">Recurrentes</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Rentas, sueldos, servicios y demás gastos fijos.
+        <h1 className="text-2xl font-black heading-gradient">Gastos Fijos</h1>
+        <p className="text-sm text-zinc-400">
+          Rentas, sueldos, servicios y demás gastos recurrentes.
         </p>
       </header>
 

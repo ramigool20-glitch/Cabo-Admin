@@ -27,7 +27,7 @@ const HERRAMIENTAS = [
   { href: '/negocios',      label: 'Negocios',    icon: Building2,       emoji: '🏢' },
   { href: '/tareas',        label: 'Tareas',      icon: CheckSquare,     emoji: '✅' },
   { href: '/multas',        label: 'Multas',      icon: AlertTriangle,   emoji: '⚠️' },
-  { href: '/recurrentes',   label: 'Recurrentes', icon: Calendar,        emoji: '📅' },
+  { href: '/recurrentes',   label: 'Gastos Fijos', icon: Calendar,       emoji: '📅' },
   { href: '/nomina',        label: 'Nómina',      icon: Users,           emoji: '👥' },
   { href: '/auditor',       label: 'Auditor IA',  icon: Sparkles,        emoji: '🤖' },
   { href: '/config',        label: 'Configuración', icon: Settings,      emoji: '⚙️' },
