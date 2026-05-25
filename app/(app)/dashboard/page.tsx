@@ -1,78 +1,81 @@
 import Link from 'next/link'
-import {
-  ArrowUpCircle,
-  ArrowDownCircle,
-  TrendingUp,
-  Plus,
-  ChevronRight,
-} from 'lucide-react'
+import { ArrowUpCircle, ArrowDownCircle, TrendingUp, Plus, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney } from '@/lib/utils'
-import { inicioDelMesISO, formatearFecha, hoyEnCabos } from '@/lib/fechas'
+import { formatearFecha } from '@/lib/fechas'
+import { isRangoId, rangoFechas, type RangoId } from '@/lib/rangos'
+import { totalizar, porDia, porNegocio, porCategoria } from '@/lib/agregaciones'
+import { RangoSelector } from '@/components/dashboard/rango-selector'
+import { UtilidadChart } from '@/components/dashboard/utilidad-chart'
+import { NegociosBar } from '@/components/dashboard/negocios-bar'
+import { CategoriasList } from '@/components/dashboard/categorias-list'
 
-type Totales = {
-  ingresos_mxn: number
-  ingresos_usd: number
-  gastos_mxn: number
-  gastos_usd: number
-}
+type SearchParams = { rango?: string }
 
-function totalizar(rows: { tipo: string; monto: number; moneda: string }[]): Totales {
-  return rows.reduce<Totales>(
-    (acc, t) => {
-      const monto = Number(t.monto) || 0
-      if (t.tipo === 'ingreso') {
-        if (t.moneda === 'USD') acc.ingresos_usd += monto
-        else acc.ingresos_mxn += monto
-      } else if (t.tipo === 'gasto' || t.tipo === 'multa_interna') {
-        if (t.moneda === 'USD') acc.gastos_usd += monto
-        else acc.gastos_mxn += monto
-      }
-      return acc
-    },
-    { ingresos_mxn: 0, ingresos_usd: 0, gastos_mxn: 0, gastos_usd: 0 }
-  )
-}
+export default async function DashboardPage(
+  { searchParams }: { searchParams: Promise<SearchParams> }
+) {
+  const sp = await searchParams
+  const rangoId: RangoId = isRangoId(sp.rango) ? sp.rango : 'mes_actual'
+  const r = rangoFechas(rangoId)
 
-export default async function DashboardPage() {
   const supabase = await createClient()
   const admin = createAdminClient()
 
-  const desde = inicioDelMesISO()
-  const hoy = hoyEnCabos()
-
-  const [{ data: mes }, { count: nTareas }, { data: ultimas }] = await Promise.all([
+  const [{ data: transacciones }, { data: negocios }, { data: ultimas }, { count: nTareas }] = await Promise.all([
     supabase
       .from('transacciones')
-      .select('tipo, monto, moneda')
-      .gte('fecha', desde)
-      .lte('fecha', hoy),
-    admin
-      .from('tareas')
-      .select('id', { count: 'exact', head: true })
-      .in('estado', ['pendiente', 'en_progreso']),
+      .select('tipo, monto, moneda, fecha, categoria, negocio_id')
+      .gte('fecha', r.desde)
+      .lte('fecha', r.hasta),
+    supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
     supabase
       .from('transacciones')
       .select('id, tipo, monto, moneda, fecha, concepto, negocios(nombre)')
       .order('created_at', { ascending: false })
       .limit(5),
+    admin
+      .from('tareas')
+      .select('id', { count: 'exact', head: true })
+      .in('estado', ['pendiente', 'en_progreso']),
   ])
 
-  const t = totalizar(mes ?? [])
-  const utilidad_mxn = t.ingresos_mxn - t.gastos_mxn
-  const utilidad_usd = t.ingresos_usd - t.gastos_usd
+  const rows = transacciones ?? []
+  const t = totalizar(rows)
+  const seriePorDia = porDia(rows)
+  const barNegocios = porNegocio(rows, negocios ?? [])
+  const topCats = porCategoria(rows)
 
   return (
     <div className="px-4 pt-6 pb-4 space-y-5">
-      <header className="space-y-1">
+      <header className="space-y-2">
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Mes en curso · {formatearFecha(desde, 'MMM yyyy')}
-        </p>
+        <RangoSelector actual={rangoId} />
       </header>
 
-      {/* KPIs */}
+      {/* Utilidad principal */}
+      <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-1">
+        <div className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
+          <TrendingUp className="h-4 w-4" />
+          <span className="text-xs font-medium uppercase tracking-wide">Utilidad · {r.label}</span>
+        </div>
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <p className={`text-3xl font-bold tabular-nums ${t.utilidad_mxn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+            {t.utilidad_mxn >= 0 ? '+' : ''}{formatMoney(t.utilidad_mxn, 'MXN')}
+          </p>
+          {(t.ingresos_usd > 0 || t.gastos_usd > 0) && (
+            <p className={`text-base font-semibold tabular-nums ${t.utilidad_usd >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              {t.utilidad_usd >= 0 ? '+' : ''}{formatMoney(t.utilidad_usd, 'USD')}
+            </p>
+          )}
+        </div>
+        {(nTareas ?? 0) > 0 && (
+          <p className="text-xs text-amber-600 pt-1">⚠ {nTareas} tareas pendientes</p>
+        )}
+      </div>
+
+      {/* Ingresos / Gastos */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-1">
           <div className="flex items-center gap-1.5 text-emerald-600">
@@ -84,7 +87,6 @@ export default async function DashboardPage() {
             <p className="text-xs text-zinc-500 tabular-nums">+ {formatMoney(t.ingresos_usd, 'USD')}</p>
           )}
         </div>
-
         <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-1">
           <div className="flex items-center gap-1.5 text-red-600">
             <ArrowDownCircle className="h-4 w-4" />
@@ -97,30 +99,16 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Utilidad */}
-      <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-2">
-        <div className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
-          <TrendingUp className="h-4 w-4" />
-          <span className="text-xs font-medium uppercase tracking-wide">Utilidad del mes</span>
-        </div>
-        <div className="flex items-baseline gap-3 flex-wrap">
-          <p className={`text-3xl font-bold tabular-nums ${utilidad_mxn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-            {utilidad_mxn >= 0 ? '+' : ''}{formatMoney(utilidad_mxn, 'MXN')}
-          </p>
-          {(t.ingresos_usd > 0 || t.gastos_usd > 0) && (
-            <p className={`text-base font-semibold tabular-nums ${utilidad_usd >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {utilidad_usd >= 0 ? '+' : ''}{formatMoney(utilidad_usd, 'USD')}
-            </p>
-          )}
-        </div>
-        {(nTareas ?? 0) > 0 && (
-          <p className="text-xs text-amber-600">
-            ⚠ {nTareas} tareas pendientes
-          </p>
-        )}
-      </div>
+      {/* Gráfica utilidad por día */}
+      <UtilidadChart data={seriePorDia} />
 
-      {/* Acciones rápidas */}
+      {/* Barras por negocio */}
+      <NegociosBar data={barNegocios} />
+
+      {/* Top categorías */}
+      <CategoriasList data={topCats} />
+
+      {/* CTA captura */}
       <Link
         href="/transacciones/nueva"
         className="block rounded-2xl border-2 border-dashed border-emerald-300 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/30 p-4 text-center"
@@ -131,7 +119,7 @@ export default async function DashboardPage() {
         </div>
       </Link>
 
-      {/* Últimas transacciones */}
+      {/* Últimas */}
       <section className="space-y-2">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-semibold">Últimas</h2>
@@ -139,7 +127,6 @@ export default async function DashboardPage() {
             Ver todas
           </Link>
         </div>
-
         {ultimas && ultimas.length > 0 ? (
           <ul className="rounded-2xl border bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">
             {ultimas.map((u) => {
