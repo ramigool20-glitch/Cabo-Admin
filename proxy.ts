@@ -8,8 +8,8 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Excluye assets estáticos, PWA y service worker.
+     * Excluye assets estáticos, PWA, service worker y media.
      */
-    '/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|sw.js|workbox-.*\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2?)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icons|media|manifest.json|sw.js|workbox-.*\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mp4|webm|mov|woff2?)$).*)',
   ],
 }
