@@ -2,33 +2,55 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Mic, MicOff, Loader2, Check, AlertCircle, Bot, Pencil } from 'lucide-react'
+import {
+  Camera, Mic, MicOff, Loader2, Check, AlertCircle, Bot, Send,
+} from 'lucide-react'
 import Image from 'next/image'
-import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { formatMoney } from '@/lib/utils'
 import { hoyEnCabos } from '@/lib/fechas'
 import { ConfirmCard, type Draft, type Negocio, type Cuenta } from './confirm-card'
+import type { ChatMessage, ChatDraft } from '@/lib/ai/prompts'
 
 type Mensaje =
   | { id: string; rol: 'user'; tipo: 'foto'; foto_url: string }
   | { id: string; rol: 'user'; tipo: 'voz'; transcripcion: string; audio_url?: string }
+  | { id: string; rol: 'user'; tipo: 'texto'; texto: string }
   | { id: string; rol: 'system'; tipo: 'pensando' }
-  | { id: string; rol: 'assistant'; tipo: 'confirmar'; draft: Draft }
+  | { id: string; rol: 'assistant'; tipo: 'texto'; texto: string }
+  | { id: string; rol: 'assistant'; tipo: 'confirmar'; draft: Draft; introTexto?: string }
   | { id: string; rol: 'assistant'; tipo: 'guardado'; resumen: string }
   | { id: string; rol: 'assistant'; tipo: 'error'; mensaje: string }
 
 const newId = () => Math.random().toString(36).slice(2)
 
+function draftFromChatDraft(d: ChatDraft): Draft {
+  return {
+    tipo: d.tipo,
+    monto: d.monto,
+    moneda: d.moneda,
+    fecha: d.fecha,
+    concepto: d.concepto,
+    categoria: d.categoria,
+    negocio_sugerido: d.negocio_sugerido,
+    cuenta_sugerida: d.cuenta_sugerida,
+    metodo_pago: d.metodo_pago,
+    metodo_captura: 'foto',
+  }
+}
+
 export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas: Cuenta[] }) {
   const router = useRouter()
   const [mensajes, setMensajes] = useState<Mensaje[]>([])
+  const [conversation, setConversation] = useState<ChatMessage[]>([])
+  const [texto, setTexto] = useState('')
   const [grabando, setGrabando] = useState(false)
   const [procesando, setProcesando] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const chatBottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textInputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -42,6 +64,65 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
       const realIdx = prev.length - 1 - idx
       return [...prev.slice(0, realIdx), nuevo, ...prev.slice(realIdx + 1)]
     })
+  }
+
+  // ---------- TEXTO ----------
+  const handleSendText = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    const t = texto.trim()
+    if (!t || procesando) return
+
+    setTexto('')
+    append({ id: newId(), rol: 'user', tipo: 'texto', texto: t })
+
+    const newConv: ChatMessage[] = [...conversation, { role: 'user', content: t }]
+    setConversation(newConv)
+
+    const pensandoId = newId()
+    append({ id: pensandoId, rol: 'system', tipo: 'pensando' })
+    setProcesando(true)
+
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newConv }),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        replaceLast(
+          (m) => m.id === pensandoId,
+          { id: pensandoId, rol: 'assistant', tipo: 'error', mensaje: data.error || 'Error desconocido' }
+        )
+        return
+      }
+
+      const reply: string = data.reply || ''
+      const chatDraft: ChatDraft | null = data.draft
+
+      if (chatDraft) {
+        const draft = draftFromChatDraft(chatDraft)
+        replaceLast(
+          (m) => m.id === pensandoId,
+          { id: pensandoId, rol: 'assistant', tipo: 'confirmar', draft, introTexto: reply }
+        )
+      } else {
+        replaceLast(
+          (m) => m.id === pensandoId,
+          { id: pensandoId, rol: 'assistant', tipo: 'texto', texto: reply || '…' }
+        )
+      }
+
+      setConversation([...newConv, { role: 'assistant', content: reply }])
+    } catch (e) {
+      replaceLast(
+        (m) => m.id === pensandoId,
+        { id: pensandoId, rol: 'assistant', tipo: 'error', mensaje: e instanceof Error ? e.message : 'Error de red' }
+      )
+    } finally {
+      setProcesando(false)
+    }
   }
 
   // ---------- FOTO ----------
@@ -210,9 +291,16 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
 
   const sinMensajes = mensajes.length === 0
 
+  const sugerencias = [
+    '¿Cuánto llevo gastado este mes?',
+    'Pagué 350 de gasolina con MP Sergio',
+    '¿Qué utilidad tiene Cvu Pharmacy?',
+    'Registra 1500 USD de IV Therapy en Stripe',
+  ]
+
   return (
-    <div className="flex flex-col flex-1 min-h-[calc(100vh-9rem)] pb-24">
-      {/* Welcome card cuando no hay mensajes */}
+    <div className="flex flex-col flex-1 min-h-[calc(100vh-9rem)] pb-44">
+      {/* Welcome card */}
       {sinMensajes && (
         <div className="px-4 py-4 space-y-3">
           <div className="card-glow p-5 space-y-4">
@@ -223,28 +311,44 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
               <div className="space-y-1">
                 <p className="text-base font-bold text-white">Asistente de Captura IA</p>
                 <p className="text-sm text-zinc-400">
-                  Soy tu experto en capturar transacciones para los negocios de Cabo. Toma foto del ticket o dicta lo que pasó.
+                  Háblame, escríbeme o tómame foto. Te ayudo a registrar y a contestar preguntas sobre la operación.
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <div className="card p-3 space-y-1">
-                <p className="text-2xl">📷</p>
-                <p className="text-xs font-bold text-cyan-300">Foto</p>
-                <p className="text-[10px] text-zinc-500">Ticket, corte, screenshot ads</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="card p-3 text-center">
+                <p className="text-xl">💬</p>
+                <p className="text-[10px] font-bold text-zinc-400 mt-1">Texto</p>
               </div>
-              <div className="card p-3 space-y-1">
-                <p className="text-2xl">🎤</p>
-                <p className="text-xs font-bold text-emerald-300">Voz</p>
-                <p className="text-[10px] text-zinc-500">&quot;Pagué 350 de gasolina con MP Sergio&quot;</p>
+              <div className="card p-3 text-center">
+                <p className="text-xl">🎤</p>
+                <p className="text-[10px] font-bold text-zinc-400 mt-1">Voz</p>
+              </div>
+              <div className="card p-3 text-center">
+                <p className="text-xl">📷</p>
+                <p className="text-[10px] font-bold text-zinc-400 mt-1">Foto</p>
               </div>
             </div>
 
-            <Link href="/transacciones/nueva" className="flex items-center gap-2 text-xs text-zinc-500 hover:text-cyan-300">
-              <Pencil className="h-3 w-3" />
-              ¿Prefieres captura manual? →
-            </Link>
+            <div className="space-y-1.5">
+              <p className="label-caps">Prueba con</p>
+              <div className="space-y-1.5">
+                {sugerencias.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => {
+                      setTexto(s)
+                      textInputRef.current?.focus()
+                    }}
+                    className="w-full text-left text-xs px-3 py-2 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] hover:border-cyan-500/40 text-zinc-300 transition-colors"
+                  >
+                    &ldquo;{s}&rdquo;
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -270,12 +374,30 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
               </div>
             )
           }
+          if (m.rol === 'user' && m.tipo === 'texto') {
+            return (
+              <div key={m.id} className="flex justify-end">
+                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-br from-cyan-500 to-blue-500 text-white p-3 text-sm shadow-lg shadow-cyan-500/20 whitespace-pre-wrap">
+                  {m.texto}
+                </div>
+              </div>
+            )
+          }
           if (m.rol === 'system' && m.tipo === 'pensando') {
             return (
               <div key={m.id} className="flex justify-start">
                 <div className="card px-3.5 py-2.5 inline-flex items-center gap-2 text-sm text-cyan-300">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Analizando con Claude…</span>
+                  <span>Pensando…</span>
+                </div>
+              </div>
+            )
+          }
+          if (m.rol === 'assistant' && m.tipo === 'texto') {
+            return (
+              <div key={m.id} className="flex justify-start">
+                <div className="card max-w-[85%] px-3.5 py-2.5 text-sm text-zinc-200 whitespace-pre-wrap">
+                  {m.texto}
                 </div>
               </div>
             )
@@ -283,7 +405,12 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
           if (m.rol === 'assistant' && m.tipo === 'confirmar') {
             return (
               <div key={m.id} className="flex justify-start">
-                <div className="w-full">
+                <div className="w-full space-y-2">
+                  {m.introTexto && (
+                    <div className="card max-w-[85%] px-3.5 py-2.5 text-sm text-zinc-200 whitespace-pre-wrap">
+                      {m.introTexto}
+                    </div>
+                  )}
                   <ConfirmCard
                     draft={m.draft}
                     negocios={negocios}
@@ -320,12 +447,42 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
         <div ref={chatBottomRef} />
       </div>
 
-      {/* Input bar fija abajo */}
+      {/* Barra de input fija abajo */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-20 border-t border-[var(--border-subtle)] bg-[var(--bg-base)]/95 backdrop-blur-xl px-4 py-3"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+        className="fixed bottom-0 left-0 right-0 z-20 border-t border-[var(--border-subtle)] bg-[var(--bg-base)]/95 backdrop-blur-xl"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}
       >
-        <div className="max-w-3xl mx-auto flex items-center justify-center gap-3">
+        {/* Input de texto */}
+        <form onSubmit={handleSendText} className="max-w-3xl mx-auto px-3 pt-3">
+          <div className="flex items-end gap-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-1.5">
+            <textarea
+              ref={textInputRef}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSendText()
+                }
+              }}
+              placeholder="Escribe o pregunta… ej: pagué 350 de gasolina"
+              rows={1}
+              disabled={procesando}
+              className="flex-1 max-h-32 px-3 py-2.5 bg-transparent text-sm text-white placeholder:text-zinc-500 resize-none focus:outline-none disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={procesando || !texto.trim()}
+              aria-label="Enviar"
+              className="h-10 w-10 inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 text-white disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/20"
+            >
+              {procesando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </button>
+          </div>
+        </form>
+
+        {/* Botones grandes: cámara y mic */}
+        <div className="max-w-3xl mx-auto flex items-center justify-center gap-4 px-4 py-3">
           <input
             ref={fileInputRef}
             type="file"
@@ -339,9 +496,9 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
             onClick={() => fileInputRef.current?.click()}
             disabled={procesando || grabando}
             aria-label="Tomar foto"
-            className="h-14 w-14 inline-flex items-center justify-center rounded-full border border-[var(--border-glow)] bg-[var(--bg-card)] text-cyan-300 hover:bg-[var(--bg-card-hover)] disabled:opacity-40 transition-colors"
+            className="h-12 w-12 inline-flex items-center justify-center rounded-full border border-[var(--border-glow)] bg-[var(--bg-card)] text-cyan-300 hover:bg-[var(--bg-card-hover)] disabled:opacity-40 transition-colors"
           >
-            <Camera className="h-6 w-6" />
+            <Camera className="h-5 w-5" />
           </button>
 
           <button
@@ -350,19 +507,20 @@ export function ChatClient({ negocios, cuentas }: { negocios: Negocio[]; cuentas
             disabled={procesando}
             aria-label={grabando ? 'Detener' : 'Grabar nota de voz'}
             className={cn(
-              'h-16 w-16 inline-flex items-center justify-center rounded-full text-white transition-all',
+              'h-14 w-14 inline-flex items-center justify-center rounded-full text-white transition-all',
               grabando
                 ? 'bg-gradient-to-br from-rose-500 to-pink-600 shadow-lg shadow-rose-500/40 animate-pulse'
                 : 'bg-gradient-to-br from-cyan-500 to-blue-500 shadow-lg shadow-cyan-500/30 hover:scale-105 disabled:opacity-40'
             )}
           >
-            {grabando ? <MicOff className="h-7 w-7" /> : <Mic className="h-7 w-7" />}
+            {grabando ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
           </button>
 
-          <div className="h-14 w-14" />
+          <div className="h-12 w-12" />
         </div>
+
         {grabando && (
-          <p className="text-center text-xs text-rose-400 mt-2 animate-pulse">
+          <p className="text-center text-xs text-rose-400 pb-2 animate-pulse">
             🔴 Grabando… toca para terminar
           </p>
         )}
