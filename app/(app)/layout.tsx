@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AppHeader } from '@/components/nav/app-header'
-import { BottomNav } from '@/components/nav/bottom-nav'
+import { TopTabs } from '@/components/nav/top-tabs'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -12,7 +12,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect('/login')
   }
 
-  // Cargamos el profile con admin client (evita ping-pong con RLS antes del primer login completo).
   const admin = createAdminClient()
   const { data: profile } = await admin
     .from('profiles')
@@ -23,10 +22,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const nombre = profile?.nombre ?? user.email?.split('@')[0] ?? 'Usuario'
 
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950">
+    <div className="min-h-screen flex flex-col bg-[var(--bg-base)]">
       <AppHeader nombre={nombre} />
-      <main className="flex-1 pb-20">{children}</main>
-      <BottomNav />
+      <TopTabs />
+      <main className="flex-1">{children}</main>
     </div>
   )
 }

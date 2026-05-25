@@ -1,16 +1,21 @@
 import Link from 'next/link'
-import { Pill, Stethoscope, Globe, Wallet, ChevronRight } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { totalizar } from '@/lib/agregaciones'
+import { rangoFechas } from '@/lib/rangos'
+import { formatMoney, cn } from '@/lib/utils'
 
-const iconoPorTipo = {
-  farmacia:       { icon: Pill,        color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950' },
-  consultorio:    { icon: Stethoscope, color: 'text-blue-600 bg-blue-50 dark:bg-blue-950' },
-  pagina_digital: { icon: Globe,       color: 'text-purple-600 bg-purple-50 dark:bg-purple-950' },
-  general:        { icon: Wallet,      color: 'text-zinc-600 bg-zinc-100 dark:bg-zinc-800' },
-} as const
+const tipoMeta: Record<string, { emoji: string; gradient: string; label: string }> = {
+  farmacia:       { emoji: '💊', gradient: 'from-emerald-500 to-teal-500',    label: 'Farmacia local' },
+  consultorio:    { emoji: '🩺', gradient: 'from-blue-500 to-cyan-500',       label: 'Clínica' },
+  pagina_digital: { emoji: '🌐', gradient: 'from-purple-500 to-pink-500',     label: 'Online' },
+  general:        { emoji: '💼', gradient: 'from-zinc-500 to-zinc-600',       label: 'General' },
+}
 
 export default async function NegociosPage() {
   const supabase = createAdminClient()
+  const r = rangoFechas('mes_actual')
+
   const { data: negocios } = await supabase
     .from('negocios')
     .select('id, nombre, tipo, moneda_principal, activo, url')
@@ -18,45 +23,100 @@ export default async function NegociosPage() {
     .order('tipo')
     .order('nombre')
 
-  return (
-    <div className="px-4 pt-6 pb-4 space-y-5">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight">Negocios</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          {negocios?.length ?? 0} negocios activos.
-        </p>
-      </header>
+  // Trae los totales del mes por negocio (admin = bypassa RLS)
+  const { data: txMes } = await supabase
+    .from('transacciones')
+    .select('tipo, monto, moneda, fecha, categoria, negocio_id')
+    .gte('fecha', r.desde)
+    .lte('fecha', r.hasta)
 
-      <ul className="rounded-2xl border bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">
+  const rowsPorNegocio = new Map<string, typeof txMes>()
+  for (const t of txMes ?? []) {
+    if (!t.negocio_id) continue
+    if (!rowsPorNegocio.has(t.negocio_id)) rowsPorNegocio.set(t.negocio_id, [])
+    rowsPorNegocio.get(t.negocio_id)!.push(t)
+  }
+
+  return (
+    <div className="px-4 pt-5 pb-8 space-y-5 max-w-3xl mx-auto">
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-2xl font-black heading-gradient">Negocios</h1>
+        <span className="chip">{negocios?.length ?? 0} activos</span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {negocios?.map((n) => {
-          const tipo = (n.tipo as keyof typeof iconoPorTipo) ?? 'general'
-          const meta = iconoPorTipo[tipo] ?? iconoPorTipo.general
-          const Icon = meta.icon
+          const meta = tipoMeta[n.tipo] ?? tipoMeta.general
+          const t = totalizar(rowsPorNegocio.get(n.id) ?? [])
+          const utilidad = t.utilidad_mxn + (t.utilidad_usd ? t.utilidad_usd * 17 : 0) // estimación
+          const positiva = utilidad >= 0
           const url = (n as { url?: string | null }).url
+
           return (
-            <li key={n.id}>
-              <Link
-                href={`/negocios/${n.id}`}
-                className="flex items-center gap-3 p-4 active:bg-zinc-50 dark:active:bg-zinc-800/50"
-              >
-                <div className={`inline-flex h-10 w-10 items-center justify-center rounded-lg ${meta.color}`}>
-                  <Icon className="h-5 w-5" />
+            <Link
+              key={n.id}
+              href={`/negocios/${n.id}`}
+              className="card hover:bg-[var(--bg-card-hover)] transition-colors p-4 space-y-3 group"
+            >
+              {/* Header: emoji + nombre + chip */}
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  'h-11 w-11 inline-flex items-center justify-center rounded-xl bg-gradient-to-br text-xl shrink-0',
+                  meta.gradient
+                )}>
+                  {meta.emoji}
                 </div>
-                <div className="flex-1 min-w-0 leading-tight">
-                  <p className="font-medium truncate">{n.nombre}</p>
-                  <p className="text-xs text-zinc-500 truncate">
-                    {url ? url.replace(/^https?:\/\//, '').replace(/\/$/, '') : tipo.replace('_', ' ')}
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-white truncate">{n.nombre}</p>
+                  <p className="text-xs text-zinc-500 truncate">{meta.label}</p>
+                </div>
+                <span className="chip chip-green text-[10px]">
+                  <span className="h-1 w-1 rounded-full bg-emerald-400" />
+                  Activo
+                </span>
+              </div>
+
+              {/* Utilidad del mes */}
+              <div className="space-y-0.5">
+                <p className="label-caps">Utilidad del mes</p>
+                <p className={cn(
+                  'text-2xl font-black tabular-nums',
+                  positiva ? 'text-emerald-300' : 'text-rose-300'
+                )}>
+                  {positiva ? '+' : ''}{formatMoney(t.utilidad_mxn, 'MXN')}
+                </p>
+              </div>
+
+              {/* Métricas */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="label-caps">Ingresos</p>
+                  <p className="text-sm font-bold text-emerald-400 tabular-nums">
+                    {formatMoney(t.ingresos_mxn, 'MXN')}
                   </p>
                 </div>
-                <span className="text-[10px] font-semibold text-zinc-500 px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800">
-                  {n.moneda_principal}
-                </span>
-                <ChevronRight className="h-4 w-4 text-zinc-300 shrink-0" />
-              </Link>
-            </li>
+                <div>
+                  <p className="label-caps">Gastos</p>
+                  <p className="text-sm font-bold text-rose-400 tabular-nums">
+                    {formatMoney(t.gastos_mxn, 'MXN')}
+                  </p>
+                </div>
+              </div>
+
+              {/* URL si existe */}
+              {url && (
+                <p className="text-[10px] text-cyan-400/60 truncate pt-1 border-t border-[var(--border-subtle)]">
+                  🔗 {url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                </p>
+              )}
+
+              <div className="flex items-center justify-end text-xs text-cyan-400 group-hover:text-cyan-300">
+                Ver detalle <ChevronRight className="h-3 w-3 ml-0.5" />
+              </div>
+            </Link>
           )
         })}
-      </ul>
+      </div>
     </div>
   )
 }

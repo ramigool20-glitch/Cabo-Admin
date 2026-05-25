@@ -9,11 +9,17 @@ export default async function ChatPage() {
   ])
 
   return (
-    <div className="flex flex-col">
-      <header className="px-4 pt-6 pb-2">
-        <h1 className="text-2xl font-bold tracking-tight">Chat</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Captura con foto, voz o texto.
+    <div className="flex flex-col max-w-3xl mx-auto w-full">
+      <header className="px-4 pt-5 pb-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-black heading-gradient">Captura con IA</h1>
+          <span className="chip chip-green">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            claude-sonnet-4-6
+          </span>
+        </div>
+        <p className="text-sm text-zinc-400">
+          Foto, voz o pega un screenshot. La IA lo convierte en transacción.
         </p>
       </header>
 
