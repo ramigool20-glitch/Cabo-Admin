@@ -92,7 +92,7 @@ export function ConfirmCard({
   }
 
   return (
-    <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-3 shadow-sm">
+    <div className="card-glow p-4 space-y-3">
       <div className="flex items-center justify-between">
         <span
           className={cn(
@@ -110,7 +110,7 @@ export function ConfirmCard({
       </div>
 
       {draft.concepto && (
-        <p className="text-sm text-zinc-700 dark:text-zinc-300">{draft.concepto}</p>
+        <p className="text-sm text-zinc-200">{draft.concepto}</p>
       )}
 
       {draft.categoria && (
@@ -131,7 +131,7 @@ export function ConfirmCard({
                 'h-8 px-3 rounded-full text-xs border',
                 negocioId === n.id
                   ? 'border-emerald-600 bg-emerald-600 text-white'
-                  : 'border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300'
+                  : 'border-[var(--border-subtle)] text-zinc-300'
               )}
             >
               {n.nombre}
@@ -152,7 +152,7 @@ export function ConfirmCard({
                 'h-8 px-3 rounded-full text-xs border',
                 cuentaId === c.id
                   ? 'border-emerald-600 bg-emerald-600 text-white'
-                  : 'border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300'
+                  : 'border-[var(--border-subtle)] text-zinc-300'
               )}
             >
               {c.nombre}
@@ -168,7 +168,7 @@ export function ConfirmCard({
           type="button"
           onClick={onCancel}
           disabled={pending}
-          className="flex-1 h-11 rounded-xl border border-zinc-300 dark:border-zinc-700 text-sm font-medium"
+          className="flex-1 h-11 rounded-xl border border-[var(--border-subtle)] text-sm font-medium text-zinc-300"
         >
           Cancelar
         </button>

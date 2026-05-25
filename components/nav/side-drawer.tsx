@@ -77,8 +77,8 @@ export function SideDrawer({ open, onClose, nombre }: { open: boolean; onClose: 
               🌊
             </div>
             <div className="leading-tight">
-              <p className="text-sm font-bold heading-gradient">Cabo Admin</p>
-              <p className="text-[10px] text-cyan-300/50">Hola, {nombre}</p>
+              <p className="text-base font-bold heading-gradient">Cabo Admin</p>
+              <p className="text-[10px] text-cyan-300/50">Sistema de gestión</p>
             </div>
           </div>
           <button onClick={onClose} aria-label="Cerrar menú" className="h-8 w-8 inline-flex items-center justify-center text-zinc-400 hover:text-white">

@@ -27,7 +27,7 @@ export function MarcarPagadoForm({
           type="date"
           defaultValue={hoyEnCabos()}
           required
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
 
@@ -40,7 +40,7 @@ export function MarcarPagadoForm({
           inputMode="decimal"
           defaultValue={String(monto)}
           required
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
 

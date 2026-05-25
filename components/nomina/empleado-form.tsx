@@ -28,7 +28,7 @@ export function EmpleadoForm({ defaults }: { defaults: EmpleadoDefault }) {
           type="text"
           required
           defaultValue={defaults.nombre ?? ''}
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
       <div className="space-y-2">
@@ -39,7 +39,7 @@ export function EmpleadoForm({ defaults }: { defaults: EmpleadoDefault }) {
           type="text"
           defaultValue={defaults.puesto ?? ''}
           placeholder="Cajera, enfermera, repartidor…"
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
       <div className="space-y-2">
@@ -49,7 +49,7 @@ export function EmpleadoForm({ defaults }: { defaults: EmpleadoDefault }) {
           name="fecha_ingreso"
           type="date"
           defaultValue={defaults.fecha_ingreso ?? ''}
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
       <div className="space-y-2">
@@ -59,7 +59,7 @@ export function EmpleadoForm({ defaults }: { defaults: EmpleadoDefault }) {
           name="notas"
           rows={2}
           defaultValue={defaults.notas ?? ''}
-          className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full px-4 py-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
 

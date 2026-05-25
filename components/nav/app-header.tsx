@@ -34,20 +34,14 @@ export function AppHeader({ nombre }: { nombre: string }) {
             </h1>
           </div>
 
-          {/* User chip + bell */}
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs font-bold">
-              <span>👑</span>
-              <span className="max-w-[80px] truncate">{nombre}</span>
-            </div>
-            <button
-              type="button"
-              aria-label="Notificaciones"
-              className="h-10 w-10 inline-flex items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] text-cyan-300"
-            >
-              <Bell className="h-4 w-4" />
-            </button>
-          </div>
+          {/* Bell only */}
+          <button
+            type="button"
+            aria-label="Notificaciones"
+            className="h-10 w-10 inline-flex items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] text-cyan-300"
+          >
+            <Bell className="h-4 w-4" />
+          </button>
         </div>
       </header>
 

@@ -26,7 +26,7 @@ export function RangoSelector({ actual }: { actual: RangoId }) {
             'h-8 px-3 rounded-full text-xs font-medium border shrink-0 transition-colors',
             actual === r.id
               ? 'border-emerald-600 bg-emerald-600 text-white'
-              : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'
+              : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400'
           )}
         >
           {r.label}

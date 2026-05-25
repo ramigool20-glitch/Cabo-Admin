@@ -82,7 +82,7 @@ export function PagoForm({
             id="periodo_inicio"
             name="periodo_inicio"
             type="date"
-            className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm"
+            className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm"
           />
         </div>
         <div className="space-y-2">
@@ -92,7 +92,7 @@ export function PagoForm({
             name="periodo_fin"
             type="date"
             defaultValue={hoyEnCabos()}
-            className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm"
+            className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm"
           />
         </div>
       </div>
@@ -106,7 +106,7 @@ export function PagoForm({
           inputMode="decimal"
           value={ventasPeriodo}
           onChange={(e) => setVentasPeriodo(e.target.value)}
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base tabular-nums"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base tabular-nums"
         />
       </div>
 
@@ -128,7 +128,7 @@ export function PagoForm({
           type="date"
           required
           defaultValue={hoyEnCabos()}
-          className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm"
+          className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm"
         />
       </div>
 
@@ -137,7 +137,7 @@ export function PagoForm({
         <select
           id="cuenta_id"
           name="cuenta_id"
-          className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm"
+          className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm"
         >
           <option value="">—</option>
           {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre} ({c.moneda})</option>)}

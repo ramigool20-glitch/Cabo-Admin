@@ -75,7 +75,7 @@ export function RecurrenteForm({
           required
           defaultValue={defaults.nombre ?? ''}
           placeholder="Renta local farmacia, Sueldo limpieza…"
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
 
@@ -91,9 +91,9 @@ export function RecurrenteForm({
             required
             defaultValue={defaults.monto ?? ''}
             placeholder="0.00"
-            className="flex-1 h-14 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-2xl font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="flex-1 h-14 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-2xl font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800">
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
             <input type="hidden" name="moneda" value={moneda} />
             {(['MXN', 'USD'] as const).map((m) => (
               <button
@@ -103,7 +103,7 @@ export function RecurrenteForm({
                 className={cn(
                   'h-12 w-14 rounded-lg text-sm font-bold transition-colors',
                   moneda === m
-                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow'
+                    ? 'bg-[var(--bg-card)] text-white shadow'
                     : 'text-zinc-500'
                 )}
               >
@@ -133,7 +133,7 @@ export function RecurrenteForm({
                 'h-10 rounded-lg text-xs font-medium border transition-colors',
                 frecuencia === o.v
                   ? 'border-emerald-600 bg-emerald-600 text-white'
-                  : 'border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300'
+                  : 'border-[var(--border-subtle)] text-zinc-300'
               )}
             >
               {o.l}
@@ -154,7 +154,7 @@ export function RecurrenteForm({
             max={31}
             defaultValue={defaults.dia_del_mes ?? ''}
             placeholder="1"
-            className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
         </div>
       )}
@@ -167,7 +167,7 @@ export function RecurrenteForm({
           name="proximo_pago"
           type="date"
           defaultValue={defaults.proximo_pago ?? ''}
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
         <p className="text-xs text-zinc-500">Si lo dejas vacío lo calculo desde la frecuencia.</p>
       </div>
@@ -179,7 +179,7 @@ export function RecurrenteForm({
           id="negocio_id"
           name="negocio_id"
           defaultValue={defaults.negocio_id ?? ''}
-          className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         >
           <option value="">— Sin negocio (gasto general)</option>
           {negocios.map((n) => <option key={n.id} value={n.id}>{n.nombre}</option>)}
@@ -193,7 +193,7 @@ export function RecurrenteForm({
           id="cuenta_id"
           name="cuenta_id"
           defaultValue={defaults.cuenta_id ?? ''}
-          className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         >
           <option value="">— Sin cuenta específica</option>
           {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre} ({c.moneda})</option>)}
@@ -207,7 +207,7 @@ export function RecurrenteForm({
           id="responsable_id"
           name="responsable_id"
           defaultValue={defaults.responsable_id ?? ''}
-          className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         >
           <option value="">— Sin asignar</option>
           {perfiles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
@@ -223,7 +223,7 @@ export function RecurrenteForm({
           type="text"
           defaultValue={defaults.proveedor ?? ''}
           placeholder="Nombre del arrendador, proveedor, persona…"
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
 
@@ -234,7 +234,7 @@ export function RecurrenteForm({
           id="metodo_pago"
           name="metodo_pago"
           defaultValue={defaults.metodo_pago ?? ''}
-          className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         >
           <option value="">— Sin especificar</option>
           {METODOS_PAGO.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -250,7 +250,7 @@ export function RecurrenteForm({
           type="text"
           defaultValue={defaults.referencia_pago ?? ''}
           placeholder="Opcional"
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
 
@@ -268,7 +268,7 @@ export function RecurrenteForm({
                 'h-8 px-2.5 rounded-full text-xs border transition-colors',
                 categoria === c
                   ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700'
-                  : 'border-zinc-300 dark:border-zinc-700 text-zinc-600'
+                  : 'border-[var(--border-subtle)] text-zinc-400'
               )}
             >
               {c}
@@ -299,7 +299,7 @@ export function RecurrenteForm({
           inputMode="decimal"
           defaultValue={defaults.multa_por_no_pago ?? ''}
           placeholder="0"
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
         <p className="text-xs text-zinc-500">Si pasas 1 día del vencimiento sin marcarlo pagado, se crea una tarea con esta multa al responsable.</p>
       </div>
@@ -312,7 +312,7 @@ export function RecurrenteForm({
           name="notas"
           rows={2}
           defaultValue={defaults.notas ?? ''}
-          className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full px-4 py-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
 
@@ -329,7 +329,7 @@ export function RecurrenteForm({
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex-1 h-12 rounded-xl border border-zinc-300 dark:border-zinc-700 font-medium"
+          className="flex-1 h-12 rounded-xl border border-[var(--border-subtle)] font-medium text-zinc-300"
         >
           Cancelar
         </button>

@@ -145,3 +145,50 @@ html, body {
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* ============================================================
+   Inputs: forzar color blanco en TODOS los inputs/textareas/selects
+   (evita texto invisible en iOS Safari PWA modo dark)
+   ============================================================ */
+input,
+textarea,
+select {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff;
+  caret-color: #06b6d4;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(170, 180, 210, 0.5) !important;
+  -webkit-text-fill-color: rgba(170, 180, 210, 0.5);
+}
+
+/* select options en iOS aparecen en menú nativo, el color lo controla el SO */
+select option {
+  color: #000000;
+  background-color: #ffffff;
+}
+
+/* iOS: quitar bordes redondeados nativos del input number */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* iOS: arreglar inputs date/time que se ven mal */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7) sepia(0.5) saturate(3) hue-rotate(170deg);
+}

@@ -26,7 +26,7 @@ export function CompensacionForm({
           id="negocio_id"
           name="negocio_id"
           required
-          className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base"
+          className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base"
         >
           <option value="">— Selecciona</option>
           {negocios.map((n) => <option key={n.id} value={n.id}>{n.nombre}</option>)}
@@ -43,12 +43,12 @@ export function CompensacionForm({
             inputMode="decimal"
             required
             defaultValue="0"
-            className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base tabular-nums"
+            className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base tabular-nums"
           />
         </div>
         <div className="space-y-2">
           <label className="text-sm font-medium">Moneda</label>
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 h-12">
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)] h-12">
             <input type="hidden" name="moneda" value={moneda} />
             {(['MXN', 'USD'] as const).map((m) => (
               <button
@@ -57,7 +57,7 @@ export function CompensacionForm({
                 onClick={() => setMoneda(m)}
                 className={cn(
                   'rounded-lg text-sm font-bold transition-colors',
-                  moneda === m ? 'bg-white dark:bg-zinc-900 shadow' : 'text-zinc-500'
+                  moneda === m ? 'bg-[var(--bg-card)] text-white shadow' : 'text-zinc-500'
                 )}
               >
                 {m}
@@ -76,7 +76,7 @@ export function CompensacionForm({
             type="text"
             inputMode="decimal"
             defaultValue="0"
-            className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base tabular-nums"
+            className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base tabular-nums"
           />
         </div>
         <div className="space-y-2">
@@ -85,7 +85,7 @@ export function CompensacionForm({
             id="comision_base"
             name="comision_base"
             defaultValue="venta_total"
-            className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm"
+            className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm"
           >
             <option value="venta_total">Venta total</option>
             <option value="utilidad">Utilidad</option>
@@ -108,7 +108,7 @@ export function CompensacionForm({
                 'h-10 rounded-lg text-xs font-medium border transition-colors capitalize',
                 frec === f
                   ? 'border-emerald-600 bg-emerald-600 text-white'
-                  : 'border-zinc-300 dark:border-zinc-700 text-zinc-700'
+                  : 'border-[var(--border-subtle)] text-zinc-300'
               )}
             >
               {f}
@@ -126,7 +126,7 @@ export function CompensacionForm({
           min={1}
           max={31}
           placeholder="15"
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base"
         />
       </div>
 

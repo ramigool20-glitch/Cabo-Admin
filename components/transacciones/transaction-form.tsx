@@ -81,7 +81,7 @@ export function TransactionForm({
   return (
     <form action={formAction} className="space-y-5">
       {/* Tipo */}
-      <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800">
+      <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
         <input type="hidden" name="tipo" value={tipo} />
         <button
           type="button"
@@ -121,9 +121,9 @@ export function TransactionForm({
             required
             defaultValue={defaults.monto ?? ''}
             placeholder="0.00"
-            className="flex-1 h-14 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-2xl font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="flex-1 h-14 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-2xl font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800">
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
             <input type="hidden" name="moneda" value={moneda} />
             {(['MXN', 'USD'] as const).map((m) => (
               <button
@@ -158,7 +158,7 @@ export function TransactionForm({
                 'h-9 px-3 rounded-full text-sm border transition-colors',
                 negocioId === n.id
                   ? 'border-emerald-600 bg-emerald-600 text-white'
-                  : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300'
+                  : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-300'
               )}
             >
               {n.nombre}
@@ -181,7 +181,7 @@ export function TransactionForm({
                 'h-9 px-3 rounded-full text-sm border transition-colors',
                 cuentaId === c.id
                   ? 'border-emerald-600 bg-emerald-600 text-white'
-                  : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300'
+                  : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-300'
               )}
             >
               {c.nombre}
@@ -199,7 +199,7 @@ export function TransactionForm({
           type="text"
           defaultValue={defaults.concepto ?? ''}
           placeholder="¿En qué fue?"
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
 
@@ -212,7 +212,7 @@ export function TransactionForm({
           type="date"
           required
           defaultValue={defaults.fecha}
-          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
 
@@ -241,7 +241,7 @@ export function TransactionForm({
                     'h-8 px-2.5 rounded-full text-xs border transition-colors',
                     categoria === c
                       ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                      : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400'
+                      : 'border-[var(--border-subtle)] text-zinc-400'
                   )}
                 >
                   {c}
@@ -258,7 +258,7 @@ export function TransactionForm({
               name="metodo_pago"
               value={metodoPago}
               onChange={(e) => setMetodoPago(e.target.value)}
-              className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="">(automático)</option>
               {METODOS_PAGO.map((m) => (
@@ -276,7 +276,7 @@ export function TransactionForm({
               rows={3}
               defaultValue={defaults.notas ?? ''}
               placeholder="Opcional"
-              className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+              className="w-full px-4 py-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
             />
           </div>
         </div>
@@ -299,7 +299,7 @@ export function TransactionForm({
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex-1 h-12 rounded-xl border border-zinc-300 dark:border-zinc-700 font-medium"
+          className="flex-1 h-12 rounded-xl border border-[var(--border-subtle)] font-medium text-zinc-300"
         >
           Cancelar
         </button>
