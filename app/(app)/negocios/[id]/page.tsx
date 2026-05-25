@@ -23,7 +23,7 @@ export default async function DetalleNegocioPage(
 
   const { data: negocio } = await supabase
     .from('negocios')
-    .select('id, nombre, tipo, moneda_principal, activo')
+    .select('id, nombre, tipo, moneda_principal, activo, url, notas')
     .eq('id', id)
     .single()
 
@@ -85,13 +85,21 @@ export default async function DetalleNegocioPage(
       </Link>
 
       <header className="space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="space-y-0.5">
-            <h1 className="text-2xl font-bold tracking-tight">{negocio.nombre}</h1>
-            <p className="text-xs text-zinc-500 capitalize">
-              {negocio.tipo.replace('_', ' ')} · {monedaNeg}
-            </p>
-          </div>
+        <div className="space-y-0.5">
+          <h1 className="text-2xl font-bold tracking-tight">{negocio.nombre}</h1>
+          <p className="text-xs text-zinc-500 capitalize">
+            {negocio.tipo.replace('_', ' ')} · {monedaNeg}
+          </p>
+          {(negocio as { url?: string | null }).url && (
+            <a
+              href={(negocio as { url: string }).url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-xs text-emerald-700 dark:text-emerald-400 hover:underline mt-1 break-all"
+            >
+              {(negocio as { url: string }).url.replace(/^https?:\/\//, '')}
+            </a>
+          )}
         </div>
         <RangoSelector actual={rangoId} />
       </header>
