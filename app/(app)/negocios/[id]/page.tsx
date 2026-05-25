@@ -12,12 +12,12 @@ import { CategoriasList } from '@/components/dashboard/categorias-list'
 import { RoasCard } from '@/components/negocios/roas-card'
 
 export default async function DetalleNegocioPage(
-  props: { params: Promise<{ id: string }>; searchParams: Promise<{ rango?: string }> }
+  props: { params: Promise<{ id: string }>; searchParams: Promise<{ rango?: string; desde?: string; hasta?: string }> }
 ) {
   const { id } = await props.params
   const sp = await props.searchParams
   const rangoId: RangoId = isRangoId(sp.rango) ? sp.rango : 'mes_actual'
-  const r = rangoFechas(rangoId)
+  const r = rangoFechas(rangoId, sp.desde, sp.hasta)
 
   const supabase = await createClient()
 
@@ -101,7 +101,7 @@ export default async function DetalleNegocioPage(
             </a>
           )}
         </div>
-        <RangoSelector actual={rangoId} />
+        <RangoSelector actual={rangoId} customDesde={sp.desde} customHasta={sp.hasta} />
       </header>
 
       {/* Utilidad principal */}

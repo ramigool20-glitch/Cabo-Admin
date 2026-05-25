@@ -216,57 +216,57 @@ export function TransactionForm({
         />
       </div>
 
-      {/* Más opciones */}
+      {/* Categoría VISIBLE directo */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Categoría</label>
+        <input type="hidden" name="categoria" value={categoria} />
+        <div className="flex flex-wrap gap-1.5">
+          {categorias.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCategoria(c)}
+              className={cn(
+                'h-8 px-3 rounded-full text-xs border transition-colors capitalize',
+                categoria === c
+                  ? 'border-cyan-500 bg-cyan-500 text-white'
+                  : 'border-[var(--border-subtle)] text-zinc-400'
+              )}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Método de pago */}
+      <div className="space-y-2">
+        <label htmlFor="metodo_pago" className="text-sm font-medium">Método de pago</label>
+        <select
+          id="metodo_pago"
+          name="metodo_pago"
+          value={metodoPago}
+          onChange={(e) => setMetodoPago(e.target.value)}
+          className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        >
+          <option value="">(automático)</option>
+          {METODOS_PAGO.map((m) => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Más opciones (solo notas ahora) */}
       <button
         type="button"
         onClick={() => setMostrarMas((v) => !v)}
-        className="text-sm text-emerald-700 dark:text-emerald-400 font-medium"
+        className="text-sm text-cyan-400 font-medium"
       >
-        {mostrarMas ? '− Menos' : '+ Más opciones (categoría, método de pago, notas)'}
+        {mostrarMas ? '− Menos' : '+ Notas opcionales'}
       </button>
 
       {mostrarMas && (
         <div className="space-y-5 pt-1">
-          {/* Categoría */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Categoría</label>
-            <input type="hidden" name="categoria" value={categoria} />
-            <div className="flex flex-wrap gap-1.5">
-              {categorias.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setCategoria(c)}
-                  className={cn(
-                    'h-8 px-2.5 rounded-full text-xs border transition-colors',
-                    categoria === c
-                      ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                      : 'border-[var(--border-subtle)] text-zinc-400'
-                  )}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Método de pago */}
-          <div className="space-y-2">
-            <label htmlFor="metodo_pago" className="text-sm font-medium">Método de pago</label>
-            <select
-              id="metodo_pago"
-              name="metodo_pago"
-              value={metodoPago}
-              onChange={(e) => setMetodoPago(e.target.value)}
-              className="w-full h-12 px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              <option value="">(automático)</option>
-              {METODOS_PAGO.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-          </div>
-
           {/* Notas */}
           <div className="space-y-2">
             <label htmlFor="notas" className="text-sm font-medium">Notas</label>

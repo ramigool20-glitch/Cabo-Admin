@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron/auth'
 import { hoyEnCabos, TZ } from '@/lib/fechas'
 import { toZonedTime } from 'date-fns-tz'
+import { proximaFechaPagoEmpleado } from '@/lib/proximo-pago'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -58,20 +59,6 @@ function diasAdelante(dias: number): string {
   return objetivo.toISOString().slice(0, 10)
 }
 
-/**
- * Devuelve la próxima fecha (yyyy-MM-dd) en que cae `diaDelMes`.
- * Si ya pasó este mes, devuelve el del mes siguiente.
- */
-function proximaFechaConDia(diaDelMes: number): string {
-  const ahora = toZonedTime(new Date(), TZ)
-  let mes = ahora.getMonth()
-  let año = ahora.getFullYear()
-  if (ahora.getDate() >= diaDelMes) {
-    mes += 1
-    if (mes > 11) { mes = 0; año += 1 }
-  }
-  return new Date(año, mes, diaDelMes).toISOString().slice(0, 10)
-}
 
 export async function GET(req: Request) {
   if (!isAuthorizedCron(req)) {
@@ -87,12 +74,11 @@ export async function GET(req: Request) {
   let totalRecurrente = 0
 
   // ====== NÓMINAS ======
-  // Para cada empleado_compensacion con día_de_pago, ver si en 1 día cae ese día.
+  // Para cada empleado_compensacion activa, calcular su próxima fecha según frecuencia.
   const { data: comps } = await admin
     .from('empleado_compensacion')
-    .select('id, empleado_id, negocio_id, sueldo_base, dia_de_pago, empleados(nombre), negocios(nombre)')
+    .select('id, empleado_id, negocio_id, sueldo_base, dia_de_pago, frecuencia_pago, moneda, empleados(nombre), negocios(nombre)')
     .eq('activo', true)
-    .not('dia_de_pago', 'is', null)
 
   // Conseguir todos los profile_ids con rol admin/socio para los destinatarios
   const { data: socios } = await admin
@@ -108,20 +94,23 @@ export async function GET(req: Request) {
 
   if (destinatarios.length > 0) {
     for (const c of comps ?? []) {
-      const dia = Number(c.dia_de_pago)
-      const proximaPago = proximaFechaConDia(dia)
-      // Si esa fecha cae en exactamente 1 día (mañana), agendar push para hoy a las 10am Cabos
+      const frecuencia = c.frecuencia_pago as 'mensual' | 'quincenal' | 'semanal'
+      const dia = c.dia_de_pago ? Number(c.dia_de_pago) : null
+      const proximaPago = proximaFechaPagoEmpleado(frecuencia, dia)
+
+      // Agendar push si el próximo pago es mañana
       if (proximaPago !== en1Dia) continue
 
       const emp = c.empleados as unknown as { nombre: string } | null
       const neg = c.negocios as unknown as { nombre: string } | null
+      const moneda = c.moneda || 'MXN'
       const disparo = new Date()
       disparo.setHours(disparo.getHours() + 1)
 
       const creado = await agendar(admin, {
         tipo: 'nomina',
-        titulo: `Mañana toca nómina: ${emp?.nombre ?? 'empleado'}`,
-        mensaje: `Sueldo base ${Number(c.sueldo_base).toLocaleString()} · ${neg?.nombre ?? ''}. Día ${dia}.`,
+        titulo: `💵 Mañana toca pagar: ${emp?.nombre ?? 'empleado'}`,
+        mensaje: `${moneda} ${Number(c.sueldo_base).toLocaleString()} · ${neg?.nombre ?? ''} · ${frecuencia}`,
         fecha_disparo: disparo,
         destinatarios,
         ref_tabla: 'empleado_compensacion',

@@ -11,14 +11,14 @@ import { UtilidadChart } from '@/components/dashboard/utilidad-chart'
 import { NegociosBar } from '@/components/dashboard/negocios-bar'
 import { CategoriasList } from '@/components/dashboard/categorias-list'
 
-type SearchParams = { rango?: string }
+type SearchParams = { rango?: string; desde?: string; hasta?: string }
 
 export default async function DashboardPage(
   { searchParams }: { searchParams: Promise<SearchParams> }
 ) {
   const sp = await searchParams
   const rangoId: RangoId = isRangoId(sp.rango) ? sp.rango : 'mes_actual'
-  const r = rangoFechas(rangoId)
+  const r = rangoFechas(rangoId, sp.desde, sp.hasta)
 
   const supabase = await createClient()
   const admin = createAdminClient()
@@ -81,7 +81,7 @@ export default async function DashboardPage(
             LIVE
           </span>
         </div>
-        <RangoSelector actual={rangoId} />
+        <RangoSelector actual={rangoId} customDesde={sp.desde} customHasta={sp.hasta} />
       </div>
 
       {/* Hero: Utilidad principal */}

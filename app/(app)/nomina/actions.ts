@@ -4,6 +4,9 @@ import { z } from 'zod'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { proximaFechaPagoEmpleado } from '@/lib/proximo-pago'
+import { hoyEnCabos } from '@/lib/fechas'
 
 const EmpleadoSchema = z.object({
   nombre: z.string().min(1).max(120),
@@ -90,11 +93,62 @@ export async function addCompensacion(empleadoId: string, _prev: ActionState, fo
   const raw = Object.fromEntries(formData.entries())
   const parsed = CompensacionSchema.safeParse({ ...raw, empleado_id: empleadoId })
   if (!parsed.success) return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
+
   const supabase = await createClient()
-  const { error } = await supabase
+  const { data: compInsertada, error } = await supabase
     .from('empleado_compensacion')
     .insert({ ...parsed.data, activo: true })
+    .select('id, frecuencia_pago, dia_de_pago, sueldo_base, moneda, negocio_id')
+    .single()
   if (error) return { error: error.message }
+
+  // Programar push de aviso 1 día antes del próximo pago (si es hoy o mañana, lo agenda inmediato).
+  try {
+    const admin = createAdminClient()
+    const { data: socios } = await admin
+      .from('profiles')
+      .select('id, role_id, roles(nombre)')
+      .eq('activo', true)
+    const destinatarios = (socios ?? [])
+      .filter((p) => {
+        const r = p.roles as unknown as { nombre: string } | null
+        return r?.nombre === 'admin' || r?.nombre === 'socio'
+      })
+      .map((p) => p.id)
+
+    if (destinatarios.length > 0 && compInsertada) {
+      const { data: emp } = await admin.from('empleados').select('nombre').eq('id', empleadoId).single()
+      const proximaPago = proximaFechaPagoEmpleado(
+        compInsertada.frecuencia_pago as 'mensual' | 'quincenal' | 'semanal',
+        compInsertada.dia_de_pago ? Number(compInsertada.dia_de_pago) : null
+      )
+      const hoy = hoyEnCabos()
+      const proxima = new Date(proximaPago + 'T12:00:00Z')
+      const ahora = new Date()
+      const dias = Math.ceil((proxima.getTime() - ahora.getTime()) / (1000 * 60 * 60 * 24))
+
+      // Si el próximo pago es en los próximos 7 días, programa el aviso 1 día antes
+      if (dias >= 0 && dias <= 7) {
+        const disparo = new Date(proxima.getTime() - 24 * 60 * 60 * 1000)
+        // Si "1 día antes" ya pasó, lo manda en 1 hora
+        const final = disparo < ahora ? new Date(ahora.getTime() + 60 * 60 * 1000) : disparo
+
+        await admin.from('notificaciones_programadas').insert({
+          tipo: 'nomina',
+          titulo: `💵 Mañana toca pagar: ${emp?.nombre ?? 'empleado'}`,
+          mensaje: `${compInsertada.moneda} ${Number(compInsertada.sueldo_base).toLocaleString()} · ${compInsertada.frecuencia_pago} · día ${compInsertada.dia_de_pago ?? '?'} (próximo pago ${proximaPago})`,
+          fecha_disparo: final.toISOString(),
+          destinatarios,
+          ref_tabla: 'empleado_compensacion',
+          ref_id: compInsertada.id,
+          enviada: false,
+        })
+      }
+    }
+  } catch {
+    // No fallar la creación si el push agendamiento truena
+  }
+
   revalidatePath(`/nomina/${empleadoId}`)
   redirect(`/nomina/${empleadoId}`)
 }

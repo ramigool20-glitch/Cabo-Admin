@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Filter, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { CATEGORIAS_GASTO, CATEGORIAS_INGRESO } from '@/lib/categorias'
 
 type Opt = { id: string; nombre: string }
 
@@ -21,7 +22,8 @@ export function FiltersBar({
   const tipo = sp.get('tipo')
   const negocioId = sp.get('negocio')
   const cuentaId = sp.get('cuenta')
-  const hasFilters = !!(tipo || negocioId || cuentaId)
+  const categoria = sp.get('categoria')
+  const hasFilters = !!(tipo || negocioId || cuentaId || categoria)
 
   const updateParam = (key: string, val: string | null) => {
     const params = new URLSearchParams(sp.toString())
@@ -30,7 +32,24 @@ export function FiltersBar({
     router.push(`/transacciones${params.toString() ? '?' + params.toString() : ''}`)
   }
 
-  const clearAll = () => router.push('/transacciones')
+  const clearAll = () => {
+    const params = new URLSearchParams(sp.toString())
+    params.delete('tipo')
+    params.delete('negocio')
+    params.delete('cuenta')
+    params.delete('categoria')
+    router.push(`/transacciones${params.toString() ? '?' + params.toString() : ''}`)
+  }
+
+  // Categorías para mostrar: si filtran por tipo, mostramos solo las que aplican
+  const categoriasDisponibles =
+    tipo === 'ingreso'
+      ? [...CATEGORIAS_INGRESO]
+      : tipo === 'gasto'
+        ? [...CATEGORIAS_GASTO]
+        : [...new Set([...CATEGORIAS_GASTO, ...CATEGORIAS_INGRESO])]
+
+  const totalFiltros = [tipo, negocioId, cuentaId, categoria].filter(Boolean).length
 
   return (
     <div className="space-y-2">
@@ -41,18 +60,18 @@ export function FiltersBar({
           className={cn(
             'inline-flex items-center gap-1.5 h-9 px-3 rounded-full text-sm font-medium border transition-colors',
             hasFilters
-              ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-              : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400'
+              ? 'border-cyan-500 bg-cyan-500/10 text-cyan-300'
+              : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400'
           )}
         >
           <Filter className="h-4 w-4" />
-          Filtros {hasFilters && `· ${[tipo, negocioId, cuentaId].filter(Boolean).length}`}
+          Filtros {hasFilters && `· ${totalFiltros}`}
         </button>
         {hasFilters && (
           <button
             type="button"
             onClick={clearAll}
-            className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-red-600"
+            className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-rose-400"
           >
             <X className="h-3.5 w-3.5" />
             Limpiar
@@ -61,9 +80,10 @@ export function FiltersBar({
       </div>
 
       {open && (
-        <div className="rounded-xl border bg-white dark:bg-zinc-900 p-3 space-y-3">
+        <div className="card p-3 space-y-3">
+          {/* Tipo */}
           <div>
-            <p className="text-xs font-medium text-zinc-500 mb-1.5">Tipo</p>
+            <p className="label-caps mb-1.5">Tipo</p>
             <div className="flex gap-1.5">
               {[
                 { v: null, l: 'Todos' },
@@ -77,8 +97,8 @@ export function FiltersBar({
                   className={cn(
                     'h-8 px-3 rounded-full text-xs border',
                     (tipo ?? null) === opt.v
-                      ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                      : 'border-zinc-300 dark:border-zinc-700 text-zinc-600'
+                      ? 'border-cyan-500 bg-cyan-500 text-white'
+                      : 'border-[var(--border-subtle)] text-zinc-400'
                   )}
                 >
                   {opt.l}
@@ -87,8 +107,9 @@ export function FiltersBar({
             </div>
           </div>
 
+          {/* Negocio */}
           <div>
-            <p className="text-xs font-medium text-zinc-500 mb-1.5">Negocio</p>
+            <p className="label-caps mb-1.5">Negocio</p>
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
@@ -96,8 +117,8 @@ export function FiltersBar({
                 className={cn(
                   'h-8 px-3 rounded-full text-xs border',
                   !negocioId
-                    ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700'
-                    : 'border-zinc-300 dark:border-zinc-700 text-zinc-600'
+                    ? 'border-cyan-500 bg-cyan-500 text-white'
+                    : 'border-[var(--border-subtle)] text-zinc-400'
                 )}
               >
                 Todos
@@ -110,8 +131,8 @@ export function FiltersBar({
                   className={cn(
                     'h-8 px-3 rounded-full text-xs border',
                     negocioId === n.id
-                      ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700'
-                      : 'border-zinc-300 dark:border-zinc-700 text-zinc-600'
+                      ? 'border-cyan-500 bg-cyan-500 text-white'
+                      : 'border-[var(--border-subtle)] text-zinc-400'
                   )}
                 >
                   {n.nombre}
@@ -120,8 +141,9 @@ export function FiltersBar({
             </div>
           </div>
 
+          {/* Cuenta */}
           <div>
-            <p className="text-xs font-medium text-zinc-500 mb-1.5">Cuenta</p>
+            <p className="label-caps mb-1.5">Cuenta</p>
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
@@ -129,8 +151,8 @@ export function FiltersBar({
                 className={cn(
                   'h-8 px-3 rounded-full text-xs border',
                   !cuentaId
-                    ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700'
-                    : 'border-zinc-300 dark:border-zinc-700 text-zinc-600'
+                    ? 'border-cyan-500 bg-cyan-500 text-white'
+                    : 'border-[var(--border-subtle)] text-zinc-400'
                 )}
               >
                 Todas
@@ -143,11 +165,45 @@ export function FiltersBar({
                   className={cn(
                     'h-8 px-3 rounded-full text-xs border',
                     cuentaId === c.id
-                      ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700'
-                      : 'border-zinc-300 dark:border-zinc-700 text-zinc-600'
+                      ? 'border-cyan-500 bg-cyan-500 text-white'
+                      : 'border-[var(--border-subtle)] text-zinc-400'
                   )}
                 >
                   {c.nombre}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Categoría */}
+          <div>
+            <p className="label-caps mb-1.5">Categoría</p>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => updateParam('categoria', null)}
+                className={cn(
+                  'h-8 px-3 rounded-full text-xs border',
+                  !categoria
+                    ? 'border-cyan-500 bg-cyan-500 text-white'
+                    : 'border-[var(--border-subtle)] text-zinc-400'
+                )}
+              >
+                Todas
+              </button>
+              {categoriasDisponibles.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => updateParam('categoria', c)}
+                  className={cn(
+                    'h-8 px-3 rounded-full text-xs border capitalize',
+                    categoria === c
+                      ? 'border-cyan-500 bg-cyan-500 text-white'
+                      : 'border-[var(--border-subtle)] text-zinc-400'
+                  )}
+                >
+                  {c}
                 </button>
               ))}
             </div>
