@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { anthropic, CLAUDE_MODEL } from '@/lib/ai/anthropic'
+import { openai, OPENAI_MODEL } from '@/lib/ai/openai'
+import { getAIProvider } from '@/lib/ai/provider'
 import { PROMPT_TICKET, type TicketParsed } from '@/lib/ai/prompts'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
@@ -9,10 +11,59 @@ export const maxDuration = 60
 
 function extractJSON(text: string): unknown {
   const trimmed = text.trim()
-  // Si viene envuelto en ```json … ```, lo limpiamos
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
   const raw = fence ? fence[1] : trimmed
   return JSON.parse(raw)
+}
+
+async function parseConOpenAI(buf: Buffer, mediaType: string): Promise<TicketParsed> {
+  const base64 = buf.toString('base64')
+  const completion = await openai.chat.completions.create({
+    model: OPENAI_MODEL,
+    messages: [
+      { role: 'system', content: PROMPT_TICKET },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Extrae los datos de esta imagen y devuelve solo el JSON.' },
+          { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
+        ],
+      },
+    ],
+    response_format: { type: 'json_object' },
+    max_tokens: 1024,
+    temperature: 0.1,
+  })
+  const text = completion.choices[0]?.message?.content || ''
+  return extractJSON(text) as TicketParsed
+}
+
+async function parseConAnthropic(buf: Buffer, mediaType: string): Promise<TicketParsed> {
+  const base64 = buf.toString('base64')
+  const message = await anthropic.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 1024,
+    system: [{ type: 'text', text: PROMPT_TICKET, cache_control: { type: 'ephemeral' } }],
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: mediaType as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif',
+              data: base64,
+            },
+          },
+          { type: 'text', text: 'Extrae los datos de esta imagen y devuelve solo el JSON.' },
+        ],
+      },
+    ],
+  })
+  const textBlock = message.content.find((c) => c.type === 'text')
+  if (!textBlock || textBlock.type !== 'text') throw new Error('Respuesta vacía de IA')
+  return extractJSON(textBlock.text) as TicketParsed
 }
 
 export async function POST(req: Request) {
@@ -32,7 +83,6 @@ export async function POST(req: Request) {
     const ext = (file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
     const path = `${user.id}/${Date.now()}.${ext}`
 
-    // Subir a Supabase Storage con service role (bypassa RLS)
     const admin = createAdminClient()
     const { error: upErr } = await admin.storage.from('recibos').upload(path, buf, {
       contentType: file.type,
@@ -41,52 +91,17 @@ export async function POST(req: Request) {
     if (upErr) {
       return NextResponse.json({ error: `Upload: ${upErr.message}` }, { status: 500 })
     }
-
-    // URL firmada para que la UI pueda mostrarla luego (1 hora)
     const { data: signed } = await admin.storage.from('recibos').createSignedUrl(path, 3600)
-
-    // Llamar a Claude con vision + prompt cacheable
-    const mediaType = file.type as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
-    const base64 = buf.toString('base64')
-
-    const message = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 1024,
-      system: [
-        {
-          type: 'text',
-          text: PROMPT_TICKET,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: mediaType, data: base64 },
-            },
-            {
-              type: 'text',
-              text: 'Extrae los datos de esta imagen y devuelve solo el JSON.',
-            },
-          ],
-        },
-      ],
-    })
-
-    const textBlock = message.content.find((c) => c.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') {
-      return NextResponse.json({ error: 'Respuesta vacía de IA' }, { status: 500 })
-    }
 
     let parsed: TicketParsed
     try {
-      parsed = extractJSON(textBlock.text) as TicketParsed
-    } catch {
+      const provider = getAIProvider()
+      parsed = provider === 'anthropic'
+        ? await parseConAnthropic(buf, file.type)
+        : await parseConOpenAI(buf, file.type)
+    } catch (e) {
       return NextResponse.json(
-        { error: 'No pude parsear la respuesta de IA', raw: textBlock.text },
+        { error: e instanceof Error ? `IA: ${e.message}` : 'IA: error desconocido' },
         { status: 502 }
       )
     }
@@ -96,12 +111,6 @@ export async function POST(req: Request) {
       parsed,
       foto_path: path,
       foto_url: signed?.signedUrl ?? null,
-      cache_stats: {
-        cache_creation_input_tokens: message.usage.cache_creation_input_tokens ?? 0,
-        cache_read_input_tokens: message.usage.cache_read_input_tokens ?? 0,
-        input_tokens: message.usage.input_tokens,
-        output_tokens: message.usage.output_tokens,
-      },
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error desconocido'

@@ -14,12 +14,12 @@ export default async function ChatPage() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-black heading-gradient">Captura con IA</h1>
           <span className="chip chip-green">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            claude-sonnet-4-6
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Activo
           </span>
         </div>
         <p className="text-sm text-zinc-400">
-          Foto, voz o pega un screenshot. La IA lo convierte en transacción.
+          Texto, voz, foto o pregunta lo que quieras. La IA convierte en transacción y contesta dudas.
         </p>
       </header>
 
