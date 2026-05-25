@@ -23,24 +23,46 @@ export default async function DashboardPage(
   const supabase = await createClient()
   const admin = createAdminClient()
 
-  const [{ data: transacciones }, { data: negocios }, { data: ultimas }, { count: nTareas }] =
-    await Promise.all([
-      supabase
-        .from('transacciones')
-        .select('tipo, monto, moneda, fecha, categoria, negocio_id')
-        .gte('fecha', r.desde)
-        .lte('fecha', r.hasta),
-      supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
-      supabase
-        .from('transacciones')
-        .select('id, tipo, monto, moneda, fecha, concepto, negocios(nombre)')
-        .order('created_at', { ascending: false })
-        .limit(5),
-      admin
-        .from('tareas')
-        .select('id', { count: 'exact', head: true })
-        .in('estado', ['pendiente', 'en_progreso']),
-    ])
+  const [
+    { data: transacciones },
+    { data: negocios },
+    { data: ultimas },
+    { count: nTareas },
+    { count: nPendientes },
+    { count: nMultas },
+    { data: eventosProx },
+  ] = await Promise.all([
+    supabase
+      .from('transacciones')
+      .select('tipo, monto, moneda, fecha, categoria, negocio_id')
+      .gte('fecha', r.desde)
+      .lte('fecha', r.hasta),
+    supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
+    supabase
+      .from('transacciones')
+      .select('id, tipo, monto, moneda, fecha, concepto, negocios(nombre)')
+      .order('created_at', { ascending: false })
+      .limit(5),
+    admin
+      .from('tareas')
+      .select('id', { count: 'exact', head: true })
+      .in('estado', ['pendiente', 'en_progreso', 'vencida']),
+    admin
+      .from('auditor_pendientes')
+      .select('id', { count: 'exact', head: true })
+      .eq('estado', 'abierta'),
+    admin
+      .from('multas')
+      .select('id', { count: 'exact', head: true })
+      .in('estado', ['propuesta', 'justificada', 'reduccion_solicitada', 'pendiente_conversacion']),
+    supabase
+      .from('eventos')
+      .select('id, cliente_nombre, fecha_evento, monto_total, moneda')
+      .gte('fecha_evento', new Date().toISOString().slice(0, 10))
+      .in('estado', ['reservado', 'confirmado'])
+      .order('fecha_evento', { ascending: true })
+      .limit(3),
+  ])
 
   const rows = transacciones ?? []
   const t = totalizar(rows)
@@ -80,18 +102,65 @@ export default async function DashboardPage(
         </div>
       </section>
 
-      {/* Tareas pendientes warning */}
-      {(nTareas ?? 0) > 0 && (
-        <Link href="/tareas" className="block">
-          <div className="card-glow border-amber-500/40 p-4 flex items-center gap-3 hover:bg-amber-500/5 transition-colors">
-            <span className="text-2xl">⌛</span>
-            <div className="flex-1">
-              <p className="text-sm font-bold text-amber-300">{nTareas} tareas pendientes</p>
-              <p className="text-xs text-amber-300/70">Toca para revisar</p>
-            </div>
-            <ChevronRight className="h-5 w-5 text-amber-300" />
+      {/* Action Center - cosas que requieren atención */}
+      {((nTareas ?? 0) > 0 || (nPendientes ?? 0) > 0 || (nMultas ?? 0) > 0) && (
+        <section className="space-y-2">
+          <p className="label-caps">Requiere atención</p>
+          <div className="grid grid-cols-1 gap-2">
+            {(nTareas ?? 0) > 0 && (
+              <Link href="/tareas" className="card border-amber-500/40 bg-amber-500/5 p-3 flex items-center gap-3 hover:bg-amber-500/10 transition-colors">
+                <span className="text-2xl">⌛</span>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-amber-300">{nTareas} tareas activas</p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-amber-300" />
+              </Link>
+            )}
+            {(nMultas ?? 0) > 0 && (
+              <Link href="/multas" className="card border-rose-500/40 bg-rose-500/5 p-3 flex items-center gap-3 hover:bg-rose-500/10 transition-colors">
+                <span className="text-2xl">⚠️</span>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-rose-300">{nMultas} multas por resolver</p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-rose-300" />
+              </Link>
+            )}
+            {(nPendientes ?? 0) > 0 && (
+              <Link href="/auditor" className="card border-cyan-500/40 bg-cyan-500/5 p-3 flex items-center gap-3 hover:bg-cyan-500/10 transition-colors">
+                <span className="text-2xl">🤖</span>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-cyan-300">{nPendientes} preguntas del auditor</p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-cyan-300" />
+              </Link>
+            )}
           </div>
-        </Link>
+        </section>
+      )}
+
+      {/* Próximos eventos */}
+      {eventosProx && eventosProx.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <p className="label-caps">🎉 Próximos eventos</p>
+            <Link href="/eventos" className="text-xs text-cyan-400 font-semibold">Ver todos →</Link>
+          </div>
+          <ul className="space-y-1.5">
+            {eventosProx.map((e) => (
+              <li key={e.id}>
+                <Link href={`/eventos/${e.id}`} className="card flex items-center gap-3 p-3 hover:bg-[var(--bg-card-hover)] transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{e.cliente_nombre}</p>
+                    <p className="text-xs text-zinc-500">{formatearFecha(e.fecha_evento, 'EEEE dd MMM')}</p>
+                  </div>
+                  <p className="text-sm font-bold text-emerald-400 tabular-nums">
+                    {formatMoney(Number(e.monto_total), e.moneda as 'MXN' | 'USD')}
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* KPIs Ingresos / Gastos */}
