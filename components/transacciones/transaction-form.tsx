@@ -1,0 +1,330 @@
+'use client'
+
+import { useActionState, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Trash2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { CATEGORIAS_GASTO, CATEGORIAS_INGRESO, METODOS_PAGO, metodoPagoDefault } from '@/lib/categorias'
+import {
+  createTransaccion,
+  updateTransaccion,
+  deleteTransaccion,
+  type ActionState,
+} from '@/app/(app)/transacciones/actions'
+
+export type NegocioOpt = { id: string; nombre: string; tipo: string; moneda_principal: string }
+export type CuentaOpt  = { id: string; nombre: string; tipo: string | null; moneda: string }
+
+export type TransaccionDefault = {
+  id?: string
+  tipo: 'ingreso' | 'gasto'
+  monto?: string
+  moneda?: 'MXN' | 'USD'
+  fecha: string
+  negocio_id?: string | null
+  cuenta_id?: string | null
+  metodo_pago?: string | null
+  categoria?: string | null
+  concepto?: string | null
+  notas?: string | null
+}
+
+export function TransactionForm({
+  negocios,
+  cuentas,
+  defaults,
+}: {
+  negocios: NegocioOpt[]
+  cuentas: CuentaOpt[]
+  defaults: TransaccionDefault
+}) {
+  const router = useRouter()
+  const isEdit = !!defaults.id
+
+  const [tipo, setTipo] = useState<'ingreso' | 'gasto'>(defaults.tipo)
+  const [moneda, setMoneda] = useState<'MXN' | 'USD'>(defaults.moneda ?? 'MXN')
+  const [negocioId, setNegocioId] = useState<string>(defaults.negocio_id ?? '')
+  const [cuentaId, setCuentaId] = useState<string>(defaults.cuenta_id ?? '')
+  const [metodoPago, setMetodoPago] = useState<string>(defaults.metodo_pago ?? '')
+  const [categoria, setCategoria] = useState<string>(defaults.categoria ?? '')
+  const [mostrarMas, setMostrarMas] = useState(false)
+
+  const action = isEdit
+    ? updateTransaccion.bind(null, defaults.id!)
+    : createTransaccion
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(action, {})
+
+  // Cuando cambia la cuenta, sugerimos el método de pago
+  const onCuentaChange = (id: string) => {
+    setCuentaId(id)
+    const c = cuentas.find((x) => x.id === id)
+    if (!c) return
+    const sugerido =
+      c.tipo === 'efectivo'
+        ? c.moneda === 'USD' ? 'efectivo_usd' : 'efectivo_mxn'
+        : metodoPagoDefault(c.tipo)
+    if (sugerido) setMetodoPago(sugerido)
+    if (c.moneda === 'USD' || c.moneda === 'MXN') setMoneda(c.moneda as 'MXN' | 'USD')
+  }
+
+  const categorias = useMemo(
+    () => (tipo === 'gasto' ? CATEGORIAS_GASTO : CATEGORIAS_INGRESO),
+    [tipo]
+  )
+
+  const handleDelete = async () => {
+    if (!defaults.id) return
+    if (!confirm('¿Eliminar esta transacción?')) return
+    await deleteTransaccion(defaults.id)
+  }
+
+  return (
+    <form action={formAction} className="space-y-5">
+      {/* Tipo */}
+      <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800">
+        <input type="hidden" name="tipo" value={tipo} />
+        <button
+          type="button"
+          onClick={() => setTipo('gasto')}
+          className={cn(
+            'h-11 rounded-lg text-sm font-medium transition-colors',
+            tipo === 'gasto'
+              ? 'bg-red-600 text-white shadow'
+              : 'text-zinc-600 dark:text-zinc-300'
+          )}
+        >
+          Gasto
+        </button>
+        <button
+          type="button"
+          onClick={() => setTipo('ingreso')}
+          className={cn(
+            'h-11 rounded-lg text-sm font-medium transition-colors',
+            tipo === 'ingreso'
+              ? 'bg-emerald-600 text-white shadow'
+              : 'text-zinc-600 dark:text-zinc-300'
+          )}
+        >
+          Ingreso
+        </button>
+      </div>
+
+      {/* Monto + Moneda */}
+      <div className="space-y-2">
+        <label htmlFor="monto" className="text-sm font-medium">Monto</label>
+        <div className="flex gap-2">
+          <input
+            id="monto"
+            name="monto"
+            type="text"
+            inputMode="decimal"
+            required
+            defaultValue={defaults.monto ?? ''}
+            placeholder="0.00"
+            className="flex-1 h-14 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-2xl font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800">
+            <input type="hidden" name="moneda" value={moneda} />
+            {(['MXN', 'USD'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMoneda(m)}
+                className={cn(
+                  'h-12 w-14 rounded-lg text-sm font-bold transition-colors',
+                  moneda === m
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow'
+                    : 'text-zinc-500'
+                )}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Negocio */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Negocio</label>
+        <input type="hidden" name="negocio_id" value={negocioId} />
+        <div className="flex flex-wrap gap-1.5">
+          {negocios.map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              onClick={() => setNegocioId(n.id)}
+              className={cn(
+                'h-9 px-3 rounded-full text-sm border transition-colors',
+                negocioId === n.id
+                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                  : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300'
+              )}
+            >
+              {n.nombre}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Cuenta */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Cuenta</label>
+        <input type="hidden" name="cuenta_id" value={cuentaId} />
+        <div className="flex flex-wrap gap-1.5">
+          {cuentas.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onCuentaChange(c.id)}
+              className={cn(
+                'h-9 px-3 rounded-full text-sm border transition-colors',
+                cuentaId === c.id
+                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                  : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300'
+              )}
+            >
+              {c.nombre}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Concepto */}
+      <div className="space-y-2">
+        <label htmlFor="concepto" className="text-sm font-medium">Concepto</label>
+        <input
+          id="concepto"
+          name="concepto"
+          type="text"
+          defaultValue={defaults.concepto ?? ''}
+          placeholder="¿En qué fue?"
+          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        />
+      </div>
+
+      {/* Fecha */}
+      <div className="space-y-2">
+        <label htmlFor="fecha" className="text-sm font-medium">Fecha</label>
+        <input
+          id="fecha"
+          name="fecha"
+          type="date"
+          required
+          defaultValue={defaults.fecha}
+          className="w-full h-12 px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        />
+      </div>
+
+      {/* Más opciones */}
+      <button
+        type="button"
+        onClick={() => setMostrarMas((v) => !v)}
+        className="text-sm text-emerald-700 dark:text-emerald-400 font-medium"
+      >
+        {mostrarMas ? '− Menos' : '+ Más opciones (categoría, método de pago, notas)'}
+      </button>
+
+      {mostrarMas && (
+        <div className="space-y-5 pt-1">
+          {/* Categoría */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Categoría</label>
+            <input type="hidden" name="categoria" value={categoria} />
+            <div className="flex flex-wrap gap-1.5">
+              {categorias.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCategoria(c)}
+                  className={cn(
+                    'h-8 px-2.5 rounded-full text-xs border transition-colors',
+                    categoria === c
+                      ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                      : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400'
+                  )}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Método de pago */}
+          <div className="space-y-2">
+            <label htmlFor="metodo_pago" className="text-sm font-medium">Método de pago</label>
+            <select
+              id="metodo_pago"
+              name="metodo_pago"
+              value={metodoPago}
+              onChange={(e) => setMetodoPago(e.target.value)}
+              className="w-full h-12 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="">(automático)</option>
+              {METODOS_PAGO.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Notas */}
+          <div className="space-y-2">
+            <label htmlFor="notas" className="text-sm font-medium">Notas</label>
+            <textarea
+              id="notas"
+              name="notas"
+              rows={3}
+              defaultValue={defaults.notas ?? ''}
+              placeholder="Opcional"
+              className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Errores */}
+      {state.error && (
+        <p className="text-sm text-red-600 dark:text-red-400">{state.error}</p>
+      )}
+      {state.fieldErrors && (
+        <ul className="text-sm text-red-600 dark:text-red-400 list-disc list-inside">
+          {Object.entries(state.fieldErrors).map(([field, errs]) =>
+            errs?.map((e) => <li key={field + e}>{e}</li>)
+          )}
+        </ul>
+      )}
+
+      {/* Botones */}
+      <div className="flex gap-2 pt-2">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="flex-1 h-12 rounded-xl border border-zinc-300 dark:border-zinc-700 font-medium"
+        >
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          disabled={pending}
+          className={cn(
+            'flex-[2] h-12 rounded-xl text-white font-semibold disabled:opacity-50',
+            tipo === 'gasto' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
+          )}
+        >
+          {pending ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Guardar'}
+        </button>
+      </div>
+
+      {isEdit && (
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="w-full mt-2 h-11 rounded-xl border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 font-medium flex items-center justify-center gap-2"
+        >
+          <Trash2 className="h-4 w-4" />
+          Eliminar transacción
+        </button>
+      )}
+    </form>
+  )
+}
