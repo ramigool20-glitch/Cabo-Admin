@@ -49,11 +49,11 @@ export function TransactionList({ transacciones }: { transacciones: Transaccion[
 
   if (transacciones.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-10 text-center space-y-3">
+      <div className="rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)] p-10 text-center space-y-3">
         <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600">
           <ArrowUpCircle className="h-6 w-6" />
         </div>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="text-sm text-zinc-400">
           Sin transacciones todavía. Toca el botón <strong>+</strong> abajo a la derecha para capturar la primera.
         </p>
       </div>
@@ -74,7 +74,7 @@ export function TransactionList({ transacciones }: { transacciones: Transaccion[
           <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide px-1">
             {formatearFecha(fecha, 'EEEE, dd MMM')}
           </h2>
-          <ul className="rounded-2xl border bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">
+          <ul className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] divide-y divide-[var(--border-subtle)] overflow-hidden">
             {items.map((t) => {
               const meta = tipoMeta[t.tipo]
               const Icon = meta.icon

@@ -78,7 +78,7 @@ export default async function DetalleNegocioPage(
     <div className="px-4 pt-4 pb-4 space-y-5">
       <Link
         href="/negocios"
-        className="inline-flex items-center gap-1 text-sm text-zinc-600 dark:text-zinc-400"
+        className="inline-flex items-center gap-1 text-sm text-zinc-400"
       >
         <ChevronLeft className="h-4 w-4" />
         Negocios
@@ -105,8 +105,8 @@ export default async function DetalleNegocioPage(
       </header>
 
       {/* Utilidad principal */}
-      <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-1">
-        <div className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-1">
+        <div className="flex items-center gap-1.5 text-zinc-400">
           <TrendingUp className="h-4 w-4" />
           <span className="text-xs font-medium uppercase tracking-wide">Utilidad · {r.label}</span>
         </div>
@@ -122,7 +122,7 @@ export default async function DetalleNegocioPage(
 
       {/* Ingresos / Gastos */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-1">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-1">
           <div className="flex items-center gap-1.5 text-emerald-600">
             <ArrowUpCircle className="h-4 w-4" />
             <span className="text-xs font-medium">Ingresos</span>
@@ -132,7 +132,7 @@ export default async function DetalleNegocioPage(
             <p className="text-xs text-zinc-500 tabular-nums">+ {formatMoney(t.ingresos_usd, 'USD')}</p>
           )}
         </div>
-        <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-1">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-1">
           <div className="flex items-center gap-1.5 text-red-600">
             <ArrowDownCircle className="h-4 w-4" />
             <span className="text-xs font-medium">Gastos</span>
@@ -154,7 +154,7 @@ export default async function DetalleNegocioPage(
       <section className="space-y-2">
         <h2 className="text-sm font-semibold px-1">Últimas transacciones</h2>
         {ultimas && ultimas.length > 0 ? (
-          <ul className="rounded-2xl border bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">
+          <ul className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] divide-y divide-[var(--border-subtle)] overflow-hidden">
             {ultimas.map((u) => {
               const isGasto = u.tipo === 'gasto' || u.tipo === 'multa_interna'
               const editable = u.tipo === 'ingreso' || u.tipo === 'gasto'
@@ -178,7 +178,7 @@ export default async function DetalleNegocioPage(
             })}
           </ul>
         ) : (
-          <div className="rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 text-center text-sm text-zinc-500">
+          <div className="rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)] p-6 text-center text-sm text-zinc-500">
             Sin transacciones de este negocio aún.
           </div>
         )}

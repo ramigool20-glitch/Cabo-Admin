@@ -66,7 +66,7 @@ export function EmpleadoForm({ defaults }: { defaults: EmpleadoDefault }) {
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
 
       <div className="flex gap-2 pt-2">
-        <button type="button" onClick={() => router.back()} className="flex-1 h-12 rounded-xl border border-zinc-300 dark:border-zinc-700 font-medium">
+        <button type="button" onClick={() => router.back()} className="flex-1 h-12 rounded-xl border border-[var(--border-subtle)] font-medium">
           Cancelar
         </button>
         <button type="submit" disabled={pending} className="flex-[2] h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50">

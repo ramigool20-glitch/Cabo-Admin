@@ -4,7 +4,7 @@ import type { MetricasPagina } from '@/lib/roas'
 
 export function RoasCard({ m, moneda = 'MXN' }: { m: MetricasPagina; moneda?: 'MXN' | 'USD' }) {
   return (
-    <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-3">
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
         Métricas de página digital
       </p>

@@ -63,7 +63,7 @@ export function PagoForm({
                 'w-full text-left rounded-xl border p-3 transition-colors',
                 compId === c.id
                   ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950'
-                  : 'border-zinc-300 dark:border-zinc-700'
+                  : 'border-[var(--border-subtle)]'
               )}
             >
               <p className="text-sm font-medium">{c.negocio_nombre}</p>

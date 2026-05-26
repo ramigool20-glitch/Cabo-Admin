@@ -2,7 +2,6 @@ import { CheckSquare } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { TareaRow, type TareaListItem } from '@/components/tareas/tarea-row'
-import { Fab } from '@/components/ui/fab'
 
 export default async function TareasPage() {
   const supabase = await createClient()
@@ -93,7 +92,6 @@ export default async function TareasPage() {
         </>
       )}
 
-      <Fab href="/tareas/nueva" label="Nueva tarea" />
     </div>
   )
 }

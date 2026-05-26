@@ -3,7 +3,6 @@ import { Calendar, ChevronRight, PartyPopper } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
-import { Fab } from '@/components/ui/fab'
 
 const ESTADO_CHIP = {
   reservado:        { l: 'Reservado',     c: 'chip-yellow' },
@@ -103,7 +102,6 @@ export default async function EventosPage() {
         </section>
       )}
 
-      <Fab href="/eventos/nuevo" label="Nuevo evento" />
     </div>
   )
 }

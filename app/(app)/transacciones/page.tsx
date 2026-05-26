@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { TransactionList, type Transaccion } from '@/components/transacciones/transaction-list'
 import { FiltersBar } from '@/components/transacciones/filters-bar'
 import { RangoSelector } from '@/components/dashboard/rango-selector'
-import { Fab } from '@/components/ui/fab'
 import { formatMoney } from '@/lib/utils'
 import { isRangoId, rangoFechas, type RangoId } from '@/lib/rangos'
 import { totalizar } from '@/lib/agregaciones'
@@ -95,7 +94,6 @@ export default async function TransaccionesPage(
 
       <TransactionList transacciones={(transacciones ?? []) as unknown as Transaccion[]} />
 
-      <Fab href="/transacciones/nueva" label="Nueva transacción" />
     </div>
   )
 }

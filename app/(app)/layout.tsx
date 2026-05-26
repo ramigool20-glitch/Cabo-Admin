@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AppHeader } from '@/components/nav/app-header'
 import { TopTabs } from '@/components/nav/top-tabs'
+import { QuickActionFab } from '@/components/ui/quick-action-fab'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -26,6 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <AppHeader nombre={nombre} />
       <TopTabs />
       <main className="flex-1">{children}</main>
+      <QuickActionFab />
     </div>
   )
 }

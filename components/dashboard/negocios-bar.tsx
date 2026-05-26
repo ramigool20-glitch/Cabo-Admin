@@ -8,7 +8,7 @@ export function NegociosBar({ data }: { data: PuntoNegocio[] }) {
   if (data.length === 0) return null
 
   return (
-    <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4">
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-3">
         Por negocio (MXN)
       </p>

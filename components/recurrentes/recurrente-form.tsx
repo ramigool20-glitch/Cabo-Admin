@@ -284,7 +284,7 @@ export function RecurrenteForm({
           name="comprobante_requerido"
           checked={compReq}
           onChange={(e) => setCompReq(e.target.checked)}
-          className="h-5 w-5 rounded border-zinc-300 dark:border-zinc-700 text-emerald-600 focus:ring-emerald-500"
+          className="h-5 w-5 rounded border-[var(--border-subtle)] text-emerald-600 focus:ring-emerald-500"
         />
         <span className="text-sm">Pedir foto del comprobante al marcar pagado</span>
       </label>

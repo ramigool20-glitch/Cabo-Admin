@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { totalMensualEquivalente } from '@/lib/recurrentes-total'
-import { Fab } from '@/components/ui/fab'
 
 export default async function RecurrentesPage() {
   const supabase = await createClient()
@@ -102,7 +101,6 @@ export default async function RecurrentesPage() {
         </div>
       )}
 
-      <Fab href="/recurrentes/nuevo" label="Nuevo gasto fijo" />
     </div>
   )
 }

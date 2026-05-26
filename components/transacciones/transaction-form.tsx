@@ -133,7 +133,7 @@ export function TransactionForm({
                 className={cn(
                   'h-12 w-14 rounded-lg text-sm font-bold transition-colors',
                   moneda === m
-                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow'
+                    ? 'bg-[var(--bg-card)] text-white shadow'
                     : 'text-zinc-500'
                 )}
               >
@@ -158,7 +158,7 @@ export function TransactionForm({
                 'h-9 px-3 rounded-full text-sm border transition-colors',
                 negocioId === n.id
                   ? 'border-emerald-600 bg-emerald-600 text-white'
-                  : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-300'
+                  : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-300'
               )}
             >
               {n.nombre}
@@ -181,7 +181,7 @@ export function TransactionForm({
                 'h-9 px-3 rounded-full text-sm border transition-colors',
                 cuentaId === c.id
                   ? 'border-emerald-600 bg-emerald-600 text-white'
-                  : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-300'
+                  : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-300'
               )}
             >
               {c.nombre}

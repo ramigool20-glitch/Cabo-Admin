@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { Users, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { Fab } from '@/components/ui/fab'
 
 export default async function NominaPage() {
   const supabase = await createClient()
@@ -15,13 +14,13 @@ export default async function NominaPage() {
     <div className="px-4 pt-6 pb-4 space-y-4">
       <header className="space-y-1">
         <h1 className="text-2xl font-bold tracking-tight">Nómina</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="text-sm text-zinc-400">
           {empleados?.length ?? 0} {(empleados?.length ?? 0) === 1 ? 'empleado' : 'empleados'} activos.
         </p>
       </header>
 
       {empleados && empleados.length > 0 ? (
-        <ul className="rounded-2xl border bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">
+        <ul className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] divide-y divide-[var(--border-subtle)] overflow-hidden">
           {empleados.map((e) => {
             const comps = (e.empleado_compensacion as Array<{ activo: boolean }> | null) ?? []
             const nActivas = comps.filter((c) => c.activo).length
@@ -44,12 +43,11 @@ export default async function NominaPage() {
           })}
         </ul>
       ) : (
-        <div className="rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-10 text-center text-sm text-zinc-500">
+        <div className="rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)] p-10 text-center text-sm text-zinc-500">
           Sin empleados aún. Toca <strong>+</strong> para agregar el primero.
         </div>
       )}
 
-      <Fab href="/nomina/nuevo" label="Nuevo empleado" />
     </div>
   )
 }

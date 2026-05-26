@@ -23,7 +23,7 @@ export function BottomNav() {
   const pathname = usePathname()
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-950/95 backdrop-blur"
+      className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--border-subtle)] bg-white/95 dark:bg-zinc-950/95 backdrop-blur"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <ul className="flex h-16 items-stretch justify-around">

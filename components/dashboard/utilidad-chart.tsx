@@ -8,14 +8,14 @@ export type PuntoUtilidad = { fecha: string; ingresos: number; gastos: number; u
 export function UtilidadChart({ data }: { data: PuntoUtilidad[] }) {
   if (data.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-8 text-center text-sm text-zinc-500">
+      <div className="rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)] p-8 text-center text-sm text-zinc-500">
         Sin movimientos en el rango seleccionado.
       </div>
     )
   }
 
   return (
-    <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4">
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-3">
         Utilidad por día (MXN)
       </p>

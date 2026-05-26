@@ -60,7 +60,7 @@ export function PushSection() {
 
   if (estado === 'cargando') {
     return (
-      <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 text-sm text-zinc-500">
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 text-sm text-zinc-500">
         Cargando estado de notificaciones…
       </div>
     )
@@ -68,7 +68,7 @@ export function PushSection() {
 
   if (estado === 'no_soportado') {
     return (
-      <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-2">
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-2">
         <div className="inline-flex items-center gap-2 text-amber-600 text-sm font-medium">
           <AlertCircle className="h-4 w-4" />
           Push no disponible
@@ -82,7 +82,7 @@ export function PushSection() {
 
   if (estado === 'denegado') {
     return (
-      <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-2">
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-2">
         <div className="inline-flex items-center gap-2 text-red-600 text-sm font-medium">
           <BellOff className="h-4 w-4" />
           Notificaciones bloqueadas
@@ -97,7 +97,7 @@ export function PushSection() {
   const activo = estado === 'activo'
 
   return (
-    <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4 space-y-3">
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="inline-flex items-center gap-2 text-sm font-medium">
           {activo ? (
@@ -109,7 +109,7 @@ export function PushSection() {
             </>
           ) : (
             <>
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] text-zinc-600">
                 <BellOff className="h-4 w-4" />
               </span>
               <span>Sin activar</span>
@@ -141,7 +141,7 @@ export function PushSection() {
               type="button"
               onClick={handleProbar}
               disabled={pending}
-              className="flex-1 h-10 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+              className="flex-1 h-10 rounded-lg border border-[var(--border-subtle)] text-sm font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Enviar prueba

@@ -52,14 +52,14 @@ export default async function DetalleEmpleadoPage(
 
       <header className="space-y-1">
         <h1 className="text-2xl font-bold tracking-tight">{empleado.nombre}</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">{empleado.puesto || 'Sin puesto'}</p>
+        <p className="text-sm text-zinc-400">{empleado.puesto || 'Sin puesto'}</p>
       </header>
 
       {/* Compensaciones */}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold px-1">Compensaciones</h2>
         {comps && comps.length > 0 ? (
-          <ul className="rounded-2xl border bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">
+          <ul className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] divide-y divide-[var(--border-subtle)] overflow-hidden">
             {comps.map((c) => {
               const neg = c.negocios as unknown as { nombre: string } | null
               return (
@@ -88,7 +88,7 @@ export default async function DetalleEmpleadoPage(
           <p className="text-sm text-zinc-500">Aún no hay compensaciones.</p>
         )}
 
-        <details className="rounded-2xl border bg-white dark:bg-zinc-900 p-4">
+        <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
           <summary className="text-sm font-medium cursor-pointer">+ Agregar compensación</summary>
           <div className="pt-3">
             <CompensacionForm empleadoId={id} negocios={negocios ?? []} />
@@ -99,7 +99,7 @@ export default async function DetalleEmpleadoPage(
       {/* Registrar pago */}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold px-1">Registrar pago</h2>
-        <div className="rounded-2xl border bg-white dark:bg-zinc-900 p-4">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
           <PagoForm empleadoId={id} compensaciones={compsForPago} cuentas={cuentas ?? []} />
         </div>
       </section>
@@ -108,7 +108,7 @@ export default async function DetalleEmpleadoPage(
       {pagos && pagos.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold px-1">Histórico de pagos</h2>
-          <ul className="rounded-2xl border bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">
+          <ul className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] divide-y divide-[var(--border-subtle)] overflow-hidden">
             {pagos.map((p) => {
               const neg = p.negocios as unknown as { nombre: string } | null
               return (
