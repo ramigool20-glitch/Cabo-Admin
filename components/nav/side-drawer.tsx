@@ -31,6 +31,7 @@ const HERRAMIENTAS = [
   { href: '/multas',        label: 'Multas',      icon: AlertTriangle,   emoji: '⚠️' },
   { href: '/eventos',       label: 'Eventos',     icon: Calendar,        emoji: '🎉' },
   { href: '/recurrentes',   label: 'Gastos Fijos', icon: Calendar,       emoji: '📅' },
+  { href: '/por-pagar',     label: 'Por Pagar',   icon: AlertTriangle,   emoji: '💸', badge: 'NEW' },
   { href: '/nomina',        label: 'Nómina',      icon: Users,           emoji: '👥' },
   { href: '/auditor',       label: 'Auditor IA',  icon: Sparkles,        emoji: '🤖' },
   { href: '/config',        label: 'Configuración', icon: Settings,      emoji: '⚙️' },

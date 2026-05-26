@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Plus, X, MessageCircle, Receipt, CreditCard, Calendar, CheckSquare, PartyPopper,
+  Plus, X, MessageCircle, Receipt, CreditCard, Calendar, CheckSquare, PartyPopper, AlertCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +14,7 @@ const ACCIONES = [
   { href: '/tareas/nueva',      label: 'Tarea',          icon: CheckSquare,    color: 'from-amber-500 to-orange-500' },
   { href: '/eventos/nuevo',     label: 'Evento',         icon: PartyPopper,    color: 'from-pink-500 to-rose-500' },
   { href: '/recurrentes/nuevo', label: 'Gasto fijo',     icon: Calendar,       color: 'from-blue-500 to-indigo-500' },
+  { href: '/por-pagar/nueva',   label: 'Por pagar',      icon: AlertCircle,    color: 'from-red-500 to-rose-500' },
 ]
 
 export function QuickActionFab() {
