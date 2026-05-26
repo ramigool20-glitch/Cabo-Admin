@@ -196,36 +196,85 @@ async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
 
   const [
     { data: tx },
+    { data: txMesAnterior },
     { data: negocios },
     { data: cuentas },
     { data: empleados },
     { data: recurrentes },
     { data: pendientes },
+    { data: porPagar },
+    { data: eventos },
+    { data: multas },
   ] = await Promise.all([
     admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', desde).lte('fecha', hasta),
-    admin.from('negocios').select('nombre, tipo').eq('activo', true).order('nombre'),
-    admin.from('cuentas').select('nombre, moneda').eq('activo', true).order('nombre'),
-    admin.from('empleados').select('nombre, puesto').eq('activo', true),
-    admin.from('gastos_recurrentes').select('nombre, monto, moneda, frecuencia, categoria').eq('activo', true),
+    admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', new Date(new Date(desde).setMonth(new Date(desde).getMonth() - 1)).toISOString().slice(0, 10)).lt('fecha', desde),
+    admin.from('negocios').select('nombre, tipo, url').eq('activo', true).order('nombre'),
+    admin.from('cuentas').select('nombre, moneda, tipo').eq('activo', true).order('nombre'),
+    admin.from('empleados').select('nombre, puesto, empleado_compensacion(sueldo_base, moneda, frecuencia_pago)').eq('activo', true),
+    admin.from('gastos_recurrentes').select('nombre, monto, moneda, frecuencia, categoria, proximo_pago').eq('activo', true).order('proximo_pago'),
     admin.from('auditor_pendientes').select('pregunta, prioridad').eq('estado', 'abierta').limit(10),
+    admin.from('cuentas_por_pagar').select('proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').neq('estado', 'cancelado').neq('estado', 'pagado'),
+    admin.from('eventos').select('cliente_nombre, fecha_evento, monto_total, moneda, estado').gte('fecha_evento', hasta).neq('estado', 'cancelado').order('fecha_evento').limit(5),
+    admin.from('multas').select('motivo, monto_propuesto, moneda, estado').in('estado', ['propuesta', 'justificada', 'reduccion_solicitada', 'pendiente_conversacion']).limit(5),
   ])
 
   const t = totalizar(tx ?? [])
+  const tAnt = totalizar(txMesAnterior ?? [])
   const top = porCategoria(tx ?? [], 5)
+
+  // Crecimiento vs mes anterior
+  const pct = (a: number, b: number) => b === 0 ? null : Math.round(((a - b) / b) * 100)
+  const utilidadDelta = pct(t.utilidad_mxn, tAnt.utilidad_mxn)
+  const ingresosDelta = pct(t.ingresos_mxn, tAnt.ingresos_mxn)
+
+  // Por pagar totales
+  const totalPorPagar = (porPagar ?? []).reduce((s, c) => s + (Number(c.monto_total) - Number(c.monto_pagado)), 0)
+  const porPagarVencidos = (porPagar ?? []).filter((c) => c.fecha_vencimiento && c.fecha_vencimiento < hasta)
+
+  // Recurrentes vencidos
+  const recVencidos = (recurrentes ?? []).filter((r) => r.proximo_pago && r.proximo_pago < hasta)
+  const recProximos = (recurrentes ?? []).filter((r) => r.proximo_pago && r.proximo_pago >= hasta).slice(0, 5)
+
+  // Nómina total mensual estimada
+  const nominaTotal = (empleados ?? []).reduce((s, e) => {
+    const comps = (e.empleado_compensacion as Array<{ sueldo_base: number; moneda: string; frecuencia_pago: string }> | null) ?? []
+    for (const c of comps) {
+      const factor = c.frecuencia_pago === 'mensual' ? 1 : c.frecuencia_pago === 'quincenal' ? 2 : c.frecuencia_pago === 'semanal' ? 4.33 : 0
+      if (c.moneda === 'MXN') s += Number(c.sueldo_base) * factor
+    }
+    return s
+  }, 0)
 
   return {
     contexto: [
-      `Resumen del mes (${desde} a ${hasta}):`,
-      `- Ingresos MXN: ${formatMoney(t.ingresos_mxn, 'MXN')}`,
-      `- Gastos MXN: ${formatMoney(t.gastos_mxn, 'MXN')}`,
-      `- Utilidad MXN: ${formatMoney(t.utilidad_mxn, 'MXN')}`,
+      `📊 ESTADO ACTUAL — Hoy ${hasta}:`,
+      ``,
+      `MES ACTUAL (${desde} a ${hasta}):`,
+      `- Ingresos MXN: ${formatMoney(t.ingresos_mxn, 'MXN')}${t.ingresos_usd > 0 ? `, USD ${formatMoney(t.ingresos_usd, 'USD')}` : ''}${ingresosDelta !== null ? ` (${ingresosDelta >= 0 ? '+' : ''}${ingresosDelta}% vs mes anterior)` : ''}`,
+      `- Gastos MXN: ${formatMoney(t.gastos_mxn, 'MXN')}${t.gastos_usd > 0 ? `, USD ${formatMoney(t.gastos_usd, 'USD')}` : ''}`,
+      `- Utilidad MXN: ${formatMoney(t.utilidad_mxn, 'MXN')}${utilidadDelta !== null ? ` (${utilidadDelta >= 0 ? '+' : ''}${utilidadDelta}% vs mes anterior)` : ''}`,
       `- # transacciones: ${tx?.length ?? 0}`,
-      `- Top categorías: ${top.map((c) => `${c.categoria} ${formatMoney(c.monto, 'MXN')}`).join(', ') || 'sin gastos'}`,
+      `- Top categorías de gasto: ${top.map((c) => `${c.categoria} ${formatMoney(c.monto, 'MXN')}`).join(', ') || 'sin gastos'}`,
+      ``,
+      `🔴 PENDIENTES CRÍTICOS:`,
+      `- Gastos fijos VENCIDOS: ${recVencidos.length === 0 ? 'ninguno ✓' : recVencidos.map((r) => `${r.nombre} (${formatMoney(Number(r.monto), r.moneda as 'MXN' | 'USD')} desde ${r.proximo_pago})`).join('; ')}`,
+      `- Cuentas por pagar vencidas: ${porPagarVencidos.length === 0 ? 'ninguna ✓' : porPagarVencidos.map((c) => `${c.proveedor} ${formatMoney(Number(c.monto_total) - Number(c.monto_pagado), c.moneda as 'MXN' | 'USD')}`).join('; ')}`,
+      `- Multas sin resolver: ${(multas ?? []).length}`,
+      ``,
+      `💰 OBLIGACIONES:`,
+      `- Total adeudado a proveedores: ${formatMoney(totalPorPagar, 'MXN')}`,
+      `- Nómina mensual estimada: ${formatMoney(nominaTotal, 'MXN')}`,
+      `- Gastos fijos próximos: ${recProximos.map((r) => `${r.nombre} ${r.proximo_pago}`).join(', ') || 'ninguno'}`,
+      ``,
+      `🎉 PRÓXIMOS EVENTOS (Rancho McCoy):`,
+      eventos && eventos.length > 0
+        ? eventos.map((e) => `- ${e.cliente_nombre} el ${e.fecha_evento} (${formatMoney(Number(e.monto_total), e.moneda as 'MXN' | 'USD')})`).join('\n')
+        : '- ninguno agendado',
     ].join('\n'),
     negocios: (negocios ?? []).map((n) => `${n.nombre} (${n.tipo})`).join(', '),
     cuentas: (cuentas ?? []).map((c) => `${c.nombre} (${c.moneda})`).join(', '),
     empleados: (empleados ?? []).map((e) => `${e.nombre}${e.puesto ? ` (${e.puesto})` : ''}`).join(', ') || 'ninguno aún',
-    recurrentes: (recurrentes ?? []).map((r) => `${r.nombre} ${r.monto} ${r.moneda} ${r.frecuencia}`).join(', ') || 'ninguno aún',
+    recurrentes: (recurrentes ?? []).slice(0, 10).map((r) => `${r.nombre} ${formatMoney(Number(r.monto), r.moneda as 'MXN' | 'USD')} ${r.frecuencia} (próx: ${r.proximo_pago})`).join('; ') || 'ninguno aún',
     pendientes: (pendientes ?? []).map((p) => `[${p.prioridad}] ${p.pregunta}`).join(' | ') || 'ninguno',
   }
 }

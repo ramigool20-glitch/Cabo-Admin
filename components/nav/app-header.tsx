@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Menu, Bell } from 'lucide-react'
+import { Menu, Bell, Search } from 'lucide-react'
+import Link from 'next/link'
 import { SideDrawer } from './side-drawer'
 import { CaboLogo, CaboWordmark } from '@/components/ui/cabo-logo'
 
@@ -31,14 +32,23 @@ export function AppHeader({ nombre }: { nombre: string }) {
             <CaboWordmark size="md" />
           </div>
 
-          {/* Bell only */}
-          <button
-            type="button"
-            aria-label="Notificaciones"
-            className="h-10 w-10 inline-flex items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] text-cyan-300"
-          >
-            <Bell className="h-4 w-4" />
-          </button>
+          {/* Buscar + Bell */}
+          <div className="flex items-center gap-2">
+            <Link
+              href="/buscar"
+              aria-label="Buscar"
+              className="h-10 w-10 inline-flex items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] text-cyan-300"
+            >
+              <Search className="h-4 w-4" />
+            </Link>
+            <button
+              type="button"
+              aria-label="Notificaciones"
+              className="h-10 w-10 inline-flex items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] text-cyan-300"
+            >
+              <Bell className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </header>
 
