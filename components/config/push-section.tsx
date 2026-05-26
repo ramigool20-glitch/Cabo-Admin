@@ -1,17 +1,33 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { Bell, BellOff, Send, AlertCircle, Loader2, Check } from 'lucide-react'
+import { Bell, BellOff, Send, AlertCircle, Loader2, Check, Smartphone, RefreshCw } from 'lucide-react'
 import { activarPush, desactivarPush, estadoPush, pushSoportado, type EstadoPush } from '@/lib/push/client'
-import { cn } from '@/lib/utils'
+import { toast } from '@/components/ui/toast'
+
+function isIOSStandalone(): boolean {
+  if (typeof window === 'undefined') return false
+  // iOS Safari PWA: navigator.standalone === true
+  return (
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches
+  )
+}
+
+function isIOSDevice(): boolean {
+  if (typeof window === 'undefined') return false
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !('MSStream' in window)
+}
 
 export function PushSection() {
   const [estado, setEstado] = useState<EstadoPush | 'cargando'>('cargando')
-  const [mensaje, setMensaje] = useState<string | null>(null)
-  const [tipoMsg, setTipoMsg] = useState<'ok' | 'error' | null>(null)
+  const [standalone, setStandalone] = useState(false)
+  const [esIOS, setEsIOS] = useState(false)
   const [pending, startTransition] = useTransition()
 
   useEffect(() => {
+    setStandalone(isIOSStandalone())
+    setEsIOS(isIOSDevice())
     if (!pushSoportado()) {
       setEstado('no_soportado')
       return
@@ -19,17 +35,32 @@ export function PushSection() {
     estadoPush().then(setEstado)
   }, [])
 
+  const refrescar = async () => {
+    setEstado(await estadoPush())
+  }
+
   const handleActivar = () => {
-    setMensaje(null)
     startTransition(async () => {
       const res = await activarPush()
       if (res.ok) {
-        setEstado('activo')
-        setMensaje('¡Activado! Te llegarán recordatorios de nómina y rentas.')
-        setTipoMsg('ok')
+        toast.success('🔔 Push activadas', 'Te llegarán recordatorios y alertas')
+        await refrescar()
       } else {
-        setMensaje(res.error || 'Error desconocido')
-        setTipoMsg('error')
+        toast.error('No se pudo activar', res.error || 'Inténtalo de nuevo')
+      }
+    })
+  }
+
+  const handleReactivar = () => {
+    startTransition(async () => {
+      // Forzar limpieza completa y volver a registrar
+      await desactivarPush()
+      const res = await activarPush()
+      if (res.ok) {
+        toast.success('Re-activado', 'Suscripción nueva creada')
+        await refrescar()
+      } else {
+        toast.error('Falló el re-registro', res.error || 'Inténtalo de nuevo')
       }
     })
   }
@@ -37,44 +68,62 @@ export function PushSection() {
   const handleDesactivar = () => {
     startTransition(async () => {
       await desactivarPush()
-      setEstado('no_registrado')
-      setMensaje('Desactivado en este dispositivo.')
-      setTipoMsg('ok')
+      toast.info('Notificaciones desactivadas en este dispositivo')
+      await refrescar()
     })
   }
 
   const handleProbar = () => {
-    setMensaje(null)
     startTransition(async () => {
       const res = await fetch('/api/push/test', { method: 'POST' })
       const data = await res.json()
       if (data.enviados > 0) {
-        setMensaje(`Push enviado a ${data.enviados} dispositivo(s). Debe llegar en segundos.`)
-        setTipoMsg('ok')
+        toast.success(`Push enviado a ${data.enviados} dispositivo${data.enviados > 1 ? 's' : ''}`, 'Si no ves nada, bloquea la pantalla y espera 5s')
       } else {
-        setMensaje('No se pudo enviar. Asegúrate de que esté activado en este dispositivo.')
-        setTipoMsg('error')
+        toast.error('No se pudo enviar', 'Toca "Re-activar" abajo')
       }
     })
   }
 
   if (estado === 'cargando') {
     return (
-      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 text-sm text-zinc-500">
+      <div className="card p-4 text-sm text-zinc-500">
         Cargando estado de notificaciones…
+      </div>
+    )
+  }
+
+  // CASO 1: iOS sin instalar como PWA
+  if (esIOS && !standalone) {
+    return (
+      <div className="card-glow border-amber-500/40 p-4 space-y-3">
+        <div className="inline-flex items-center gap-2 text-amber-300">
+          <Smartphone className="h-5 w-5" />
+          <span className="text-sm font-bold">Instala la app primero</span>
+        </div>
+        <p className="text-xs text-zinc-400">
+          En iPhone, las push <strong>solo funcionan</strong> si la app está instalada en pantalla de inicio.
+        </p>
+        <ol className="text-xs text-zinc-300 space-y-1.5 list-decimal list-inside pl-1">
+          <li>Toca el botón <strong>Compartir</strong> ⬆️ abajo en Safari</li>
+          <li>Desliza y toca <strong>&quot;Añadir a pantalla de inicio&quot;</strong></li>
+          <li>Confirma con <strong>&quot;Añadir&quot;</strong></li>
+          <li>Cierra Safari y <strong>abre la app desde el ícono</strong></li>
+          <li>Vuelve aquí a activar las notificaciones</li>
+        </ol>
       </div>
     )
   }
 
   if (estado === 'no_soportado') {
     return (
-      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-2">
-        <div className="inline-flex items-center gap-2 text-amber-600 text-sm font-medium">
+      <div className="card p-4 space-y-2">
+        <div className="inline-flex items-center gap-2 text-amber-300 text-sm font-medium">
           <AlertCircle className="h-4 w-4" />
           Push no disponible
         </div>
         <p className="text-xs text-zinc-500">
-          Para recibir notificaciones en iPhone tienes que <strong>agregar la app a tu pantalla de inicio</strong> primero (botón Compartir → "Agregar a pantalla de inicio") y abrir la app desde el ícono.
+          Tu navegador no soporta notificaciones push. Usa Safari (iOS 16.4+) o Chrome.
         </p>
       </div>
     )
@@ -82,14 +131,20 @@ export function PushSection() {
 
   if (estado === 'denegado') {
     return (
-      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-2">
-        <div className="inline-flex items-center gap-2 text-red-600 text-sm font-medium">
+      <div className="card-glow border-rose-500/40 p-4 space-y-3">
+        <div className="inline-flex items-center gap-2 text-rose-300 text-sm font-bold">
           <BellOff className="h-4 w-4" />
-          Notificaciones bloqueadas
+          Notificaciones bloqueadas en este dispositivo
         </div>
-        <p className="text-xs text-zinc-500">
-          Bloqueaste las notificaciones. Para activarlas, ve a Configuración del teléfono → Cabo Admin → activa Notificaciones.
+        <p className="text-xs text-zinc-400">
+          Para reactivarlas en iOS:
         </p>
+        <ol className="text-xs text-zinc-300 space-y-1 list-decimal list-inside pl-1">
+          <li>Abre <strong>Ajustes</strong> del iPhone</li>
+          <li>Busca y abre <strong>Cabo Admin</strong> en la lista</li>
+          <li>Toca <strong>Notificaciones</strong> → activa &quot;Permitir notificaciones&quot;</li>
+          <li>Regresa aquí y toca &quot;Activar&quot;</li>
+        </ol>
       </div>
     )
   }
@@ -97,76 +152,75 @@ export function PushSection() {
   const activo = estado === 'activo'
 
   return (
-    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="inline-flex items-center gap-2 text-sm font-medium">
-          {activo ? (
-            <>
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-600">
-                <Bell className="h-4 w-4" />
-              </span>
-              <span>Notificaciones activadas</span>
-            </>
-          ) : (
-            <>
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] text-zinc-600">
-                <BellOff className="h-4 w-4" />
-              </span>
-              <span>Sin activar</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      <p className="text-xs text-zinc-500">
-        Te avisaremos 1 día antes de cada pago de nómina y 2 días antes de cada renta.
-      </p>
-
-      {mensaje && (
-        <p
-          className={cn(
-            'text-xs flex items-start gap-1',
-            tipoMsg === 'ok' ? 'text-emerald-600' : 'text-red-600'
-          )}
-        >
-          {tipoMsg === 'ok' ? <Check className="h-3.5 w-3.5 mt-0.5" /> : <AlertCircle className="h-3.5 w-3.5 mt-0.5" />}
-          <span>{mensaje}</span>
-        </p>
-      )}
-
-      <div className="flex gap-2 pt-1">
+    <div className="card-glow p-4 space-y-3">
+      <div className="flex items-center gap-3">
         {activo ? (
           <>
-            <button
-              type="button"
-              onClick={handleProbar}
-              disabled={pending}
-              className="flex-1 h-10 rounded-lg border border-[var(--border-subtle)] text-sm font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
-            >
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Enviar prueba
-            </button>
-            <button
-              type="button"
-              onClick={handleDesactivar}
-              disabled={pending}
-              className="h-10 px-4 rounded-lg border border-red-200 dark:border-red-900 text-red-600 text-sm font-medium disabled:opacity-50"
-            >
-              Desactivar
-            </button>
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
+              <Bell className="h-5 w-5" />
+            </span>
+            <div className="flex-1 leading-tight">
+              <p className="text-sm font-bold text-emerald-300">Notificaciones activas</p>
+              <p className="text-[11px] text-zinc-400">En este dispositivo</p>
+            </div>
           </>
         ) : (
-          <button
-            type="button"
-            onClick={handleActivar}
-            disabled={pending}
-            className="w-full h-11 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-            Activar notificaciones
-          </button>
+          <>
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-500/20 border border-zinc-500/40 text-zinc-400">
+              <BellOff className="h-5 w-5" />
+            </span>
+            <div className="flex-1 leading-tight">
+              <p className="text-sm font-bold text-white">Sin activar</p>
+              <p className="text-[11px] text-zinc-400">Aquí no recibirás push</p>
+            </div>
+          </>
         )}
       </div>
+
+      <p className="text-[11px] text-zinc-500">
+        Te avisaremos cada mañana, recordatorios de tareas, gastos vencidos y eventos.
+      </p>
+
+      {activo ? (
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={handleProbar}
+            disabled={pending}
+            className="h-10 rounded-lg border border-emerald-500/30 text-emerald-300 text-xs font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+          >
+            {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+            Probar
+          </button>
+          <button
+            type="button"
+            onClick={handleReactivar}
+            disabled={pending}
+            className="h-10 rounded-lg border border-cyan-500/30 text-cyan-300 text-xs font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+          >
+            {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            Re-activar
+          </button>
+          <button
+            type="button"
+            onClick={handleDesactivar}
+            disabled={pending}
+            className="h-10 rounded-lg border border-rose-500/30 text-rose-300 text-xs font-medium disabled:opacity-50"
+          >
+            Apagar
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={handleActivar}
+          disabled={pending}
+          className="btn-primary w-full h-12 text-sm"
+        >
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+          {pending ? 'Activando…' : 'Activar notificaciones push'}
+        </button>
+      )}
     </div>
   )
 }
