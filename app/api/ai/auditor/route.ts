@@ -129,6 +129,65 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'crear_cuenta_por_pagar',
+      description: 'Crea una cuenta por pagar (deuda a proveedor). Úsala cuando digan "le debo X a Y", "tengo pendiente pagar a Z", etc.',
+      parameters: {
+        type: 'object',
+        properties: {
+          proveedor: { type: 'string' },
+          concepto: { type: 'string' },
+          monto_total: { type: 'number' },
+          moneda: { type: 'string', enum: ['MXN', 'USD'] },
+          fecha_vencimiento: { type: 'string', description: 'YYYY-MM-DD opcional' },
+          negocio_nombre: { type: 'string' },
+          categoria: { type: 'string' },
+          referencia: { type: 'string' },
+        },
+        required: ['proveedor', 'concepto', 'monto_total'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'crear_tarea',
+      description: 'Crea una tarea asignada a Miguel, Sergio o ambos.',
+      parameters: {
+        type: 'object',
+        properties: {
+          titulo: { type: 'string' },
+          descripcion: { type: 'string' },
+          asignada_a_nombres: { type: 'array', items: { type: 'string' } },
+          fecha_limite: { type: 'string', description: 'ISO YYYY-MM-DDTHH:mm' },
+          prioridad: { type: 'string', enum: ['alta', 'media', 'baja'] },
+          multa_monto: { type: 'number' },
+        },
+        required: ['titulo', 'asignada_a_nombres', 'fecha_limite'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'crear_evento',
+      description: 'Crea un evento de Rancho McCoy (bodas, etc.) con datos del cliente y fecha.',
+      parameters: {
+        type: 'object',
+        properties: {
+          cliente_nombre: { type: 'string' },
+          tipo_evento: { type: 'string' },
+          fecha_evento: { type: 'string', description: 'YYYY-MM-DD' },
+          monto_total: { type: 'number' },
+          moneda: { type: 'string', enum: ['MXN', 'USD'] },
+          comision_porcentaje: { type: 'number', description: 'default 25' },
+        },
+        required: ['cliente_nombre', 'fecha_evento', 'monto_total'],
+      },
+    },
+  },
 ]
 
 async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
@@ -381,6 +440,72 @@ async function ejecutarTool(
 
     const top = porCategoria((tx ?? []).map(t => ({ ...t, tipo, categoria: t.categoria, fecha: '', negocio_id: t.negocio_id })), 8)
     return JSON.stringify({ tipo, dias, top })
+  }
+
+  if (name === 'crear_cuenta_por_pagar') {
+    const { data: negocios } = await admin.from('negocios').select('id, nombre').eq('activo', true)
+    const h = norm(input.negocio_nombre as string || '')
+    const neg = (negocios ?? []).find((x) => norm(x.nombre).includes(h) || h.includes(norm(x.nombre)))
+
+    const { error } = await admin.from('cuentas_por_pagar').insert({
+      proveedor: String(input.proveedor),
+      concepto: String(input.concepto),
+      monto_total: Number(input.monto_total),
+      moneda: (input.moneda as 'MXN' | 'USD') || 'MXN',
+      fecha_vencimiento: (input.fecha_vencimiento as string) || null,
+      negocio_id: neg?.id || null,
+      categoria: (input.categoria as string) || null,
+      referencia: (input.referencia as string) || null,
+      monto_pagado: 0,
+      estado: 'pendiente',
+    })
+    return error ? `Error: ${error.message}` : `✓ Cuenta por pagar creada: ${input.proveedor} ${input.monto_total} ${input.moneda || 'MXN'}`
+  }
+
+  if (name === 'crear_tarea') {
+    const { data: perfiles } = await admin.from('profiles').select('id, nombre').eq('activo', true)
+    const asignados = (input.asignada_a_nombres as string[] || [])
+      .map((nombre) => {
+        const h = norm(nombre)
+        return (perfiles ?? []).find((p) => norm(p.nombre) === h)?.id
+      })
+      .filter(Boolean) as string[]
+
+    if (asignados.length === 0) return 'No encontré los socios asignados'
+
+    const { error } = await admin.from('tareas').insert({
+      titulo: String(input.titulo),
+      descripcion: (input.descripcion as string) || null,
+      asignada_a: asignados,
+      fecha_limite: String(input.fecha_limite),
+      prioridad: (input.prioridad as string) || 'media',
+      multa_monto: input.multa_monto ? Number(input.multa_monto) : null,
+      moneda_multa: 'MXN',
+      estado: 'pendiente',
+    })
+    return error ? `Error: ${error.message}` : `✓ Tarea creada: ${input.titulo}`
+  }
+
+  if (name === 'crear_evento') {
+    const { data: rancho } = await admin
+      .from('negocios')
+      .select('id')
+      .ilike('nombre', '%rancho%')
+      .eq('activo', true)
+      .maybeSingle()
+    if (!rancho) return 'No encontré negocio Rancho McCoy activo'
+
+    const { error } = await admin.from('eventos').insert({
+      cliente_nombre: String(input.cliente_nombre),
+      tipo_evento: (input.tipo_evento as string) || null,
+      fecha_evento: String(input.fecha_evento),
+      monto_total: Number(input.monto_total),
+      moneda: (input.moneda as 'MXN' | 'USD') || 'MXN',
+      comision_porcentaje: input.comision_porcentaje ? Number(input.comision_porcentaje) : 25,
+      negocio_id: rancho.id,
+      estado: 'reservado',
+    })
+    return error ? `Error: ${error.message}` : `✓ Evento reservado: ${input.cliente_nombre} el ${input.fecha_evento}`
   }
 
   return `Tool ${name} no implementada.`

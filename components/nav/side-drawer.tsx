@@ -23,6 +23,7 @@ import { CaboLogo, CaboWordmark } from '@/components/ui/cabo-logo'
 
 const HERRAMIENTAS = [
   { href: '/dashboard',     label: 'Dashboard',   icon: LayoutDashboard, emoji: '🏠' },
+  { href: '/calendario',    label: 'Calendario',  icon: Calendar,        emoji: '🗓️', badge: 'NEW' },
   { href: '/chat',          label: 'Captura IA',  icon: MessageCircle,   emoji: '💬', badge: 'IA' },
   { href: '/cobros',        label: 'Cobros Stripe', icon: Receipt,       emoji: '💳', badge: 'NEW' },
   { href: '/transacciones', label: 'Transacciones', icon: Receipt,       emoji: '📋' },
