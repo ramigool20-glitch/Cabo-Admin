@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Menu, Bell } from 'lucide-react'
 import { SideDrawer } from './side-drawer'
+import { CaboLogo, CaboWordmark } from '@/components/ui/cabo-logo'
 
 export function AppHeader({ nombre }: { nombre: string }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -24,14 +25,10 @@ export function AppHeader({ nombre }: { nombre: string }) {
             <Menu className="h-5 w-5" />
           </button>
 
-          {/* Logo + título */}
-          <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
-            <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 text-xl shrink-0 shadow-lg shadow-emerald-500/20">
-              🌊
-            </div>
-            <h1 className="text-lg font-black heading-gradient leading-none truncate">
-              Cabo Admin
-            </h1>
+          {/* Logo + wordmark */}
+          <div className="flex-1 flex items-center justify-center gap-2.5 min-w-0">
+            <CaboLogo size={32} className="shrink-0 shadow-lg shadow-emerald-500/30 rounded-lg" />
+            <CaboWordmark size="md" />
           </div>
 
           {/* Bell only */}

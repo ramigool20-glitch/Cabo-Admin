@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { logoutAction } from '@/app/(auth)/login/actions'
+import { CaboLogo, CaboWordmark } from '@/components/ui/cabo-logo'
 
 const HERRAMIENTAS = [
   { href: '/dashboard',     label: 'Dashboard',   icon: LayoutDashboard, emoji: '🏠' },
@@ -73,12 +74,10 @@ export function SideDrawer({ open, onClose, nombre }: { open: boolean; onClose: 
         {/* Header del drawer */}
         <div className="flex items-center justify-between p-4 border-b border-[var(--border-subtle)]">
           <div className="flex items-center gap-2.5">
-            <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 text-xl shadow-lg shadow-emerald-500/20">
-              🌊
-            </div>
+            <CaboLogo size={36} className="shadow-lg shadow-emerald-500/30 rounded-lg" />
             <div className="leading-tight">
-              <p className="text-base font-bold heading-gradient">Cabo Admin</p>
-              <p className="text-[10px] text-cyan-300/50">Sistema de gestión</p>
+              <CaboWordmark size="md" />
+              <p className="text-[10px] text-cyan-300/50 mt-0.5">Sistema de gestión</p>
             </div>
           </div>
           <button onClick={onClose} aria-label="Cerrar menú" className="h-8 w-8 inline-flex items-center justify-center text-zinc-400 hover:text-white">

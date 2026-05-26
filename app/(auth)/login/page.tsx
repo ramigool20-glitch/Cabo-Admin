@@ -1,6 +1,7 @@
 import { LoginForm } from './login-form'
 import { Clock } from './clock'
 import { VideoBg } from './video-bg'
+import { CaboLogo, CaboWordmark } from '@/components/ui/cabo-logo'
 
 export default function LoginPage() {
   return (
@@ -14,16 +15,16 @@ export default function LoginPage() {
       {/* Card de login */}
       <div className="relative z-10 w-full max-w-md">
         <div className="card-glow p-6 space-y-6 backdrop-blur-xl bg-[var(--bg-card)]/85">
-          {/* Logo CA */}
+          {/* Logo nuevo */}
           <div className="flex justify-center">
-            <div className="h-20 w-20 rounded-2xl bg-black/90 ring-1 ring-white/10 flex items-center justify-center shadow-2xl">
-              <span className="text-white text-2xl font-black tracking-tight">CA</span>
-            </div>
+            <CaboLogo size={80} className="rounded-2xl shadow-2xl shadow-emerald-500/40" />
           </div>
 
           {/* Título + clock */}
           <div className="text-center space-y-2">
-            <h1 className="text-3xl font-black heading-gradient">Cabo Admin</h1>
+            <div className="text-center">
+              <CaboWordmark size="lg" />
+            </div>
             <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-cyan-300/70">
               Sistema de Gestión Inteligente
             </p>
