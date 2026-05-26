@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
 import QRCode from 'qrcode'
+import { customAlphabet } from 'nanoid'
 import { stripe } from '@/lib/stripe/client'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+
+const nanoCode = customAlphabet('23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz', 7)
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -62,8 +65,14 @@ export async function POST(req: Request) {
     })
 
     const paymentUrl = session.url || ''
-    const qrDataUrl = paymentUrl
-      ? await QRCode.toDataURL(paymentUrl, { width: 400, margin: 1, color: { dark: '#000', light: '#FFF' } })
+
+    // Generar short_code único (7 chars alfanuméricos)
+    const shortCode = nanoCode()
+    const shortUrl = `${origin}/p/${shortCode}`
+
+    // El QR apunta al SHORT URL, no al Stripe URL completo
+    const qrDataUrl = shortUrl
+      ? await QRCode.toDataURL(shortUrl, { width: 400, margin: 1, color: { dark: '#000', light: '#FFF' } })
       : null
 
     // Guardar en BD
@@ -82,6 +91,7 @@ export async function POST(req: Request) {
         stripe_session_id: session.id,
         payment_url: paymentUrl,
         qr_url: qrDataUrl,
+        short_code: shortCode,
         expira_at: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
         creado_por: user.id,
       })
@@ -95,9 +105,11 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       id: cobro?.id,
-      payment_url: paymentUrl,
+      payment_url: shortUrl,         // entregamos el corto para compartir
+      stripe_url: paymentUrl,        // por si quieren el largo
       qr_url: qrDataUrl,
       session_id: session.id,
+      short_code: shortCode,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error desconocido'

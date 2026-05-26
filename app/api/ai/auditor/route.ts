@@ -72,6 +72,63 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'consultar_negocio',
+      description: 'Devuelve métricas detalladas de un negocio en un periodo: ingresos, gastos, utilidad, # transacciones, top categorías. Úsala cuando te pregunten "cómo va X negocio" o quieras comparar.',
+      parameters: {
+        type: 'object',
+        properties: {
+          negocio_nombre: { type: 'string' },
+          dias_atras: { type: 'number', description: 'Días hacia atrás desde hoy (default 30)' },
+        },
+        required: ['negocio_nombre'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'comparar_periodos',
+      description: 'Compara dos periodos del mismo negocio o globalmente. Devuelve % de crecimiento de ingresos, gastos, utilidad.',
+      parameters: {
+        type: 'object',
+        properties: {
+          negocio_nombre: { type: 'string', description: 'Opcional. Vacío = global' },
+          periodo: { type: 'string', enum: ['mes_vs_anterior', 'semana_vs_anterior', 'año_vs_anterior'] },
+        },
+        required: ['periodo'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'detectar_alertas',
+      description: 'Escanea los últimos 7-30 días buscando anomalías: gastos atípicos (>2× promedio), negocios sin movimiento, transacciones sin categoría, gastos fijos vencidos.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dias_atras: { type: 'number', description: 'default 7' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'top_categorias',
+      description: 'Devuelve las top categorías de gasto/ingreso del periodo. Úsala para opinar sobre cómo se gasta.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dias_atras: { type: 'number', description: 'default 30' },
+          tipo: { type: 'string', enum: ['gasto', 'ingreso'] },
+        },
+      },
+    },
+  },
 ]
 
 async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
@@ -181,6 +238,149 @@ async function ejecutarTool(
       estado: 'abierta',
     })
     return error ? `Error: ${error.message}` : `✓ Pendiente creado para ${perfil.nombre}.`
+  }
+
+  // ============================================================
+  // TOOLS DE ANÁLISIS
+  // ============================================================
+
+  if (name === 'consultar_negocio') {
+    const negocioHint = String(input.negocio_nombre || '')
+    const dias = Number(input.dias_atras ?? 30)
+    const { data: negocios } = await admin.from('negocios').select('id, nombre, tipo').eq('activo', true)
+    const h = norm(negocioHint)
+    const neg = (negocios ?? []).find((n) => norm(n.nombre).includes(h) || h.includes(norm(n.nombre)))
+    if (!neg) return `No encontré "${negocioHint}". Negocios: ${(negocios ?? []).map(n => n.nombre).join(', ')}`
+
+    const desde = new Date()
+    desde.setDate(desde.getDate() - dias)
+    const desdeISO = desde.toISOString().slice(0, 10)
+
+    const { data: tx } = await admin
+      .from('transacciones')
+      .select('tipo, monto, moneda, fecha, categoria, negocio_id')
+      .eq('negocio_id', neg.id)
+      .gte('fecha', desdeISO)
+
+    const t = totalizar(tx ?? [])
+    const top = porCategoria(tx ?? [], 3)
+    return JSON.stringify({
+      negocio: neg.nombre,
+      tipo: neg.tipo,
+      periodo_dias: dias,
+      ingresos_mxn: t.ingresos_mxn,
+      ingresos_usd: t.ingresos_usd,
+      gastos_mxn: t.gastos_mxn,
+      gastos_usd: t.gastos_usd,
+      utilidad_mxn: t.utilidad_mxn,
+      utilidad_usd: t.utilidad_usd,
+      num_transacciones: tx?.length ?? 0,
+      top_categorias: top,
+    })
+  }
+
+  if (name === 'comparar_periodos') {
+    const periodo = String(input.periodo)
+    const negocioHint = (input.negocio_nombre as string) || ''
+    let negId: string | null = null
+    if (negocioHint) {
+      const { data: negs } = await admin.from('negocios').select('id, nombre')
+      const h = norm(negocioHint)
+      negId = (negs ?? []).find((n) => norm(n.nombre).includes(h))?.id ?? null
+    }
+
+    const dias = periodo === 'semana_vs_anterior' ? 7 : periodo === 'año_vs_anterior' ? 365 : 30
+    const ahora = new Date()
+    const inicioActual = new Date(ahora); inicioActual.setDate(ahora.getDate() - dias)
+    const inicioAnterior = new Date(ahora); inicioAnterior.setDate(ahora.getDate() - dias * 2)
+
+    let qActual = admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', inicioActual.toISOString().slice(0,10)).lte('fecha', ahora.toISOString().slice(0,10))
+    let qAnterior = admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', inicioAnterior.toISOString().slice(0,10)).lt('fecha', inicioActual.toISOString().slice(0,10))
+    if (negId) {
+      qActual = qActual.eq('negocio_id', negId)
+      qAnterior = qAnterior.eq('negocio_id', negId)
+    }
+    const [{ data: actual }, { data: anterior }] = await Promise.all([qActual, qAnterior])
+    const tA = totalizar(actual ?? [])
+    const tB = totalizar(anterior ?? [])
+
+    const pct = (a: number, b: number) => b === 0 ? null : Math.round(((a - b) / b) * 1000) / 10
+
+    return JSON.stringify({
+      negocio: negocioHint || 'GLOBAL',
+      periodo_dias: dias,
+      actual: { ingresos: tA.ingresos_mxn, gastos: tA.gastos_mxn, utilidad: tA.utilidad_mxn, tx: actual?.length ?? 0 },
+      anterior: { ingresos: tB.ingresos_mxn, gastos: tB.gastos_mxn, utilidad: tB.utilidad_mxn, tx: anterior?.length ?? 0 },
+      cambio_pct: {
+        ingresos: pct(tA.ingresos_mxn, tB.ingresos_mxn),
+        gastos: pct(tA.gastos_mxn, tB.gastos_mxn),
+        utilidad: pct(tA.utilidad_mxn, tB.utilidad_mxn),
+      },
+    })
+  }
+
+  if (name === 'detectar_alertas') {
+    const dias = Number(input.dias_atras ?? 7)
+    const desde = new Date()
+    desde.setDate(desde.getDate() - dias)
+    const desdeISO = desde.toISOString().slice(0, 10)
+    const hoy = hoyEnCabos()
+
+    const alertas: string[] = []
+
+    // 1) Gastos fijos vencidos
+    const { data: vencidos } = await admin
+      .from('gastos_recurrentes')
+      .select('nombre, monto, moneda, proximo_pago')
+      .eq('activo', true)
+      .lt('proximo_pago', hoy)
+    if (vencidos && vencidos.length > 0) {
+      for (const v of vencidos) {
+        alertas.push(`VENCIDO: "${v.nombre}" ${v.monto} ${v.moneda} (debió pagarse ${v.proximo_pago})`)
+      }
+    }
+
+    // 2) Transacciones sin categoría
+    const { count: sinCat } = await admin
+      .from('transacciones')
+      .select('id', { count: 'exact', head: true })
+      .gte('fecha', desdeISO)
+      .or('categoria.is.null,categoria.eq.')
+    if ((sinCat ?? 0) >= 5) {
+      alertas.push(`${sinCat} transacciones sin categoría en los últimos ${dias} días`)
+    }
+
+    // 3) Negocios sin movimiento
+    const { data: negs } = await admin.from('negocios').select('id, nombre').eq('activo', true).neq('tipo', 'general')
+    for (const n of negs ?? []) {
+      const { count } = await admin
+        .from('transacciones')
+        .select('id', { count: 'exact', head: true })
+        .eq('negocio_id', n.id)
+        .gte('fecha', desdeISO)
+      if ((count ?? 0) === 0) {
+        alertas.push(`Sin movimiento: "${n.nombre}" no ha tenido transacciones en ${dias} días`)
+      }
+    }
+
+    return JSON.stringify({ dias_revisados: dias, alertas, total: alertas.length })
+  }
+
+  if (name === 'top_categorias') {
+    const dias = Number(input.dias_atras ?? 30)
+    const tipo = (input.tipo as 'gasto' | 'ingreso') || 'gasto'
+    const desde = new Date()
+    desde.setDate(desde.getDate() - dias)
+    const desdeISO = desde.toISOString().slice(0, 10)
+
+    const { data: tx } = await admin
+      .from('transacciones')
+      .select('tipo, monto, moneda, categoria, negocio_id')
+      .eq('tipo', tipo)
+      .gte('fecha', desdeISO)
+
+    const top = porCategoria((tx ?? []).map(t => ({ ...t, tipo, categoria: t.categoria, fecha: '', negocio_id: t.negocio_id })), 8)
+    return JSON.stringify({ tipo, dias, top })
   }
 
   return `Tool ${name} no implementada.`

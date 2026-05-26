@@ -20,6 +20,7 @@
     "date-fns": "^4.3.0",
     "date-fns-tz": "^3.2.0",
     "lucide-react": "^1.16.0",
+    "nanoid": "^5.1.11",
     "next": "16.2.6",
     "openai": "^6.39.0",
     "qrcode": "^1.5.4",

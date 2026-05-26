@@ -1,9 +1,12 @@
 {
   "crons": [
+    { "path": "/api/cron/saludo-manana",            "schedule": "0 15 * * *" },
     { "path": "/api/cron/recurrentes",              "schedule": "0 13 * * *" },
     { "path": "/api/cron/tareas-vencimiento",       "schedule": "15 13 * * *" },
     { "path": "/api/cron/programar-notificaciones", "schedule": "30 13 * * *" },
     { "path": "/api/cron/notificaciones",           "schedule": "0 14 * * *" },
-    { "path": "/api/cron/auditor",                  "schedule": "30 14 * * *" }
+    { "path": "/api/cron/auditor",                  "schedule": "30 14 * * *" },
+    { "path": "/api/cron/check-tarde",              "schedule": "0 20 * * *" },
+    { "path": "/api/cron/cierre-noche",             "schedule": "0 3 * * *" }
   ]
 }
