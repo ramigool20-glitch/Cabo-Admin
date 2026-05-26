@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import { Link as LinkIcon, QrCode, Loader2, Copy, Check, Share2, Wifi } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
+import { toast } from '@/components/ui/toast'
 
 type Negocio = { id: string; nombre: string }
 
@@ -52,6 +53,7 @@ export function CobroForm({ negocios }: { negocios: Negocio[] }) {
       const data = await res.json()
       if (!res.ok || !data.ok) {
         setError(data.error || 'Error desconocido')
+        toast.error('No se generó el link', data.error || 'Inténtalo de nuevo')
         return
       }
       setResultado({
@@ -60,8 +62,11 @@ export function CobroForm({ negocios }: { negocios: Negocio[] }) {
         qr_url: data.qr_url,
         session_id: data.session_id,
       })
+      toast.success('Link de cobro creado', 'Listo para compartir por WhatsApp')
     } catch (e2) {
-      setError(e2 instanceof Error ? e2.message : 'Error de red')
+      const msg = e2 instanceof Error ? e2.message : 'Error de red'
+      setError(msg)
+      toast.error('Error de red', msg)
     } finally {
       setPending(false)
     }
@@ -71,6 +76,7 @@ export function CobroForm({ negocios }: { negocios: Negocio[] }) {
     if (!resultado) return
     await navigator.clipboard.writeText(resultado.payment_url)
     setCopiado(true)
+    toast.info('Link copiado al portapapeles')
     setTimeout(() => setCopiado(false), 2000)
   }
 

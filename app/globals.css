@@ -192,3 +192,37 @@ input[type="time"]::-webkit-calendar-picker-indicator,
 input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   filter: invert(0.7) sepia(0.5) saturate(3) hue-rotate(170deg);
 }
+
+/* ============================================================
+   Toast animations
+   ============================================================ */
+@keyframes toast-in {
+  0%   { transform: translateY(100%) scale(0.95); opacity: 0; }
+  100% { transform: translateY(0) scale(1);       opacity: 1; }
+}
+.animate-toast-in {
+  animation: toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ============================================================
+   Pull-to-refresh spinner
+   ============================================================ */
+@keyframes ptr-spin {
+  to { transform: rotate(360deg); }
+}
+.ptr-spin {
+  animation: ptr-spin 700ms linear infinite;
+}
+
+/* ============================================================
+   Skeleton shimmer
+   ============================================================ */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-card) 0%, var(--bg-card-hover) 50%, var(--bg-card) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}

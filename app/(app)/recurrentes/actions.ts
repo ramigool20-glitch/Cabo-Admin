@@ -1,12 +1,12 @@
 'use server'
 
 import { z } from 'zod'
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hoyEnCabos } from '@/lib/fechas'
 import { proximoConDiaDelMes, siguientePago, type Frecuencia } from '@/lib/proximo-pago'
+import { flashOk } from '@/lib/flash'
 
 const RecurrenteSchema = z.object({
   nombre: z.string().min(1).max(120),
@@ -81,7 +81,7 @@ export async function createRecurrente(
   if (error) return { error: error.message }
 
   revalidatePath('/recurrentes')
-  redirect('/recurrentes')
+  flashOk('/recurrentes', 'gf_creado')
 }
 
 export async function updateRecurrente(
@@ -97,7 +97,7 @@ export async function updateRecurrente(
   const { error } = await supabase.from('gastos_recurrentes').update(parsed.data).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/recurrentes')
-  redirect('/recurrentes')
+  flashOk('/recurrentes', 'gf_actualizado')
 }
 
 export async function deleteRecurrente(id: string) {
@@ -106,7 +106,7 @@ export async function deleteRecurrente(id: string) {
   const { error } = await supabase.from('gastos_recurrentes').update({ activo: false }).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/recurrentes')
-  redirect('/recurrentes')
+  flashOk('/recurrentes', 'gf_eliminado')
 }
 
 /**
@@ -191,5 +191,5 @@ export async function marcarPagado(
   revalidatePath('/recurrentes')
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
-  redirect('/recurrentes')
+  flashOk('/recurrentes', 'gf_pagado')
 }

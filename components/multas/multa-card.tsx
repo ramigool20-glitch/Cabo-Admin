@@ -12,6 +12,7 @@ import {
   perdonarMulta,
   disputarMulta,
 } from '@/app/(app)/multas/actions'
+import { toast } from '@/components/ui/toast'
 
 export type MultaItem = {
   id: string
@@ -59,9 +60,14 @@ export function MultaCard({
 
   const resuelta = ['aplicada', 'perdonada', 'cancelada'].includes(multa.estado)
 
-  const ejecutar = (fn: () => Promise<void>) => {
+  const ejecutar = (fn: () => Promise<void>, successMsg?: string) => {
     startTransition(async () => {
-      await fn()
+      try {
+        await fn()
+        if (successMsg) toast.success(successMsg)
+      } catch (e) {
+        toast.error('No se pudo procesar', e instanceof Error ? e.message : 'Inténtalo de nuevo')
+      }
       setAccion(null)
       setMensaje('')
       setMontoNuevo('')
@@ -117,7 +123,7 @@ export function MultaCard({
       {esResponsable && mostrarAcciones && !accion && multa.estado === 'propuesta' && (
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={() => ejecutar(() => aceptarMulta(multa.id))}
+            onClick={() => ejecutar(() => aceptarMulta(multa.id), 'Multa aceptada y aplicada')}
             disabled={pending}
             className="h-10 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold"
           >
@@ -145,7 +151,7 @@ export function MultaCard({
         (multa.estado === 'justificada' || multa.estado === 'reduccion_solicitada' || multa.estado === 'propuesta') && (
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={() => ejecutar(() => aprobarMulta(multa.id))}
+            onClick={() => ejecutar(() => aprobarMulta(multa.id), 'Multa aprobada')}
             disabled={pending}
             className="h-10 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold"
           >
@@ -159,7 +165,7 @@ export function MultaCard({
             Reducir
           </button>
           <button
-            onClick={() => ejecutar(() => perdonarMulta(multa.id))}
+            onClick={() => ejecutar(() => perdonarMulta(multa.id), 'Multa perdonada')}
             disabled={pending}
             className="h-10 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold"
           >
@@ -188,7 +194,7 @@ export function MultaCard({
           <div className="flex gap-2">
             <button onClick={() => setAccion(null)} className="btn-ghost flex-1 h-9 text-xs">Cancelar</button>
             <button
-              onClick={() => ejecutar(() => justificarMulta(multa.id, mensaje))}
+              onClick={() => ejecutar(() => justificarMulta(multa.id, mensaje), 'Justificación enviada')}
               disabled={pending || !mensaje.trim()}
               className="btn-primary flex-1 h-9 text-xs"
             >
@@ -222,8 +228,8 @@ export function MultaCard({
               onClick={() => {
                 const m = Number(montoNuevo)
                 if (!m || m <= 0) return
-                if (accion === 'reducir') ejecutar(() => solicitarReduccionMulta(multa.id, m, mensaje))
-                else ejecutar(() => reducirMulta(multa.id, m, mensaje))
+                if (accion === 'reducir') ejecutar(() => solicitarReduccionMulta(multa.id, m, mensaje), 'Reducción solicitada')
+                else ejecutar(() => reducirMulta(multa.id, m, mensaje), 'Multa reducida y aplicada')
               }}
               disabled={pending || !montoNuevo}
               className="btn-primary flex-1 h-9 text-xs"
@@ -247,7 +253,7 @@ export function MultaCard({
           <div className="flex gap-2">
             <button onClick={() => setAccion(null)} className="btn-ghost flex-1 h-9 text-xs">Cancelar</button>
             <button
-              onClick={() => ejecutar(() => disputarMulta(multa.id, mensaje))}
+              onClick={() => ejecutar(() => disputarMulta(multa.id, mensaje), 'Marcada en disputa')}
               disabled={pending || !mensaje.trim()}
               className="btn-primary flex-1 h-9 text-xs"
             >

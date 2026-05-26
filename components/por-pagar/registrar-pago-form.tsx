@@ -1,9 +1,10 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useEffect } from 'react'
 import { Loader2, Check } from 'lucide-react'
 import { registrarPago, type ActionState } from '@/app/(app)/por-pagar/actions'
 import { hoyEnCabos } from '@/lib/fechas'
+import { toast } from '@/components/ui/toast'
 
 type Cuenta = { id: string; nombre: string; moneda: string }
 
@@ -20,6 +21,15 @@ export function RegistrarPagoForm({
 }) {
   const action = registrarPago.bind(null, cuentaId)
   const [state, formAction, pending] = useActionState<ActionState, FormData>(action, {})
+
+  useEffect(() => {
+    if (state.ok) {
+      if (state.saldada) toast.success('✅ Cuenta saldada', 'Esta deuda quedó pagada por completo')
+      else toast.success('Pago registrado', 'Aplicado al saldo de la cuenta')
+    } else if (state.error) {
+      toast.error('No se pudo registrar el pago', state.error)
+    }
+  }, [state])
 
   return (
     <form action={formAction} className="space-y-3">

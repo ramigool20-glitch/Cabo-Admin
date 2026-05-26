@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { proximaFechaPagoEmpleado } from '@/lib/proximo-pago'
 import { hoyEnCabos } from '@/lib/fechas'
+import { flashOk } from '@/lib/flash'
 
 const EmpleadoSchema = z.object({
   nombre: z.string().min(1).max(120),
@@ -67,7 +68,7 @@ export async function createEmpleado(_prev: ActionState, formData: FormData): Pr
     .single()
   if (error) return { error: error.message }
   revalidatePath('/nomina')
-  redirect(`/nomina/${data.id}`)
+  flashOk(`/nomina/${data.id}`, 'empleado_creado')
 }
 
 export async function updateEmpleado(id: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -150,7 +151,7 @@ export async function addCompensacion(empleadoId: string, _prev: ActionState, fo
   }
 
   revalidatePath(`/nomina/${empleadoId}`)
-  redirect(`/nomina/${empleadoId}`)
+  flashOk(`/nomina/${empleadoId}`, 'compensacion')
 }
 
 export async function deleteCompensacion(id: string, empleadoId: string): Promise<void> {
@@ -195,5 +196,5 @@ export async function registrarPagoNomina(empleadoId: string, _prev: ActionState
   revalidatePath(`/nomina/${empleadoId}`)
   revalidatePath('/dashboard')
   revalidatePath('/transacciones')
-  redirect(`/nomina/${empleadoId}`)
+  flashOk(`/nomina/${empleadoId}`, 'pago_nomina')
 }

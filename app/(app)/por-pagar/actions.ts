@@ -1,11 +1,11 @@
 'use server'
 
 import { z } from 'zod'
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hoyEnCabos } from '@/lib/fechas'
+import { flashOk } from '@/lib/flash'
 
 const Schema = z.object({
   proveedor: z.string().min(1),
@@ -22,7 +22,7 @@ const Schema = z.object({
   notas: z.string().optional().nullable(),
 })
 
-export type ActionState = { ok?: boolean; error?: string; fieldErrors?: Record<string, string[]> }
+export type ActionState = { ok?: boolean; saldada?: boolean; error?: string; fieldErrors?: Record<string, string[]> }
 
 function parseForm(formData: FormData) {
   const raw = Object.fromEntries(formData.entries())
@@ -61,7 +61,7 @@ export async function createCuentaPorPagar(_prev: ActionState, formData: FormDat
 
   revalidatePath('/por-pagar')
   revalidatePath('/dashboard')
-  redirect(`/por-pagar/${data.id}`)
+  flashOk(`/por-pagar/${data.id}`, 'cpp_creada')
 }
 
 export async function registrarPago(cuentaId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -127,7 +127,7 @@ export async function registrarPago(cuentaId: string, _prev: ActionState, formDa
   revalidatePath(`/por-pagar/${cuentaId}`)
   revalidatePath('/por-pagar')
   revalidatePath('/dashboard')
-  return { ok: true }
+  return { ok: true, saldada: nuevoEstado === 'pagado' }
 }
 
 export async function cancelarCuenta(cuentaId: string): Promise<void> {

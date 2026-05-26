@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useMemo, useState } from 'react'
+import { useActionState, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -11,6 +11,7 @@ import {
   deleteTransaccion,
   type ActionState,
 } from '@/app/(app)/transacciones/actions'
+import { toast } from '@/components/ui/toast'
 
 export type NegocioOpt = { id: string; nombre: string; tipo: string; moneda_principal: string }
 export type CuentaOpt  = { id: string; nombre: string; tipo: string | null; moneda: string }
@@ -53,6 +54,10 @@ export function TransactionForm({
     ? updateTransaccion.bind(null, defaults.id!)
     : createTransaccion
   const [state, formAction, pending] = useActionState<ActionState, FormData>(action, {})
+
+  useEffect(() => {
+    if (state.error) toast.error('No se pudo guardar', state.error)
+  }, [state.error])
 
   // Cuando cambia la cuenta, sugerimos el método de pago
   const onCuentaChange = (id: string) => {

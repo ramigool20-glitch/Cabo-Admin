@@ -1,9 +1,9 @@
 'use server'
 
 import { z } from 'zod'
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { flashOk } from '@/lib/flash'
 
 const TareaSchema = z.object({
   titulo: z.string().min(1).max(200),
@@ -58,7 +58,7 @@ export async function createTarea(_prev: ActionState, formData: FormData): Promi
 
   revalidatePath('/tareas')
   revalidatePath('/dashboard')
-  redirect('/tareas')
+  flashOk('/tareas', 'tarea_creada')
 }
 
 export async function completarTarea(id: string): Promise<void> {
@@ -92,5 +92,5 @@ export async function eliminarTarea(id: string): Promise<void> {
   const supabase = await createClient()
   await supabase.from('tareas').delete().eq('id', id)
   revalidatePath('/tareas')
-  redirect('/tareas')
+  flashOk('/tareas', 'tarea_eliminada')
 }

@@ -1,9 +1,9 @@
 'use server'
 
 import { z } from 'zod'
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { flashOk } from '@/lib/flash'
 
 const TransaccionSchema = z.object({
   tipo: z.enum(['ingreso', 'gasto']),
@@ -67,7 +67,7 @@ export async function createTransaccion(
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
-  redirect('/transacciones')
+  flashOk('/transacciones', 'tx_creada')
 }
 
 export async function updateTransaccion(
@@ -87,7 +87,7 @@ export async function updateTransaccion(
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
-  redirect('/transacciones')
+  flashOk('/transacciones', 'tx_actualizada')
 }
 
 export async function deleteTransaccion(id: string) {
@@ -108,5 +108,5 @@ export async function deleteTransaccion(id: string) {
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
-  redirect('/transacciones')
+  flashOk('/transacciones', 'tx_eliminada')
 }

@@ -1,9 +1,13 @@
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AppHeader } from '@/components/nav/app-header'
 import { TopTabs } from '@/components/nav/top-tabs'
 import { QuickActionFab } from '@/components/ui/quick-action-fab'
+import { Toaster } from '@/components/ui/toast'
+import { ToastFlash } from '@/components/ui/toast-flash'
+import { PullToRefresh } from '@/components/ui/pull-to-refresh'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -26,8 +30,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen flex flex-col bg-[var(--bg-base)]">
       <AppHeader nombre={nombre} />
       <TopTabs />
-      <main className="flex-1">{children}</main>
+      <PullToRefresh>
+        <main className="flex-1">{children}</main>
+      </PullToRefresh>
       <QuickActionFab />
+      <Toaster />
+      <Suspense fallback={null}>
+        <ToastFlash />
+      </Suspense>
     </div>
   )
 }

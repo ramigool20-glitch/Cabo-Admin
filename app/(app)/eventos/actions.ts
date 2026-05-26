@@ -1,9 +1,9 @@
 'use server'
 
 import { z } from 'zod'
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { flashOk } from '@/lib/flash'
 
 const EventoSchema = z.object({
   negocio_id: z.string().uuid(),
@@ -60,7 +60,7 @@ export async function createEvento(_prev: ActionState, formData: FormData): Prom
   if (error) return { error: error.message }
 
   revalidatePath('/eventos')
-  redirect(`/eventos/${data.id}`)
+  flashOk(`/eventos/${data.id}`, 'evento_creado')
 }
 
 export async function registrarPagoEvento(_prev: ActionState, formData: FormData): Promise<ActionState> {
