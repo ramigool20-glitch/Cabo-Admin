@@ -92,6 +92,17 @@ export async function updateTransaccion(
 
 export async function deleteTransaccion(id: string) {
   const supabase = await createClient()
+
+  // Limpiar todas las FKs antes de borrar la transacción
+  await Promise.all([
+    // Si vino de un pago recurrente, borrar el registro de recurrentes_pagados
+    supabase.from('recurrentes_pagados').delete().eq('transaccion_id', id),
+    // Desligar otras tablas que pueden referenciarla (no las borramos, solo unlinkeamos)
+    supabase.from('cobros_stripe').update({ transaccion_id: null }).eq('transaccion_id', id),
+    supabase.from('eventos_pagos').update({ transaccion_id: null }).eq('transaccion_id', id),
+    supabase.from('multas').update({ transaccion_id: null }).eq('transaccion_id', id),
+  ])
+
   const { error } = await supabase.from('transacciones').delete().eq('id', id)
   if (error) return { error: error.message }
 
