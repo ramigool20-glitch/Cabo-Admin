@@ -31,6 +31,11 @@ export async function POST(req: Request) {
     const moneda = body.moneda === 'MXN' ? 'mxn' : 'usd'
     const montoCentavos = Math.round(body.monto * 100)
 
+    // Derivar origen del request (para success_url y cancel_url)
+    const origin =
+      req.headers.get('origin') ||
+      `https://${req.headers.get('host') || 'cabo-admin.vercel.app'}`
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
@@ -46,6 +51,8 @@ export async function POST(req: Request) {
       ],
       customer_email: body.cliente_email || undefined,
       expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24h
+      success_url: `${origin}/cobros?paid=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/cobros?canceled=true`,
       metadata: {
         negocio_id: body.negocio_id || '',
         cliente_nombre: body.cliente_nombre || '',
