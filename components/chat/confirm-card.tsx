@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Check, Loader2 } from 'lucide-react'
+import { Check, Loader2, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatMoney } from '@/lib/utils'
 import { saveAITransaccion, type SavePayload } from '@/app/(app)/chat/save-action'
+import { CATEGORIAS_GASTO, CATEGORIAS_INGRESO } from '@/lib/categorias'
 
 export type Negocio = { id: string; nombre: string; tipo: string }
 export type Cuenta = { id: string; nombre: string; moneda: 'MXN' | 'USD'; tipo: string | null }
@@ -47,36 +48,42 @@ export function ConfirmCard({
   const negocioInicial = matchByNombre(negocios, draft.negocio_sugerido)?.id ?? ''
   const cuentaInicial = matchByNombre(cuentas, draft.cuenta_sugerida)?.id ?? ''
 
+  // Estado editable del draft
+  const [tipo, setTipo] = useState<'ingreso' | 'gasto'>(draft.tipo)
+  const [monto, setMonto] = useState<string>(String(draft.monto))
+  const [concepto, setConcepto] = useState<string>(draft.concepto || '')
+  const [fecha, setFecha] = useState<string>(draft.fecha)
+  const [categoria, setCategoria] = useState<string>(draft.categoria || '')
   const [negocioId, setNegocioId] = useState<string>(negocioInicial)
   const [cuentaId, setCuentaId] = useState<string>(cuentaInicial)
+  const [editing, setEditing] = useState(false)
+
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const cuentaSel = cuentas.find((c) => c.id === cuentaId)
   const moneda = cuentaSel?.moneda ?? draft.moneda
+  const montoNum = Number(monto.replace(',', '.')) || 0
+
+  const categoriasOpciones = tipo === 'gasto' ? CATEGORIAS_GASTO : CATEGORIAS_INGRESO
 
   const handleSave = () => {
     setError(null)
-    if (!negocioId) {
-      setError('Selecciona un negocio')
-      return
-    }
-    if (!cuentaId) {
-      setError('Selecciona una cuenta')
-      return
-    }
+    if (!negocioId) { setError('Selecciona un negocio'); return }
+    if (!cuentaId) { setError('Selecciona una cuenta'); return }
+    if (montoNum <= 0) { setError('El monto debe ser mayor a 0'); return }
 
     startTransition(async () => {
       const payload: SavePayload = {
-        tipo: draft.tipo,
-        monto: draft.monto,
+        tipo,
+        monto: montoNum,
         moneda,
-        fecha: draft.fecha,
+        fecha,
         negocio_id: negocioId,
         cuenta_id: cuentaId,
         metodo_pago: draft.metodo_pago ?? null,
-        categoria: draft.categoria ?? null,
-        concepto: draft.concepto || null,
+        categoria: categoria || null,
+        concepto: concepto || null,
         metodo_captura: draft.metodo_captura,
         foto_url: draft.foto_url ?? null,
         audio_url: draft.audio_url ?? null,
@@ -94,30 +101,111 @@ export function ConfirmCard({
   return (
     <div className="card-glow p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <span
-          className={cn(
-            'inline-flex items-center text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-full',
-            draft.tipo === 'gasto'
-              ? 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400'
-              : 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-          )}
-        >
-          {draft.tipo}
-        </span>
-        <p className="text-2xl font-bold tabular-nums">
-          {formatMoney(draft.monto, moneda)}
-        </p>
+        {editing ? (
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+            {(['gasto', 'ingreso'] as const).map((tp) => (
+              <button
+                key={tp}
+                type="button"
+                onClick={() => setTipo(tp)}
+                className={cn(
+                  'h-7 px-2 rounded text-[10px] font-bold uppercase transition-colors',
+                  tipo === tp
+                    ? (tp === 'gasto' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white')
+                    : 'text-zinc-500'
+                )}
+              >
+                {tp}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span
+            className={cn(
+              'inline-flex items-center text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-full',
+              tipo === 'gasto'
+                ? 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400'
+                : 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+            )}
+          >
+            {tipo}
+          </span>
+        )}
+
+        {editing ? (
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              inputMode="decimal"
+              value={monto}
+              onChange={(e) => setMonto(e.target.value)}
+              className="input-base h-10 w-28 text-right text-xl font-bold tabular-nums px-2"
+            />
+            <span className="text-xs text-zinc-500">{moneda}</span>
+          </div>
+        ) : (
+          <p className="text-2xl font-bold tabular-nums">
+            {formatMoney(montoNum, moneda)}
+          </p>
+        )}
       </div>
 
-      {draft.concepto && (
-        <p className="text-sm text-zinc-200">{draft.concepto}</p>
+      {/* Concepto */}
+      {editing ? (
+        <div className="space-y-1">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Concepto</p>
+          <input
+            type="text"
+            value={concepto}
+            onChange={(e) => setConcepto(e.target.value)}
+            placeholder="¿En qué fue?"
+            className="input-base w-full text-sm"
+          />
+        </div>
+      ) : (
+        concepto && <p className="text-sm text-zinc-200">{concepto}</p>
       )}
 
-      {draft.categoria && (
-        <p className="text-xs text-zinc-500">Categoría: <span className="font-medium">{draft.categoria}</span></p>
+      {/* Fecha */}
+      {editing ? (
+        <div className="space-y-1">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Fecha</p>
+          <input
+            type="date"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value)}
+            className="input-base w-full text-sm"
+          />
+        </div>
+      ) : (
+        <p className="text-xs text-zinc-500">Fecha: {fecha}</p>
       )}
 
-      <p className="text-xs text-zinc-500">Fecha: {draft.fecha}</p>
+      {/* Categoría */}
+      {editing ? (
+        <div className="space-y-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Categoría</p>
+          <div className="flex flex-wrap gap-1.5">
+            {categoriasOpciones.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCategoria(c === categoria ? '' : c)}
+                className={cn(
+                  'h-7 px-2.5 rounded-full text-[11px] border capitalize transition-colors',
+                  categoria === c
+                    ? 'border-cyan-500 bg-cyan-500 text-white'
+                    : 'border-[var(--border-subtle)] text-zinc-400'
+                )}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        categoria && <p className="text-xs text-zinc-500">Categoría: <span className="font-medium">{categoria}</span></p>
+      )}
 
       <div className="space-y-1.5">
         <p className="text-xs font-medium text-zinc-500">Negocio</p>
@@ -163,6 +251,16 @@ export function ConfirmCard({
 
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 
+      {/* Toggle Editar */}
+      <button
+        type="button"
+        onClick={() => setEditing((v) => !v)}
+        className="w-full h-9 rounded-lg border border-cyan-500/30 text-cyan-400 text-xs font-medium inline-flex items-center justify-center gap-1.5 hover:bg-cyan-500/10 transition-colors"
+      >
+        <Pencil className="h-3 w-3" />
+        {editing ? 'Listo · Ocultar edición' : 'Editar antes de guardar'}
+      </button>
+
       <div className="flex gap-2 pt-1">
         <button
           type="button"
@@ -178,7 +276,7 @@ export function ConfirmCard({
           disabled={pending}
           className={cn(
             'flex-[2] h-11 rounded-xl text-white text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50',
-            draft.tipo === 'gasto' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
+            tipo === 'gasto' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
           )}
         >
           {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}

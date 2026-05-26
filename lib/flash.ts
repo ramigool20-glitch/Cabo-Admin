@@ -22,6 +22,11 @@ export const FLASH_MESSAGES: Record<string, { variant: 'success' | 'error' | 'in
   cpp_pagada:       { variant: 'success', title: '✅ Cuenta saldada', description: 'Esta deuda quedó pagada por completo.' },
   cpp_eliminada:    { variant: 'info',    title: 'Cuenta eliminada' },
 
+  // Por cobrar
+  cpc_creada:       { variant: 'success', title: 'Cuenta por cobrar creada' },
+  cpc_cobro:        { variant: 'success', title: 'Cobro aplicado a la cuenta' },
+  cpc_cobrada:      { variant: 'success', title: '💰 Cuenta cobrada', description: 'El cliente saldó completamente.' },
+
   // Tareas
   tarea_creada:     { variant: 'success', title: 'Tarea creada' },
   tarea_completada: { variant: 'success', title: 'Tarea completada' },

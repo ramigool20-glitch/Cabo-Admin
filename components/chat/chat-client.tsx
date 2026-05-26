@@ -11,6 +11,7 @@ import { formatMoney } from '@/lib/utils'
 import { hoyEnCabos } from '@/lib/fechas'
 import { ConfirmCard, type Draft, type Negocio, type Cuenta } from './confirm-card'
 import { ConfirmGastoFijoCard } from './confirm-gasto-fijo-card'
+import { ConfirmFacturaCard, type FacturaDraft } from './confirm-factura-card'
 import type { ChatMessage, ChatDraft, ChatGastoFijoDraft } from '@/lib/ai/prompts'
 
 type Profile = { id: string; nombre: string }
@@ -23,6 +24,7 @@ type Mensaje =
   | { id: string; rol: 'assistant'; tipo: 'texto'; texto: string }
   | { id: string; rol: 'assistant'; tipo: 'confirmar'; draft: Draft; introTexto?: string }
   | { id: string; rol: 'assistant'; tipo: 'confirmar-gasto-fijo'; draft: ChatGastoFijoDraft; introTexto?: string }
+  | { id: string; rol: 'assistant'; tipo: 'confirmar-factura'; draft: FacturaDraft; introTexto?: string }
   | { id: string; rol: 'assistant'; tipo: 'guardado'; resumen: string }
   | { id: string; rol: 'assistant'; tipo: 'error'; mensaje: string }
 
@@ -172,9 +174,32 @@ export function ChatClient({
 
       const p = data.parsed
       const fecha = p.fecha ?? hoyEnCabos()
+      const monto = Number(p.monto_total ?? p.venta_total ?? 0)
+
+      // ¿Es factura por pagar?
+      if (p.es_factura_proveedor === true || p.tipo === 'factura_proveedor') {
+        const facturaDraft: FacturaDraft = {
+          proveedor: p.proveedor || p.negocio_sugerido || '',
+          concepto: p.concepto || 'Factura',
+          monto_total: monto,
+          moneda: p.moneda || 'MXN',
+          fecha_emision: p.fecha || fecha,
+          fecha_vencimiento: p.fecha_vencimiento || null,
+          negocio_sugerido: p.negocio_sugerido,
+          categoria: p.categoria_sugerida || null,
+          referencia: p.referencia_factura || null,
+          documento_url: data.foto_url || null,
+          notas: p.notas || null,
+        }
+        replaceLast(
+          (m) => m.id === pensandoId,
+          { id: pensandoId, rol: 'assistant', tipo: 'confirmar-factura', draft: facturaDraft }
+        )
+        return
+      }
+
       const tipo: 'gasto' | 'ingreso' =
         p.tipo === 'ingreso' || p.tipo === 'corte_diario' ? 'ingreso' : 'gasto'
-      const monto = Number(p.monto_total ?? p.venta_total ?? 0)
 
       const draft: Draft = {
         tipo, monto, moneda: p.moneda || 'MXN', fecha,
@@ -436,6 +461,52 @@ export function ChatClient({
                     cuentas={cuentas}
                     onSaved={() => handleSaved(m.id, m.draft)}
                     onCancel={() => setMensajes((prev) => prev.filter((x) => x.id !== m.id))}
+                  />
+                </div>
+              </div>
+            )
+          }
+          if (m.rol === 'assistant' && m.tipo === 'confirmar-factura') {
+            return (
+              <div key={m.id} className="flex justify-start">
+                <div className="w-full space-y-2">
+                  {m.introTexto && (
+                    <div className="card max-w-[85%] px-3.5 py-2.5 text-sm text-zinc-200 whitespace-pre-wrap">
+                      {m.introTexto}
+                    </div>
+                  )}
+                  <ConfirmFacturaCard
+                    draft={m.draft}
+                    negocios={negocios}
+                    onSaved={() => {
+                      const resumen = `Factura por pagar: ${m.draft.proveedor} ${formatMoney(m.draft.monto_total, m.draft.moneda)}${m.draft.fecha_vencimiento ? ` · vence ${m.draft.fecha_vencimiento}` : ''}`
+                      replaceLast(
+                        (x) => x.id === m.id,
+                        { id: m.id, rol: 'assistant', tipo: 'guardado', resumen }
+                      )
+                      router.refresh()
+                    }}
+                    onCancel={() => setMensajes((prev) => prev.filter((x) => x.id !== m.id))}
+                    onSwitchToTransaction={() => {
+                      // Convertir el draft factura a draft transacción normal
+                      const txDraft: Draft = {
+                        tipo: 'gasto',
+                        monto: m.draft.monto_total,
+                        moneda: m.draft.moneda,
+                        fecha: m.draft.fecha_emision || hoyEnCabos(),
+                        concepto: `${m.draft.proveedor} · ${m.draft.concepto}`,
+                        categoria: m.draft.categoria,
+                        negocio_sugerido: m.draft.negocio_sugerido,
+                        cuenta_sugerida: null,
+                        metodo_pago: null,
+                        metodo_captura: 'foto',
+                        foto_url: m.draft.documento_url,
+                      }
+                      replaceLast(
+                        (x) => x.id === m.id,
+                        { id: m.id, rol: 'assistant', tipo: 'confirmar', draft: txDraft }
+                      )
+                    }}
                   />
                 </div>
               </div>

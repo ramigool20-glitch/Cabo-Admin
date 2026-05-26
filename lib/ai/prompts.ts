@@ -3,12 +3,12 @@
  * de Anthropic les pegue 100% (cache_control: ephemeral en el system prompt).
  */
 
-export const PROMPT_TICKET = `Eres un asistente que extrae datos estructurados de fotos de recibos, tickets o cortes de venta en español (México).
+export const PROMPT_TICKET = `Eres un asistente que extrae datos estructurados de fotos de recibos, tickets, cortes de venta o FACTURAS de proveedor en español (México).
 
 Analiza la imagen y devuelve un JSON con esta estructura EXACTA:
 
 {
-  "tipo": "gasto" | "ingreso" | "corte_diario",
+  "tipo": "gasto" | "ingreso" | "corte_diario" | "factura_proveedor",
   "monto_total": number,
   "moneda": "MXN" | "USD",
   "fecha": "YYYY-MM-DD" | null,
@@ -18,8 +18,23 @@ Analiza la imagen y devuelve un JSON con esta estructura EXACTA:
   "negocio_sugerido": string | null,
   "items": [{ "descripcion": string, "monto": number }],
   "confianza": "alta" | "media" | "baja",
-  "notas": string
+  "notas": string,
+  "es_factura_proveedor": boolean,
+  "proveedor": string | null,
+  "fecha_vencimiento": "YYYY-MM-DD" | null,
+  "referencia_factura": string | null
 }
+
+DETECCIÓN DE FACTURA POR PAGAR (es_factura_proveedor: true):
+Pon "es_factura_proveedor" en true si la imagen es una factura/documento de cobro que aún NO se ha pagado:
+- Tiene fecha de vencimiento o "favor de pagar antes del…"
+- Dice "factura", "saldo pendiente", "remisión", "estado de cuenta"
+- Tiene un folio fiscal de factura (CFDI) sin sello "PAGADO"
+- NO tiene "gracias por su compra", "cambio", "pagado en efectivo/tarjeta"
+
+Si es factura por pagar, también pon "tipo": "factura_proveedor" y rellena proveedor + fecha_vencimiento si están en la imagen.
+
+Si es un TICKET YA PAGADO (compra en tienda, gasolina, recibo de compra), pon es_factura_proveedor: false y tipo: "gasto".
 
 Las categorías típicas de gasto: ads, renta, sueldo, comida, gasolina, servicios, producto, suministros, mantenimiento, marketing, transporte, comisión, impuestos, otro.
 Las categorías típicas de ingreso: venta, servicio, consulta, consultoría, comisión, corte_diario, devolución, otro.
@@ -65,7 +80,7 @@ Categorías ingreso: venta, servicio, consulta, consultoría, comisión, corte_d
 Responde SOLO con el JSON.`
 
 export type TicketParsed = {
-  tipo: 'gasto' | 'ingreso' | 'corte_diario'
+  tipo: 'gasto' | 'ingreso' | 'corte_diario' | 'factura_proveedor'
   monto_total: number
   moneda: 'MXN' | 'USD'
   fecha: string | null
@@ -81,6 +96,10 @@ export type TicketParsed = {
   efectivo?: number | null
   tarjeta?: number | null
   transferencia?: number | null
+  es_factura_proveedor?: boolean
+  proveedor?: string | null
+  fecha_vencimiento?: string | null
+  referencia_factura?: string | null
 }
 
 export type VozParsed = {
