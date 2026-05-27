@@ -10,14 +10,13 @@
 -- desconocidas). Solo se registra el cobro contra el evento.
 -- =============================================================
 
-insert into eventos_pagos (evento_id, fecha_pago, monto, moneda, concepto, notas)
+insert into eventos_pagos (evento_id, fecha_pago, monto, moneda, concepto)
 select
   e.id,
   '2026-05-08'::date,
   x.monto,
   x.moneda,
-  'Anticipo',
-  'Capturado del Excel histórico — fecha real del anticipo desconocida'
+  'Anticipo (capturado del Excel histórico)'
 from eventos e
 join (values
   ('Jesús Nazares Marín',                  '2026-05-30'::date, 10000.00, 'MXN'),
@@ -36,7 +35,7 @@ join (values
   and e.fecha_evento = x.fecha
 where not exists (
   select 1 from eventos_pagos ep
-  where ep.evento_id = e.id and ep.concepto = 'Anticipo'
+  where ep.evento_id = e.id and ep.concepto like 'Anticipo%'
 );
 
 -- =============================================================
@@ -47,7 +46,7 @@ where not exists (
 update eventos e
 set notas = null
 where notas like '%Anticipo $%pago pendiente%'
-  and exists (select 1 from eventos_pagos ep where ep.evento_id = e.id and ep.concepto = 'Anticipo');
+  and exists (select 1 from eventos_pagos ep where ep.evento_id = e.id and ep.concepto like 'Anticipo%');
 
 -- Para Arón Lugo (USD evento, MXN anticipo) ajustar nota
 update eventos

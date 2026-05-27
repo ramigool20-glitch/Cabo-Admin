@@ -59,7 +59,9 @@ export default async function PorPagarPage() {
   }
 
   const vencidas = lista.filter((c) => c.vencido || c.estado === 'vencido')
+  // Pendientes: todo lo que no esté vencido ni pagado (incluso sin fecha)
   const proximas = lista.filter((c) => !c.vencido && c.estado !== 'pagado' && c.fecha_vencimiento)
+  const sinFecha = lista.filter((c) => !c.vencido && c.estado !== 'pagado' && !c.fecha_vencimiento)
   const pagadas = lista.filter((c) => c.estado === 'pagado')
 
   return (
@@ -138,6 +140,18 @@ export default async function PorPagarPage() {
           </h2>
           <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
             {proximas.map((c) => <CuentaRow key={c.id} c={c} />)}
+          </ul>
+        </section>
+      )}
+
+      {/* Sin fecha de vencimiento */}
+      {sinFecha.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="label-caps">
+            <Clock className="h-3 w-3 inline mr-1" /> Sin fecha definida ({sinFecha.length})
+          </h2>
+          <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
+            {sinFecha.map((c) => <CuentaRow key={c.id} c={c} />)}
           </ul>
         </section>
       )}

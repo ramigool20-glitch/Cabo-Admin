@@ -19,20 +19,29 @@ export default async function DetalleTransaccionPage(
       monto_mxn_equivalente, tipo_cambio_usado,
       created_at, capturado_por,
       negocios(nombre),
-      cuentas(nombre),
-      profiles!transacciones_capturado_por_fkey(nombre)
+      cuentas(nombre)
     `)
     .eq('id', id)
-    .single()
+    .maybeSingle()
 
   if (!t) notFound()
+
+  // Capturador via query separada — más robusto que joins con FK constraint name
+  let capturador: { nombre: string } | null = null
+  if (t.capturado_por) {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('nombre')
+      .eq('id', t.capturado_por)
+      .maybeSingle()
+    capturador = prof
+  }
 
   const isGasto = t.tipo === 'gasto' || t.tipo === 'multa_interna'
   const Icon = isGasto ? ArrowDownCircle : ArrowUpCircle
   const colorClass = isGasto ? 'text-rose-400' : 'text-emerald-400'
   const negocio = t.negocios as unknown as { nombre: string } | null
   const cuenta = t.cuentas as unknown as { nombre: string } | null
-  const capturador = t.profiles as unknown as { nombre: string } | null
   const editable = t.tipo === 'ingreso' || t.tipo === 'gasto'
 
   return (
