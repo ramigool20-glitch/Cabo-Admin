@@ -63,7 +63,7 @@ export default async function DashboardPage(
     supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
     supabase
       .from('transacciones')
-      .select('id, tipo, monto, moneda, fecha, concepto, negocios(nombre)')
+      .select('id, tipo, monto, moneda, fecha, concepto, monto_mxn_equivalente, negocios(nombre)')
       .order('created_at', { ascending: false })
       .limit(5),
     admin
@@ -529,6 +529,11 @@ export default async function DashboardPage(
               {ultimas.map((u) => {
                 const negs = u.negocios as unknown as { nombre: string } | null
                 const isGasto = u.tipo === 'gasto' || u.tipo === 'multa_interna'
+                const mxnEq = (u as { monto_mxn_equivalente?: number | null }).monto_mxn_equivalente
+                const mxnEqRuntime = u.moneda === 'USD' && mxnEq == null && fxFallback
+                  ? Number(u.monto) * fxFallback
+                  : null
+                const showMxnConversion = u.moneda === 'USD' && (mxnEq != null || mxnEqRuntime != null)
                 return (
                   <li key={u.id}>
                     <Link href={`/transacciones/${u.id}`} className="flex items-center gap-3 p-3 hover:bg-white/5 transition-colors">
@@ -538,9 +543,16 @@ export default async function DashboardPage(
                           {negs?.nombre ?? '—'} · {formatearFecha(u.fecha, 'dd MMM')}
                         </p>
                       </div>
-                      <p className={`text-sm font-bold tabular-nums ${isGasto ? 'text-rose-400' : 'text-emerald-400'}`}>
-                        {isGasto ? '−' : '+'}{formatMoney(Number(u.monto), u.moneda as 'MXN' | 'USD')}
-                      </p>
+                      <div className="text-right shrink-0">
+                        <p className={`text-sm font-bold tabular-nums ${isGasto ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          {isGasto ? '−' : '+'}{formatMoney(Number(u.monto), u.moneda as 'MXN' | 'USD')}
+                        </p>
+                        {showMxnConversion && (
+                          <p className="text-[10px] text-zinc-500 tabular-nums">
+                            ≈ {formatMoney(Number(mxnEq ?? mxnEqRuntime ?? 0), 'MXN')}
+                          </p>
+                        )}
+                      </div>
                     </Link>
                   </li>
                 )

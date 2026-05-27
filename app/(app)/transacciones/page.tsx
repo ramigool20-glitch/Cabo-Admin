@@ -52,12 +52,14 @@ export default async function TransaccionesPage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const transacciones = (txResult.data ?? []) as any[]
 
-  const [{ data: negocios }, { data: cuentas }] = await Promise.all([
+  const [{ data: negocios }, { data: cuentas }, { data: fxLatest }] = await Promise.all([
     supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
     supabase.from('cuentas').select('id, nombre').eq('activo', true).order('nombre'),
+    supabase.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  const t = totalizar(transacciones)
+  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
+  const t = totalizar(transacciones, fxRate)
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-4 max-w-3xl mx-auto">
@@ -72,31 +74,31 @@ export default async function TransaccionesPage(
         <RangoSelector actual={rangoId} customDesde={sp.desde} customHasta={sp.hasta} />
       </header>
 
-      {/* Resumen del rango */}
+      {/* Resumen del rango — totales en MXN (USD convertidos al rate más reciente) */}
       {(transacciones?.length ?? 0) > 0 && (
         <div className="grid grid-cols-3 gap-2">
           <div className="card p-3">
             <p className="label-caps text-emerald-400">Ingresos</p>
             <p className="text-sm font-bold tabular-nums text-emerald-300">
-              {formatMoney(t.ingresos_mxn, 'MXN')}
+              {formatMoney(t.ingresos_total_mxn, 'MXN')}
             </p>
             {t.ingresos_usd > 0 && (
-              <p className="text-[10px] text-emerald-300/70">+ {formatMoney(t.ingresos_usd, 'USD')}</p>
+              <p className="text-[10px] text-emerald-300/70 tabular-nums">incl. {formatMoney(t.ingresos_usd, 'USD')}</p>
             )}
           </div>
           <div className="card p-3">
             <p className="label-caps text-rose-400">Gastos</p>
             <p className="text-sm font-bold tabular-nums text-rose-300">
-              {formatMoney(t.gastos_mxn, 'MXN')}
+              {formatMoney(t.gastos_total_mxn, 'MXN')}
             </p>
             {t.gastos_usd > 0 && (
-              <p className="text-[10px] text-rose-300/70">+ {formatMoney(t.gastos_usd, 'USD')}</p>
+              <p className="text-[10px] text-rose-300/70 tabular-nums">incl. {formatMoney(t.gastos_usd, 'USD')}</p>
             )}
           </div>
           <div className="card p-3">
             <p className="label-caps">Utilidad</p>
-            <p className={`text-sm font-bold tabular-nums ${t.utilidad_mxn >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-              {t.utilidad_mxn >= 0 ? '+' : ''}{formatMoney(t.utilidad_mxn, 'MXN')}
+            <p className={`text-sm font-bold tabular-nums ${t.utilidad_total_mxn >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+              {t.utilidad_total_mxn >= 0 ? '+' : ''}{formatMoney(t.utilidad_total_mxn, 'MXN')}
             </p>
           </div>
         </div>
