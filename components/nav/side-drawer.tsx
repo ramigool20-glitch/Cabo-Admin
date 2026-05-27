@@ -31,6 +31,7 @@ const HERRAMIENTAS = [
   { href: '/cobros',        label: 'Cobros Stripe', icon: Receipt,       emoji: '💳', badge: 'NEW' },
   { href: '/transacciones', label: 'Transacciones', icon: Receipt,       emoji: '📋' },
   { href: '/negocios',      label: 'Negocios',    icon: Building2,       emoji: '🏢' },
+  { href: '/casa',          label: 'Casa',        icon: Building2,       emoji: '🏠', badge: 'NEW' },
   { href: '/tareas',        label: 'Tareas',      icon: CheckSquare,     emoji: '✅' },
   { href: '/multas',        label: 'Multas',      icon: AlertTriangle,   emoji: '⚠️' },
   { href: '/eventos',       label: 'Eventos',     icon: Calendar,        emoji: '🎉' },

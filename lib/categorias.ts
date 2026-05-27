@@ -1,7 +1,17 @@
 export const CATEGORIAS_GASTO = [
   'ads', 'renta', 'sueldo', 'comida', 'gasolina', 'servicios',
   'producto', 'suministros', 'mantenimiento', 'marketing',
-  'transporte', 'comisión', 'impuestos', 'otro',
+  'transporte', 'comisión', 'impuestos',
+  // Casa (roomates)
+  'renta_casa', 'luz', 'agua', 'internet', 'despensa', 'limpieza',
+  'gas', 'streaming', 'mantenimiento_casa',
+  'otro',
+] as const
+
+// Categorías recomendadas cuando el negocio es Casa
+export const CATEGORIAS_CASA = [
+  'renta_casa', 'luz', 'agua', 'internet', 'despensa', 'limpieza',
+  'gas', 'streaming', 'mantenimiento_casa', 'otro',
 ] as const
 
 export const CATEGORIAS_INGRESO = [
