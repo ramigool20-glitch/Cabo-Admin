@@ -101,3 +101,50 @@ export async function descartarInsight(id: string) {
   revalidatePath('/radar')
   return { ok: true }
 }
+
+export async function agregarCompetidor(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'No autenticado' }
+
+  const dominio_propio = String(formData.get('dominio_propio') || '').trim()
+  const competidor_nombre = String(formData.get('competidor_nombre') || '').trim()
+  const competidor_url = String(formData.get('competidor_url') || '').trim() || null
+  const tipo = String(formData.get('tipo') || 'directo')
+  const descripcion = String(formData.get('descripcion') || '').trim() || null
+
+  if (!dominio_propio || !competidor_nombre) {
+    return { ok: false, error: 'Falta dominio propio o nombre competidor' }
+  }
+
+  const admin = createAdminClient()
+  const { error } = await admin.from('radar_competidores').insert({
+    dominio_propio,
+    competidor_nombre,
+    competidor_url,
+    tipo,
+    descripcion,
+    agregado_por: user.id,
+    activo: true,
+  })
+  if (error) {
+    if (/relation.*does not exist/i.test(error.message)) {
+      return { ok: false, error: 'Tabla radar_competidores no existe. Pega la migración 0015_radar_competidores.sql.' }
+    }
+    return { ok: false, error: error.message }
+  }
+
+  revalidatePath('/radar')
+  return { ok: true }
+}
+
+export async function eliminarCompetidor(id: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false }
+
+  const admin = createAdminClient()
+  await admin.from('radar_competidores').delete().eq('id', id)
+  revalidatePath('/radar')
+  return { ok: true }
+}
