@@ -180,98 +180,7 @@ export default async function PorCobrarPage() {
         </section>
       )}
 
-      {/* Eventos pendientes de cobro (Rancho McCoy) */}
-      {eventosPendientes.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="label-caps inline-flex items-center gap-1">
-            <PartyPopper className="h-3 w-3 text-purple-400" />
-            Eventos pendientes de cobro ({eventosPendientes.length})
-            {eventosTotalMxn > 0 && (
-              <span className="ml-1 text-purple-300 tabular-nums">
-                {formatMoney(eventosTotalMxn, 'MXN')}
-              </span>
-            )}
-          </h2>
-          <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
-            {eventosPendientes.map((e) => {
-              const pct = e.monto_total > 0 ? (e.monto_cobrado / e.monto_total) * 100 : 0
-              const diasFalta = Math.ceil(
-                (new Date(e.fecha_evento + 'T00:00:00').getTime() - new Date(hoy + 'T00:00:00').getTime())
-                / (24 * 60 * 60 * 1000)
-              )
-              const fechaLabel = diasFalta < 0
-                ? `vencido hace ${Math.abs(diasFalta)}d`
-                : diasFalta === 0 ? 'HOY'
-                : diasFalta === 1 ? 'mañana'
-                : `en ${diasFalta} días`
-              return (
-                <li key={e.id}>
-                  <div className="block p-3 hover:bg-[var(--bg-card-hover)] transition-colors">
-                    <div className="flex items-start gap-3">
-                      <Link href={`/eventos/${e.id}`} className="text-lg">🎉</Link>
-                      <Link href={`/eventos/${e.id}`} className="flex-1 min-w-0 leading-tight">
-                        <p className="text-sm font-bold text-white truncate">{e.cliente_nombre}</p>
-                        <p className="text-[10px] text-zinc-500 truncate">
-                          {e.paquete || 'Evento'}
-                          {e.num_personas != null && ` · 👥 ${e.num_personas}`}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                          <span className={cn(
-                            'chip text-[9px] h-4 px-1.5',
-                            e.vencido ? 'chip-red' : diasFalta <= 7 ? 'chip-yellow' : 'chip-cyan'
-                          )}>
-                            {formatearFecha(e.fecha_evento, 'dd MMM')} · {fechaLabel}
-                          </span>
-                          {e.monto_cobrado > 0 && (
-                            <span className="text-[10px] text-zinc-400">
-                              {Math.round(pct)}% cobrado
-                            </span>
-                          )}
-                        </div>
-                      </Link>
-                      <Link
-                        href={`/eventos/${e.id}/editar`}
-                        className="h-7 w-7 inline-flex items-center justify-center rounded text-cyan-400 hover:bg-cyan-500/10"
-                        title="Editar evento"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Link>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-bold tabular-nums text-emerald-300">
-                          {formatMoney(e.pendiente, e.moneda)}
-                        </p>
-                        <p className="text-[10px] text-zinc-500 tabular-nums">
-                          de {formatMoney(e.monto_total, e.moneda)}
-                        </p>
-                      </div>
-                    </div>
-                    {/* Progress bar */}
-                    {e.monto_total > 0 && (
-                      <div className="mt-2 ml-7 h-1 rounded-full bg-[var(--bg-input)] overflow-hidden">
-                        <div
-                          className={cn(
-                            'h-full transition-all',
-                            e.pendiente <= 0.01 ? 'bg-emerald-500'
-                            : e.monto_cobrado > 0 ? 'bg-gradient-to-r from-amber-500 to-emerald-500'
-                            : 'bg-rose-500/50'
-                          )}
-                          style={{ width: `${Math.max(2, pct)}%` }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-          {eventosVencidoMxn > 0 && (
-            <p className="text-[11px] text-rose-400 px-1">
-              ⚠ {formatMoney(eventosVencidoMxn, 'MXN')} en eventos que ya pasaron sin cobrar el total
-            </p>
-          )}
-        </section>
-      )}
-
+      {/* 1️⃣ PENDIENTES de clientes (deudas manuales) — VAN ARRIBA */}
       {vencidas.length > 0 && (
         <section className="space-y-2">
           <h2 className="label-caps text-rose-400">
@@ -291,6 +200,95 @@ export default async function PorCobrarPage() {
           <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
             {proximas.map((c) => <CuentaRow key={c.id} c={c} />)}
           </ul>
+        </section>
+      )}
+
+      {/* 2️⃣ EVENTOS RANCHO — VAN ABAJO. Click → editable al 100% */}
+      {eventosPendientes.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="label-caps inline-flex items-center gap-1">
+            <PartyPopper className="h-3 w-3 text-purple-400" />
+            Eventos del Rancho pendientes ({eventosPendientes.length})
+            {eventosTotalMxn > 0 && (
+              <span className="ml-1 text-purple-300 tabular-nums">
+                · {formatMoney(eventosTotalMxn, 'MXN')}
+              </span>
+            )}
+          </h2>
+          <p className="text-[10px] text-zinc-500 px-1">
+            Toca el evento → editas TODO (anticipo, monto, personas, fecha, paquete)
+          </p>
+          <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
+            {eventosPendientes.map((e) => {
+              const pct = e.monto_total > 0 ? (e.monto_cobrado / e.monto_total) * 100 : 0
+              const diasFalta = Math.ceil(
+                (new Date(e.fecha_evento + 'T00:00:00').getTime() - new Date(hoy + 'T00:00:00').getTime())
+                / (24 * 60 * 60 * 1000)
+              )
+              const fechaLabel = diasFalta < 0
+                ? `vencido hace ${Math.abs(diasFalta)}d`
+                : diasFalta === 0 ? 'HOY'
+                : diasFalta === 1 ? 'mañana'
+                : `en ${diasFalta} días`
+              return (
+                <li key={e.id}>
+                  <Link href={`/eventos/${e.id}`} className="block p-3 hover:bg-[var(--bg-card-hover)] transition-colors">
+                    <div className="flex items-start gap-3">
+                      <span className="text-lg">🎉</span>
+                      <div className="flex-1 min-w-0 leading-tight">
+                        <p className="text-sm font-bold text-white truncate">{e.cliente_nombre}</p>
+                        <p className="text-[10px] text-zinc-500 truncate">
+                          {e.paquete || 'Evento'}
+                          {e.num_personas != null && ` · 👥 ${e.num_personas}`}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <span className={cn(
+                            'chip text-[9px] h-4 px-1.5',
+                            e.vencido ? 'chip-red' : diasFalta <= 7 ? 'chip-yellow' : 'chip-cyan'
+                          )}>
+                            {formatearFecha(e.fecha_evento, 'dd MMM')} · {fechaLabel}
+                          </span>
+                          {e.monto_cobrado > 0 && (
+                            <span className="text-[10px] text-emerald-400">
+                              anticipo {formatMoney(e.monto_cobrado, e.moneda)} ({Math.round(pct)}%)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold tabular-nums text-emerald-300">
+                          {formatMoney(e.pendiente, e.moneda)}
+                        </p>
+                        <p className="text-[10px] text-zinc-500 tabular-nums">
+                          de {formatMoney(e.monto_total, e.moneda)}
+                        </p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-zinc-500 shrink-0 mt-1" />
+                    </div>
+                    {/* Progress bar */}
+                    {e.monto_total > 0 && (
+                      <div className="mt-2 ml-7 h-1 rounded-full bg-[var(--bg-input)] overflow-hidden">
+                        <div
+                          className={cn(
+                            'h-full transition-all',
+                            e.pendiente <= 0.01 ? 'bg-emerald-500'
+                            : e.monto_cobrado > 0 ? 'bg-gradient-to-r from-amber-500 to-emerald-500'
+                            : 'bg-rose-500/50'
+                          )}
+                          style={{ width: `${Math.max(2, pct)}%` }}
+                        />
+                      </div>
+                    )}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+          {eventosVencidoMxn > 0 && (
+            <p className="text-[11px] text-rose-400 px-1">
+              ⚠ {formatMoney(eventosVencidoMxn, 'MXN')} en eventos que ya pasaron sin cobrar el total
+            </p>
+          )}
         </section>
       )}
 
