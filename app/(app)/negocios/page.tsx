@@ -16,6 +16,15 @@ export default async function NegociosPage() {
   const supabase = createAdminClient()
   const r = rangoFechas('mes_actual')
 
+  // FX rate más reciente (fallback runtime para USD sin equivalente persistido)
+  const { data: fxLatest } = await supabase
+    .from('fx_rates')
+    .select('rate_compra')
+    .order('fecha', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
+
   const { data: negocios } = await supabase
     .from('negocios')
     .select('id, nombre, tipo, moneda_principal, activo, url')
@@ -23,10 +32,10 @@ export default async function NegociosPage() {
     .order('tipo')
     .order('nombre')
 
-  // Trae los totales del mes por negocio (admin = bypassa RLS)
+  // Incluye monto_mxn_equivalente y tipo_cambio_usado para conversión correcta
   const { data: txMes } = await supabase
     .from('transacciones')
-    .select('tipo, monto, moneda, fecha, categoria, negocio_id')
+    .select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente, tipo_cambio_usado')
     .gte('fecha', r.desde)
     .lte('fecha', r.hasta)
 
@@ -47,9 +56,9 @@ export default async function NegociosPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {negocios?.map((n) => {
           const meta = tipoMeta[n.tipo] ?? tipoMeta.general
-          const t = totalizar(rowsPorNegocio.get(n.id) ?? [])
-          const utilidad = t.utilidad_mxn + (t.utilidad_usd ? t.utilidad_usd * 17 : 0) // estimación
-          const positiva = utilidad >= 0
+          // Pasa fxRate para que totalizar convierta USD automático
+          const t = totalizar(rowsPorNegocio.get(n.id) ?? [], fxRate)
+          const positiva = t.utilidad_total_mxn >= 0
           const url = (n as { url?: string | null }).url
 
           return (
@@ -76,30 +85,36 @@ export default async function NegociosPage() {
                 </span>
               </div>
 
-              {/* Utilidad del mes */}
+              {/* Utilidad del mes (totales convertidos a MXN) */}
               <div className="space-y-0.5">
                 <p className="label-caps">Utilidad del mes</p>
                 <p className={cn(
                   'text-2xl font-black tabular-nums',
                   positiva ? 'text-emerald-300' : 'text-rose-300'
                 )}>
-                  {positiva ? '+' : ''}{formatMoney(t.utilidad_mxn, 'MXN')}
+                  {positiva ? '+' : ''}{formatMoney(t.utilidad_total_mxn, 'MXN')}
                 </p>
               </div>
 
-              {/* Métricas */}
+              {/* Métricas (totales en MXN incluyen USD convertidos al rate del día) */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <p className="label-caps">Ingresos</p>
                   <p className="text-sm font-bold text-emerald-400 tabular-nums">
-                    {formatMoney(t.ingresos_mxn, 'MXN')}
+                    {formatMoney(t.ingresos_total_mxn, 'MXN')}
                   </p>
+                  {t.ingresos_usd > 0 && (
+                    <p className="text-[9px] text-zinc-500 tabular-nums">incl. {formatMoney(t.ingresos_usd, 'USD')}</p>
+                  )}
                 </div>
                 <div>
                   <p className="label-caps">Gastos</p>
                   <p className="text-sm font-bold text-rose-400 tabular-nums">
-                    {formatMoney(t.gastos_mxn, 'MXN')}
+                    {formatMoney(t.gastos_total_mxn, 'MXN')}
                   </p>
+                  {t.gastos_usd > 0 && (
+                    <p className="text-[9px] text-zinc-500 tabular-nums">incl. {formatMoney(t.gastos_usd, 'USD')}</p>
+                  )}
                 </div>
               </div>
 

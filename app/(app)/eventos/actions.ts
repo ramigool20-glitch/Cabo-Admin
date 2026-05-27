@@ -37,6 +37,59 @@ const PagoSchema = z.object({
 
 export type ActionState = { ok?: boolean; error?: string; fieldErrors?: Record<string, string[]> }
 
+const EventoEditSchema = EventoSchema.extend({
+  id: z.string().uuid(),
+  estado: z.enum(['reservado', 'confirmado', 'realizado', 'pagado_proveedor', 'cancelado']).default('reservado'),
+})
+
+export async function actualizarEvento(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const raw = Object.fromEntries(formData.entries())
+  const parsed = EventoEditSchema.safeParse({
+    ...raw,
+    cliente_telefono: raw.cliente_telefono || null,
+    cliente_email: raw.cliente_email || null,
+    tipo_evento: raw.tipo_evento || null,
+    hora_evento: raw.hora_evento || null,
+    proveedor_nombre: raw.proveedor_nombre || null,
+    notas: raw.notas || null,
+    num_personas: raw.num_personas || null,
+    duracion_horas: raw.duracion_horas || null,
+    paquete: raw.paquete || null,
+  })
+  if (!parsed.success) {
+    return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' }
+
+  const { id, ...rest } = parsed.data
+  const { error } = await supabase.from('eventos').update(rest).eq('id', id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/eventos')
+  revalidatePath(`/eventos/${id}`)
+  revalidatePath('/calendario')
+  revalidatePath('/dashboard')
+  flashOk(`/eventos/${id}`, 'evento_actualizado')
+}
+
+export async function eliminarEvento(eventoId: string): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+
+  // Borra pagos vinculados primero (cascada manual por si el FK no la tiene)
+  await supabase.from('eventos_pagos').delete().eq('evento_id', eventoId)
+  await supabase.from('eventos').delete().eq('id', eventoId)
+
+  revalidatePath('/eventos')
+  revalidatePath('/calendario')
+  revalidatePath('/dashboard')
+  flashOk('/eventos', 'evento_eliminado')
+}
+
 export async function createEvento(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const raw = Object.fromEntries(formData.entries())
   const parsed = EventoSchema.safeParse({

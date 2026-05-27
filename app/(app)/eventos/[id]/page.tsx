@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ChevronLeft, Plus, PartyPopper, ExternalLink } from 'lucide-react'
+import { ChevronLeft, Plus, PartyPopper, ExternalLink, Pencil, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { PagoEventoForm } from '@/components/eventos/pago-evento-form'
-import { realizarEvento, pagarProveedor } from '@/app/(app)/eventos/actions'
+import { realizarEvento, pagarProveedor, eliminarEvento } from '@/app/(app)/eventos/actions'
+import { EliminarEventoBtn } from '@/components/eventos/eliminar-evento-btn'
 
 const ESTADO_CHIP = {
   reservado:        { l: 'Reservado',     c: 'chip-yellow' },
@@ -39,9 +40,21 @@ export default async function DetalleEventoPage(
 
   return (
     <div className="px-4 pt-4 pb-24 space-y-5 max-w-2xl mx-auto">
-      <Link href="/eventos" className="inline-flex items-center gap-1 text-sm text-zinc-400">
-        <ChevronLeft className="h-4 w-4" /> Eventos
-      </Link>
+      <div className="flex items-center justify-between gap-2">
+        <Link href="/eventos" className="inline-flex items-center gap-1 text-sm text-zinc-400">
+          <ChevronLeft className="h-4 w-4" /> Eventos
+        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/eventos/${id}/editar`}
+            className="h-10 px-3 rounded-md text-xs font-bold inline-flex items-center justify-center gap-1.5 border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Editar
+          </Link>
+          <EliminarEventoBtn id={id} cliente={evento.cliente_nombre} />
+        </div>
+      </div>
 
       <header className="space-y-2">
         <div className="flex items-start justify-between gap-3">

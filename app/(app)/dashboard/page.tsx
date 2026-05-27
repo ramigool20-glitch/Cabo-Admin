@@ -138,8 +138,14 @@ export default async function DashboardPage(
       .lte('fecha', previoHasta),
   ])
 
-  // Totales del periodo anterior (en MXN equivalente)
-  const tPrev = totalizar(txPrevio ?? [])
+  // FX rate fallback: prefiere el de hoy, sino el más reciente conocido
+  let fxFallback: number | null = fxRateHoy ? Number(fxRateHoy.rate_compra) : null
+  if (!fxFallback && fxHistorial && fxHistorial.length > 0) {
+    fxFallback = Number(fxHistorial[0].rate_compra)
+  }
+
+  // Totales del periodo anterior (con conversión USD)
+  const tPrev = totalizar(txPrevio ?? [], fxFallback)
 
   function pctChange(actual: number, prev: number): number | null {
     if (prev === 0) return null
@@ -147,10 +153,10 @@ export default async function DashboardPage(
   }
 
   const rows = transacciones ?? []
-  const t = totalizar(rows)
-  const seriePorDia = porDia(rows)
-  const barNegocios = porNegocio(rows, negocios ?? [])
-  const topCats = porCategoria(rows)
+  const t = totalizar(rows, fxFallback)
+  const seriePorDia = porDia(rows, fxFallback)
+  const barNegocios = porNegocio(rows, negocios ?? [], fxFallback)
+  const topCats = porCategoria(rows, 6, fxFallback)
 
   // Resumen Por Pagar
   const pp = { totalMxn: 0, totalUsd: 0, vencidoMxn: 0, vencidoUsd: 0, count: 0, vencidoCount: 0 }

@@ -19,15 +19,18 @@ export default async function CashFlowPage() {
     { data: gastosFijos },
     { data: porPagar },
     { data: empleados },
+    { data: fxLatest },
   ] = await Promise.all([
-    supabase.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, cuenta_id').gte('fecha', inicioMes),
+    supabase.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, cuenta_id, monto_mxn_equivalente, tipo_cambio_usado').gte('fecha', inicioMes),
     supabase.from('cuentas').select('id, nombre, moneda, tipo').eq('activo', true).order('nombre'),
     supabase.from('gastos_recurrentes').select('nombre, monto, moneda, frecuencia, proximo_pago').eq('activo', true),
     supabase.from('cuentas_por_pagar').select('proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').neq('estado', 'cancelado').neq('estado', 'pagado'),
     supabase.from('empleados').select('nombre, empleado_compensacion(sueldo_base, moneda, frecuencia_pago)').eq('activo', true),
+    supabase.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  const t = totalizar(txMes ?? [])
+  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
+  const t = totalizar(txMes ?? [], fxRate)
 
   // Saldo por cuenta (solo del mes actual, simulado)
   const saldoCuentas = new Map<string, { nombre: string; mxn: number; usd: number; moneda: string }>()
