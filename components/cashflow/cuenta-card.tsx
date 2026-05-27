@@ -210,17 +210,29 @@ function CuentaActivaCard({
           <p className="text-sm font-bold text-white truncate">{cuenta.nombre}</p>
           {cuenta.titular && <p className="text-[10px] text-zinc-500">{cuenta.titular}</p>}
         </div>
-        <button
-          type="button"
-          onClick={() => setShowAjuste((v) => !v)}
-          className="h-8 px-2 rounded-md text-[10px] font-bold inline-flex items-center gap-1 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
-        >
-          <Pencil className="h-3 w-3" />
-          Ajustar
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setShowEditarInicial((v) => !v)}
+            className="h-8 px-2 rounded-md text-[10px] font-bold inline-flex items-center gap-1 border border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+            title="Corregir saldo inicial"
+          >
+            <Lock className="h-3 w-3" />
+            Inicial
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAjuste((v) => !v)}
+            className="h-8 px-2 rounded-md text-[10px] font-bold inline-flex items-center gap-1 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
+            title="Registrar entrada/salida con motivo"
+          >
+            <Pencil className="h-3 w-3" />
+            Ajustar
+          </button>
+        </div>
       </div>
 
-      {/* Saldos */}
+      {/* Saldos — siempre muestra equivalente MXN si hay USD */}
       <div className="space-y-1 pl-13">
         {tieneMxn && (
           <div className="flex items-baseline justify-between">
@@ -238,9 +250,12 @@ function CuentaActivaCard({
             </span>
           </div>
         )}
-        {tieneMxn && tieneUsd && (
+        {/* Equivalente MXN: siempre que tenga USD, sea o no bimoneda */}
+        {tieneUsd && (
           <div className="flex items-baseline justify-between pt-1 border-t border-zinc-800">
-            <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Total equiv.</span>
+            <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">
+              {tieneMxn ? 'Total equiv.' : 'Equivalente'}
+            </span>
             <span className="text-base font-black tabular-nums text-cyan-300">
               ≈ {formatMoney(totalEquivMxn, 'MXN')}
             </span>
