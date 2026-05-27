@@ -199,6 +199,10 @@ function CuentaActivaCard({
   const [showEditarInicial, setShowEditarInicial] = useState(false)
   const tieneMxn = saldoMxn !== 0 || Number(cuenta.saldo_inicial_mxn) !== 0
   const tieneUsd = saldoUsd !== 0 || Number(cuenta.saldo_inicial_usd) !== 0
+  // Siempre muestra la moneda principal de la cuenta (aunque saldo sea $0)
+  const mostrarMxn = tieneMxn || cuenta.moneda === 'MXN'
+  const mostrarUsd = tieneUsd || cuenta.moneda === 'USD'
+  const saldoNegativo = (mostrarMxn && saldoMxn < 0) || (mostrarUsd && saldoUsd < 0)
 
   return (
     <div className="card p-3 space-y-2">
@@ -232,34 +236,43 @@ function CuentaActivaCard({
         </div>
       </div>
 
-      {/* Saldos — siempre muestra equivalente MXN si hay USD */}
+      {/* Saldos — siempre muestra la moneda principal aunque sea $0 */}
       <div className="space-y-1 pl-13">
-        {tieneMxn && (
+        {mostrarMxn && (
           <div className="flex items-baseline justify-between">
-            <span className="text-[10px] text-zinc-500 uppercase tracking-wider">MXN</span>
+            <span className="text-[10px] text-zinc-500 uppercase tracking-wider">
+              {saldoMxn < 0 ? 'MXN · DEBE' : 'MXN'}
+            </span>
             <span className={cn('text-lg font-black tabular-nums', saldoMxn >= 0 ? 'text-emerald-300' : 'text-rose-300')}>
               {formatMoney(saldoMxn, 'MXN')}
             </span>
           </div>
         )}
-        {tieneUsd && (
+        {mostrarUsd && (
           <div className="flex items-baseline justify-between">
-            <span className="text-[10px] text-zinc-500 uppercase tracking-wider">USD</span>
+            <span className="text-[10px] text-zinc-500 uppercase tracking-wider">
+              {saldoUsd < 0 ? 'USD · DEBE' : 'USD'}
+            </span>
             <span className={cn('text-lg font-black tabular-nums', saldoUsd >= 0 ? 'text-emerald-300' : 'text-rose-300')}>
               {formatMoney(saldoUsd, 'USD')}
             </span>
           </div>
         )}
-        {/* Equivalente MXN: siempre que tenga USD, sea o no bimoneda */}
-        {tieneUsd && (
+        {/* Equivalente MXN: siempre que tenga USD */}
+        {mostrarUsd && saldoUsd !== 0 && (
           <div className="flex items-baseline justify-between pt-1 border-t border-zinc-800">
             <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">
-              {tieneMxn ? 'Total equiv.' : 'Equivalente'}
+              {mostrarMxn && saldoMxn !== 0 ? 'Total equiv.' : 'Equivalente'}
             </span>
-            <span className="text-base font-black tabular-nums text-cyan-300">
+            <span className={cn('text-base font-black tabular-nums', totalEquivMxn >= 0 ? 'text-cyan-300' : 'text-rose-300')}>
               ≈ {formatMoney(totalEquivMxn, 'MXN')}
             </span>
           </div>
+        )}
+        {saldoNegativo && (
+          <p className="text-[10px] text-rose-300/80 italic pt-0.5">
+            ⚠ Sobregiro: los gastos posteriores al saldo inicial exceden lo capturado
+          </p>
         )}
       </div>
 
@@ -300,15 +313,6 @@ function CuentaActivaCard({
           {cuenta.saldo_inicial_notas && (
             <p className="text-zinc-500 italic mt-1">📝 {cuenta.saldo_inicial_notas}</p>
           )}
-          {/* Corregir saldo inicial (última edición) */}
-          <button
-            type="button"
-            onClick={() => setShowEditarInicial(true)}
-            className="mt-2 inline-flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300"
-          >
-            <Pencil className="h-2.5 w-2.5" />
-            Editar saldo inicial (corregir)
-          </button>
         </div>
       )}
 
