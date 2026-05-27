@@ -61,33 +61,74 @@ export default async function CasaPage(
     return r?.nombre === 'admin' || r?.nombre === 'socio'
   })
 
-  // 3) Transacciones de Casa del periodo
-  const [
-    { data: txs },
-    { data: shopping },
-    { data: ultimasCasa },
-    { data: proxGfCasa },
-    { data: cuentas },
-  ] = await Promise.all([
-    supabase
+  // 3) Transacciones de Casa del periodo (defensive: atribuido_a puede no existir)
+  type CasaTx = {
+    id: string
+    tipo: string
+    monto: number
+    moneda: string
+    fecha: string
+    categoria: string | null
+    capturado_por: string | null
+    monto_mxn_equivalente: number | null
+    concepto: string | null
+    atribuido_a?: string | null
+  }
+  const txsColsBase = 'id, tipo, monto, moneda, fecha, categoria, capturado_por, monto_mxn_equivalente, concepto'
+  const ultColsBase = 'id, tipo, monto, moneda, fecha, concepto, categoria, capturado_por, monto_mxn_equivalente'
+
+  let txs: CasaTx[] = []
+  {
+    const r1 = await supabase
       .from('transacciones')
-      .select('id, tipo, monto, moneda, fecha, categoria, capturado_por, atribuido_a, monto_mxn_equivalente, concepto')
+      .select(`${txsColsBase}, atribuido_a`)
       .eq('negocio_id', casa.id)
       .gte('fecha', r.desde)
-      .lte('fecha', r.hasta),
+      .lte('fecha', r.hasta)
+    if (r1.error && /atribuido_a/.test(r1.error.message ?? '')) {
+      const r2 = await supabase
+        .from('transacciones')
+        .select(txsColsBase)
+        .eq('negocio_id', casa.id)
+        .gte('fecha', r.desde)
+        .lte('fecha', r.hasta)
+      txs = (r2.data ?? []) as unknown as CasaTx[]
+    } else {
+      txs = (r1.data ?? []) as unknown as CasaTx[]
+    }
+  }
+
+  let ultimasCasa: CasaTx[] = []
+  {
+    const r1 = await supabase
+      .from('transacciones')
+      .select(`${ultColsBase}, atribuido_a`)
+      .eq('negocio_id', casa.id)
+      .order('fecha', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(15)
+    if (r1.error && /atribuido_a/.test(r1.error.message ?? '')) {
+      const r2 = await supabase
+        .from('transacciones')
+        .select(ultColsBase)
+        .eq('negocio_id', casa.id)
+        .order('fecha', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(15)
+      ultimasCasa = (r2.data ?? []) as unknown as CasaTx[]
+    } else {
+      ultimasCasa = (r1.data ?? []) as unknown as CasaTx[]
+    }
+  }
+
+  // Resto de queries
+  const [{ data: shopping }, { data: proxGfCasa }, { data: cuentas }] = await Promise.all([
     admin
       .from('casa_shopping')
       .select('id, item, cantidad, prioridad, agregado_por, comprado, comprado_at, comprado_por, notas, created_at')
       .order('comprado', { ascending: true })
       .order('created_at', { ascending: false })
       .limit(50),
-    supabase
-      .from('transacciones')
-      .select('id, tipo, monto, moneda, fecha, concepto, categoria, capturado_por, atribuido_a, monto_mxn_equivalente')
-      .eq('negocio_id', casa.id)
-      .order('fecha', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(15),
     admin
       .from('gastos_recurrentes')
       .select('id, nombre, monto, moneda, proximo_pago')

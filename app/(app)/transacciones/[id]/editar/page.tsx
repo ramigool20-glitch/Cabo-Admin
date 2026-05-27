@@ -12,15 +12,25 @@ export default async function EditarTransaccionPage(
   const supabase = await createClient()
   const admin = createAdminClient()
 
-  const [{ data: t }, { data: negocios }, { data: cuentas }, { data: socios }] = await Promise.all([
-    supabase.from('transacciones')
-      .select('id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado, atribuido_a')
-      .eq('id', id)
-      .single(),
+  const baseTxCols = 'id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado'
+  let tQuery = supabase.from('transacciones')
+    .select(`${baseTxCols}, atribuido_a`)
+    .eq('id', id)
+    .maybeSingle()
+
+  const [tRes, { data: negocios }, { data: cuentas }, { data: socios }] = await Promise.all([
+    tQuery,
     supabase.from('negocios').select('id, nombre, tipo, moneda_principal').eq('activo', true).order('nombre'),
     supabase.from('cuentas').select('id, nombre, tipo, moneda').eq('activo', true).order('nombre'),
     admin.from('profiles').select('id, nombre, role_id, roles(nombre)').eq('activo', true),
   ])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let t: any = tRes.data
+  if (tRes.error && /atribuido_a/.test(tRes.error.message ?? '')) {
+    const fallback = await supabase.from('transacciones').select(baseTxCols).eq('id', id).maybeSingle()
+    t = fallback.data
+  }
 
   const sociosFiltered = (socios ?? [])
     .filter((p) => {

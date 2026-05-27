@@ -11,18 +11,22 @@ export default async function DetalleTransaccionPage(
   const { id } = await props.params
   const supabase = await createClient()
 
-  const { data: t } = await supabase
+  // Defensive: si atribuido_a no existe (migración 0012 no aplicada), reintenta sin
+  const baseCols = 'id, tipo, monto, moneda, fecha, concepto, categoria, notas, metodo_pago, metodo_captura, foto_url, monto_mxn_equivalente, tipo_cambio_usado, created_at, capturado_por, negocios(nombre, tipo), cuentas(nombre)'
+  let tRes = await supabase
     .from('transacciones')
-    .select(`
-      id, tipo, monto, moneda, fecha, concepto, categoria, notas,
-      metodo_pago, metodo_captura, foto_url,
-      monto_mxn_equivalente, tipo_cambio_usado,
-      created_at, capturado_por, atribuido_a,
-      negocios(nombre, tipo),
-      cuentas(nombre)
-    `)
+    .select(`${baseCols}, atribuido_a`)
     .eq('id', id)
     .maybeSingle()
+  if (tRes.error && /atribuido_a/.test(tRes.error.message ?? '')) {
+    tRes = await supabase
+      .from('transacciones')
+      .select(baseCols)
+      .eq('id', id)
+      .maybeSingle()
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const t: any = tRes.data
 
   if (!t) notFound()
 

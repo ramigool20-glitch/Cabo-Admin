@@ -25,27 +25,39 @@ export default async function TransaccionesPage(
   const rangoId: RangoId = isRangoId(sp.rango) ? sp.rango : 'ultimos_30'
   const r = rangoFechas(rangoId, sp.desde, sp.hasta)
 
-  let query = supabase
-    .from('transacciones')
-    .select('id, tipo, monto, moneda, fecha, concepto, categoria, negocio_id, cuenta_id, monto_mxn_equivalente, tipo_cambio_usado, atribuido_a, negocios(nombre, tipo), cuentas(nombre)')
-    .gte('fecha', r.desde)
-    .lte('fecha', r.hasta)
-    .order('fecha', { ascending: false })
-    .order('created_at', { ascending: false })
-    .limit(500)
+  // Defensive: si migración 0012 no aplicada, retry sin atribuido_a
+  function buildQuery(includeAtribuido: boolean) {
+    const cols = includeAtribuido
+      ? 'id, tipo, monto, moneda, fecha, concepto, categoria, negocio_id, cuenta_id, monto_mxn_equivalente, tipo_cambio_usado, atribuido_a, negocios(nombre, tipo), cuentas(nombre)'
+      : 'id, tipo, monto, moneda, fecha, concepto, categoria, negocio_id, cuenta_id, monto_mxn_equivalente, tipo_cambio_usado, negocios(nombre, tipo), cuentas(nombre)'
+    let q = supabase
+      .from('transacciones')
+      .select(cols)
+      .gte('fecha', r.desde)
+      .lte('fecha', r.hasta)
+      .order('fecha', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(500)
+    if (sp.tipo === 'gasto' || sp.tipo === 'ingreso') q = q.eq('tipo', sp.tipo)
+    if (sp.negocio) q = q.eq('negocio_id', sp.negocio)
+    if (sp.cuenta) q = q.eq('cuenta_id', sp.cuenta)
+    if (sp.categoria) q = q.eq('categoria', sp.categoria)
+    return q
+  }
 
-  if (sp.tipo === 'gasto' || sp.tipo === 'ingreso') query = query.eq('tipo', sp.tipo)
-  if (sp.negocio) query = query.eq('negocio_id', sp.negocio)
-  if (sp.cuenta) query = query.eq('cuenta_id', sp.cuenta)
-  if (sp.categoria) query = query.eq('categoria', sp.categoria)
+  let txResult = await buildQuery(true)
+  if (txResult.error && /atribuido_a/.test(txResult.error.message ?? '')) {
+    txResult = await buildQuery(false)
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const transacciones = (txResult.data ?? []) as any[]
 
-  const [{ data: transacciones }, { data: negocios }, { data: cuentas }] = await Promise.all([
-    query,
+  const [{ data: negocios }, { data: cuentas }] = await Promise.all([
     supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
     supabase.from('cuentas').select('id, nombre').eq('activo', true).order('nombre'),
   ])
 
-  const t = totalizar(transacciones ?? [])
+  const t = totalizar(transacciones)
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-4 max-w-3xl mx-auto">
