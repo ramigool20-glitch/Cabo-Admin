@@ -8,6 +8,7 @@
     { "path": "/api/cron/auditor",                  "schedule": "30 14 * * *" },
     { "path": "/api/cron/check-tarde",              "schedule": "0 20 * * *" },
     { "path": "/api/cron/cierre-noche",             "schedule": "0 3 * * *" },
-    { "path": "/api/cron/fx-rate",                  "schedule": "30 12 * * *" }
+    { "path": "/api/cron/fx-rate",                  "schedule": "30 12 * * *" },
+    { "path": "/api/cron/radar",                    "schedule": "0 16 * * *" }
   ]
 }

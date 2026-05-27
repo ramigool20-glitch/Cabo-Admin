@@ -229,6 +229,21 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'cerrar_pendiente',
+      description: 'Marca una pregunta pendiente como resuelta o descartada. Úsala cuando el usuario haya respondido la info o cuando ya no aplique. Identifica el pendiente por substring de la pregunta.',
+      parameters: {
+        type: 'object',
+        properties: {
+          pregunta_substring: { type: 'string', description: 'Pedazo del texto de la pregunta del pendiente a cerrar' },
+          accion: { type: 'string', enum: ['resuelta', 'descartada'] },
+        },
+        required: ['pregunta_substring', 'accion'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'crear_shopping_item',
       description: 'Agrega un item a la lista de compras de Casa (papel, leche, etc.). Si es urgente, prioridad alta dispara push al otro roomate.',
       parameters: {
@@ -802,6 +817,23 @@ async function ejecutarTool(
         }
       }),
     })
+  }
+
+  if (name === 'cerrar_pendiente') {
+    const sub = String(input.pregunta_substring || '').toLowerCase()
+    const accionUI = (input.accion as 'resuelta' | 'descartada') || 'resuelta'
+    const estadoBD = accionUI === 'resuelta' ? 'contestada' : 'descartada'
+    const { data: pends } = await admin
+      .from('auditor_pendientes')
+      .select('id, pregunta')
+      .eq('estado', 'abierta')
+    const match = (pends ?? []).find((p) => (p.pregunta ?? '').toLowerCase().includes(sub))
+    if (!match) return `No encontré pendiente con texto similar a "${input.pregunta_substring}"`
+    const { error } = await admin
+      .from('auditor_pendientes')
+      .update({ estado: estadoBD, contestada_at: new Date().toISOString() })
+      .eq('id', match.id)
+    return error ? `Error: ${error.message}` : `✓ Pendiente "${match.pregunta}" marcado como ${accionUI}`
   }
 
   if (name === 'crear_shopping_item') {

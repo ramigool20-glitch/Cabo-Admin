@@ -1,13 +1,8 @@
-import { Sparkles, ArrowRight } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AuditorClient } from '@/components/auditor/auditor-client'
-
-const PRIORIDAD_CHIP = {
-  alta: 'chip-red',
-  media: 'chip-yellow',
-  baja: 'chip-cyan',
-}
+import { PendientesList } from '@/components/auditor/pendientes-list'
 
 export default async function AuditorPage() {
   const supabase = await createClient()
@@ -15,10 +10,18 @@ export default async function AuditorPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
+  // Auto-cleanup: pendientes con más de 14 días sin tocar → 'descartada'
+  const hace14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+  await admin
+    .from('auditor_pendientes')
+    .update({ estado: 'descartada', contestada_at: new Date().toISOString() })
+    .eq('estado', 'abierta')
+    .lt('created_at', hace14d)
+
   const [{ data: pendientes }, { data: perfil }] = await Promise.all([
     admin
       .from('auditor_pendientes')
-      .select('id, pregunta, prioridad, contexto, dirigida_a, created_at')
+      .select('id, pregunta, prioridad, contexto, created_at')
       .eq('estado', 'abierta')
       .order('created_at', { ascending: false })
       .limit(10),
@@ -27,6 +30,9 @@ export default async function AuditorPage() {
 
   const nombre = perfil?.nombre ?? 'colega'
   const bienvenida = `Hola ${nombre}. Soy tu auditor. Estoy aquí para asegurarme de que tu base de datos esté completa. ¿Empezamos? Por ejemplo: ¿cuánto pagas de luz, agua o internet al mes y a quién?`
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pendientesTyped = (pendientes ?? []) as any[]
 
   return (
     <div className="flex flex-col max-w-3xl mx-auto w-full">
@@ -43,25 +49,9 @@ export default async function AuditorPage() {
         </p>
       </header>
 
-      {/* Pendientes destacados */}
-      {pendientes && pendientes.length > 0 && (
-        <div className="px-4 pb-2 space-y-2">
-          <p className="label-caps">📌 Pendientes ({pendientes.length})</p>
-          <div className="space-y-1.5">
-            {pendientes.map((p) => (
-              <div key={p.id} className="card p-3 space-y-1">
-                <div className="flex items-start gap-2">
-                  <span className={`chip ${PRIORIDAD_CHIP[p.prioridad as keyof typeof PRIORIDAD_CHIP]} text-[9px] h-5 px-2 shrink-0 mt-0.5`}>
-                    {p.prioridad}
-                  </span>
-                  <p className="text-sm text-zinc-200 flex-1">{p.pregunta}</p>
-                </div>
-                {p.contexto && (
-                  <p className="text-xs text-zinc-500 pl-12">{p.contexto}</p>
-                )}
-              </div>
-            ))}
-          </div>
+      {pendientesTyped.length > 0 && (
+        <div className="px-4 pb-2">
+          <PendientesList pendientes={pendientesTyped} />
         </div>
       )}
 

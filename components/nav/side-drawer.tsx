@@ -40,6 +40,7 @@ const HERRAMIENTAS = [
   { href: '/por-cobrar',    label: 'Por Cobrar',  icon: AlertTriangle,   emoji: '💰', badge: 'NEW' },
   { href: '/nomina',        label: 'Nómina',      icon: Users,           emoji: '👥' },
   { href: '/auditor',       label: 'Auditor IA',  icon: Sparkles,        emoji: '🤖' },
+  { href: '/radar',         label: 'Radar',       icon: Sparkles,        emoji: '🛰️', badge: 'NEW' },
   { href: '/historial',     label: 'Historial',   icon: LayoutDashboard, emoji: '📜', badge: 'NEW' },
   { href: '/config',        label: 'Configuración', icon: Settings,      emoji: '⚙️' },
 ]

@@ -5,6 +5,7 @@ import { formatearFecha, hoyEnCabos, TZ } from '@/lib/fechas'
 import { eventosDelMes, type EventoCalendario } from '@/lib/calendario'
 import { formatInTimeZone } from 'date-fns-tz'
 import { EmptyState } from '@/components/ui/empty-state'
+import { CalendarioGrid } from '@/components/calendario/calendario-grid'
 
 type SearchParams = { ym?: string }  // formato 2026-05
 
@@ -114,48 +115,15 @@ export default async function CalendarioPage(
         </div>
       </div>
 
-      {/* Grid del mes */}
-      <div className="card p-3 space-y-1">
-        {/* Días de la semana */}
-        <div className="grid grid-cols-7 gap-1 text-center">
-          {['D', 'L', 'M', 'M', 'J', 'V', 'S'].map((d, i) => (
-            <div key={i} className="text-[10px] font-bold text-zinc-500 py-1">{d}</div>
-          ))}
-        </div>
-        {/* Días del mes */}
-        <div className="grid grid-cols-7 gap-1">
-          {celdas.map((c, i) => {
-            if (!c.dia) return <div key={i} className="aspect-square" />
-            const evs = porDia.get(c.fecha!) ?? []
-            const esHoy = c.fecha === hoy
-            return (
-              <div
-                key={i}
-                className={cn(
-                  'aspect-square p-1 rounded-md flex flex-col items-stretch text-[10px] border',
-                  esHoy
-                    ? 'border-cyan-500 bg-cyan-500/10'
-                    : evs.length > 0
-                      ? 'border-[var(--border-subtle)] bg-[var(--bg-input)]'
-                      : 'border-transparent'
-                )}
-              >
-                <span className={cn('text-center font-bold', esHoy ? 'text-cyan-300' : 'text-zinc-400')}>
-                  {c.dia}
-                </span>
-                {evs.length > 0 && (
-                  <div className="flex-1 flex flex-wrap gap-0.5 items-center justify-center mt-1">
-                    {evs.slice(0, 4).map((e, idx) => (
-                      <span key={idx} className="text-[10px]">{e.emoji}</span>
-                    ))}
-                    {evs.length > 4 && <span className="text-[8px] text-zinc-500">+{evs.length - 4}</span>}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      {/* Grid del mes interactivo — toca un día para ver detalle */}
+      <CalendarioGrid
+        celdas={celdas}
+        porDia={Object.fromEntries(porDia)}
+        hoy={hoy}
+      />
+      <p className="text-[10px] text-zinc-500 text-center -mt-2">
+        Toca un día con eventos para ver el detalle
+      </p>
 
       {/* Lista de eventos del mes */}
       <section className="space-y-2">
