@@ -6,6 +6,7 @@ import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { isRangoId, rangoFechas, type RangoId } from '@/lib/rangos'
 import { totalizar, porDia, porNegocio, porCategoria } from '@/lib/agregaciones'
+import { calcularSaldos, type CuentaConSaldoInicial, type TxParaSaldo } from '@/lib/saldos'
 import { RangoSelector } from '@/components/dashboard/rango-selector'
 import { UtilidadChart } from '@/components/dashboard/utilidad-chart'
 import { NegociosBar } from '@/components/dashboard/negocios-bar'
@@ -137,6 +138,21 @@ export default async function DashboardPage(
       .gte('fecha', previoDesde)
       .lte('fecha', previoHasta),
   ])
+
+  // Saldos por cuenta (saldo_inicial + todas las tx históricas)
+  const [{ data: cuentasSaldo }, { data: txTodas }] = await Promise.all([
+    admin.from('cuentas')
+      .select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas')
+      .eq('activo', true),
+    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id'),
+  ])
+  const fxFallbackTemp = fxRateHoy ? Number(fxRateHoy.rate_compra) : (fxHistorial?.[0] ? Number(fxHistorial[0].rate_compra) : null)
+  const saldos = calcularSaldos(
+    (cuentasSaldo ?? []) as unknown as CuentaConSaldoInicial[],
+    (txTodas ?? []) as unknown as TxParaSaldo[],
+    fxFallbackTemp
+  )
+  const cuentasSinCapturar = saldos.por_cuenta.filter((c) => !c.locked).length
 
   // FX rate fallback: prefiere el de hoy, sino el más reciente conocido
   let fxFallback: number | null = fxRateHoy ? Number(fxRateHoy.rate_compra) : null
@@ -362,6 +378,29 @@ export default async function DashboardPage(
             )}
           </div>
         </div>
+
+        {/* Saldo total del sistema (de saldos iniciales + tx) */}
+        <Link
+          href="/cashflow"
+          className={cn(
+            'card p-4 flex items-center gap-3 hover:bg-[var(--bg-card-hover)] transition-colors',
+            cuentasSinCapturar > 0 ? 'border-amber-500/40 bg-amber-500/5' : ''
+          )}
+        >
+          <div className="h-10 w-10 inline-flex items-center justify-center rounded-xl bg-cyan-500/15 border border-cyan-500/30">
+            💵
+          </div>
+          <div className="flex-1 leading-tight">
+            <p className="label-caps">Saldo total del sistema</p>
+            <p className="text-xl font-black tabular-nums text-cyan-300">{formatMoney(saldos.total_mxn, 'MXN')}</p>
+            {cuentasSinCapturar > 0 ? (
+              <p className="text-[10px] text-amber-300">⚠ {cuentasSinCapturar} cuenta{cuentasSinCapturar > 1 ? 's' : ''} sin saldo inicial</p>
+            ) : (
+              <p className="text-[10px] text-zinc-500">{saldos.por_cuenta.filter((c) => c.locked).length} cuentas activas</p>
+            )}
+          </div>
+          <ChevronRight className="h-4 w-4 text-zinc-400" />
+        </Link>
 
         {/* FX widget */}
         <FxMiniWidget rateHoy={fxRateHoy} historial={fxHistorial ?? []} />

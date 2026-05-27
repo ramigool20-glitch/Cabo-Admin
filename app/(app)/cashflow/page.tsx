@@ -1,50 +1,60 @@
-import {
-  TrendingUp, TrendingDown, AlertCircle, Wallet, Calendar, Users, CreditCard,
-} from 'lucide-react'
+import { TrendingUp, TrendingDown, AlertCircle, Calendar, Users, CreditCard, Lock, Wallet } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney, cn } from '@/lib/utils'
 import { hoyEnCabos } from '@/lib/fechas'
-import { totalizar } from '@/lib/agregaciones'
 import { totalMensualEquivalente } from '@/lib/recurrentes-total'
+import { calcularSaldos, type CuentaConSaldoInicial, type TxParaSaldo } from '@/lib/saldos'
+import { CuentaCard } from '@/components/cashflow/cuenta-card'
+import { NuevaCuentaForm } from '@/components/cashflow/nueva-cuenta-form'
 
 export default async function CashFlowPage() {
   const supabase = await createClient()
+  const admin = createAdminClient()
   const hoy = hoyEnCabos()
   const inicioMes = hoy.slice(0, 7) + '-01'
 
-  // Cargar todo en paralelo
   const [
-    { data: txMes },
     { data: cuentas },
+    { data: txAll },
+    { data: txMes },
     { data: gastosFijos },
     { data: porPagar },
     { data: empleados },
     { data: fxLatest },
   ] = await Promise.all([
-    supabase.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, cuenta_id, monto_mxn_equivalente, tipo_cambio_usado').gte('fecha', inicioMes),
-    supabase.from('cuentas').select('id, nombre, moneda, tipo').eq('activo', true).order('nombre'),
-    supabase.from('gastos_recurrentes').select('nombre, monto, moneda, frecuencia, proximo_pago').eq('activo', true),
-    supabase.from('cuentas_por_pagar').select('proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').neq('estado', 'cancelado').neq('estado', 'pagado'),
-    supabase.from('empleados').select('nombre, empleado_compensacion(sueldo_base, moneda, frecuencia_pago)').eq('activo', true),
-    supabase.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+    // Cuentas con campos de saldo inicial (defensivo si migración 0021 no aplicada)
+    admin.from('cuentas')
+      .select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas')
+      .eq('activo', true)
+      .order('nombre'),
+    // TODAS las transacciones (para calcular saldo desde saldo_inicial)
+    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id'),
+    // Tx solo del mes (para movimiento neto)
+    supabase.from('transacciones').select('tipo, monto, moneda, fecha, cuenta_id').gte('fecha', inicioMes),
+    admin.from('gastos_recurrentes').select('nombre, monto, moneda, frecuencia, proximo_pago').eq('activo', true),
+    admin.from('cuentas_por_pagar').select('proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').neq('estado', 'cancelado').neq('estado', 'pagado'),
+    admin.from('empleados').select('nombre, empleado_compensacion(sueldo_base, moneda, frecuencia_pago)').eq('activo', true),
+    admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
-  const t = totalizar(txMes ?? [], fxRate)
+  const cuentasArr = (cuentas ?? []) as unknown as CuentaConSaldoInicial[]
+  const txArr = (txAll ?? []) as unknown as TxParaSaldo[]
 
-  // Saldo por cuenta (solo del mes actual, simulado)
-  const saldoCuentas = new Map<string, { nombre: string; mxn: number; usd: number; moneda: string }>()
-  for (const c of cuentas ?? []) {
-    saldoCuentas.set(c.id, { nombre: c.nombre, mxn: 0, usd: 0, moneda: c.moneda })
-  }
-  for (const tx of txMes ?? []) {
-    if (!tx.cuenta_id) continue
-    const s = saldoCuentas.get(tx.cuenta_id)
-    if (!s) continue
-    const m = Number(tx.monto)
-    const signo = tx.tipo === 'ingreso' ? 1 : -1
-    if (tx.moneda === 'USD') s.usd += m * signo
-    else s.mxn += m * signo
+  // Saldos calculados desde saldo_inicial + Σ movimientos históricos
+  const saldos = calcularSaldos(cuentasArr, txArr, fxRate)
+
+  // Movimientos del mes por cuenta (para mostrar tendencia)
+  const movsMes = new Map<string, { mxn: number; usd: number }>()
+  for (const t of txMes ?? []) {
+    if (!t.cuenta_id) continue
+    if (!movsMes.has(t.cuenta_id)) movsMes.set(t.cuenta_id, { mxn: 0, usd: 0 })
+    const m = movsMes.get(t.cuenta_id)!
+    const signo = t.tipo === 'ingreso' ? 1 : (t.tipo === 'gasto' || t.tipo === 'multa_interna') ? -1 : 0
+    if (signo === 0) continue
+    if (t.moneda === 'USD') m.usd += Number(t.monto) * signo
+    else m.mxn += Number(t.monto) * signo
   }
 
   // Obligaciones del mes
@@ -62,96 +72,144 @@ export default async function CashFlowPage() {
 
   const obligacionesMXN = totalGastosFijos.mxn + totalPorPagarMXN + nominaTotal
   const obligacionesUSD = totalGastosFijos.usd + totalPorPagarUSD
-  const totalCuentasMXN = Array.from(saldoCuentas.values()).reduce((s, c) => s + c.mxn, 0)
-  const totalCuentasUSD = Array.from(saldoCuentas.values()).reduce((s, c) => s + c.usd, 0)
-  const proyectadoMXN = totalCuentasMXN - obligacionesMXN
-  const proyectadoUSD = totalCuentasUSD - obligacionesUSD
+  const obligacionesTotalMxn = obligacionesMXN + obligacionesUSD * (fxRate ?? 17)
+
+  const disponibleProyectado = saldos.total_mxn - obligacionesTotalMxn
+
+  const sinCapturar = saldos.por_cuenta.filter((c) => !c.locked)
+  const capturadas = saldos.por_cuenta.filter((c) => c.locked)
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-5 max-w-3xl mx-auto">
       <header className="space-y-1">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-black heading-gradient">Cash Flow</h1>
-          <span className="chip chip-cyan">Proyección</span>
+          <span className="chip chip-cyan">Live</span>
         </div>
-        <p className="text-sm text-zinc-400">Cuánto te queda si pagas TODO lo pendiente de este mes.</p>
+        <p className="text-sm text-zinc-400">Saldos reales por cuenta + proyección del mes.</p>
       </header>
 
-      {/* Resultado: cuánto te queda */}
-      <section className={cn(
-        'card-glow p-5 space-y-2',
-        proyectadoMXN >= 0 ? 'border-emerald-500/40' : 'border-rose-500/40'
-      )}>
-        <div className="flex items-center gap-2">
-          {proyectadoMXN >= 0 ? (
-            <TrendingUp className="h-5 w-5 text-emerald-400" />
-          ) : (
-            <AlertCircle className="h-5 w-5 text-rose-400" />
-          )}
-          <span className="label-caps">Disponible proyectado</span>
+      {/* Hero: Saldo total */}
+      <section className="card-glow p-5 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="label-caps inline-flex items-center gap-1.5">
+            <Wallet className="h-3.5 w-3.5 text-cyan-400" />
+            Saldo total del sistema
+          </span>
+          {fxRate && <span className="text-[10px] text-zinc-500">rate ${fxRate.toFixed(2)}</span>}
         </div>
-        <p className={cn(
-          'text-4xl font-black tabular-nums',
-          proyectadoMXN >= 0 ? 'text-emerald-300' : 'text-rose-300'
-        )}>
-          {proyectadoMXN >= 0 ? '+' : ''}{formatMoney(proyectadoMXN, 'MXN')}
+        <p className="text-4xl font-black tabular-nums text-cyan-300">
+          {formatMoney(saldos.total_mxn, 'MXN')}
         </p>
-        {(proyectadoUSD !== 0) && (
-          <p className={cn(
-            'text-lg font-bold tabular-nums',
-            proyectadoUSD >= 0 ? 'text-emerald-300/80' : 'text-rose-300/80'
-          )}>
-            {proyectadoUSD >= 0 ? '+' : ''}{formatMoney(proyectadoUSD, 'USD')}
-          </p>
-        )}
-        <p className="text-xs text-zinc-500">
-          {proyectadoMXN >= 0
-            ? '✓ Suficiente liquidez este mes'
-            : '⚠ Faltarían recursos si pagas todo hoy'}
+        <div className="flex items-baseline gap-3 text-xs">
+          {saldos.total_solo_mxn !== 0 && (
+            <span className="text-zinc-400 tabular-nums">{formatMoney(saldos.total_solo_mxn, 'MXN')}</span>
+          )}
+          {saldos.total_solo_usd !== 0 && (
+            <span className="text-zinc-400 tabular-nums">+ {formatMoney(saldos.total_solo_usd, 'USD')}</span>
+          )}
+        </div>
+        <p className="text-[10px] text-zinc-500">
+          {capturadas.length} cuenta{capturadas.length !== 1 ? 's' : ''} capturada{capturadas.length !== 1 ? 's' : ''}
+          {sinCapturar.length > 0 && ` · ${sinCapturar.length} pendiente${sinCapturar.length > 1 ? 's' : ''}`}
         </p>
       </section>
 
-      {/* Desglose ingresos / obligaciones */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="card p-4 space-y-1">
-          <div className="flex items-center gap-1.5 text-emerald-400">
-            <TrendingUp className="h-4 w-4" />
-            <span className="label-caps text-emerald-400">Cuentas + Ingresos del mes</span>
-          </div>
-          <p className="text-xl font-bold tabular-nums text-emerald-300">
-            {formatMoney(totalCuentasMXN, 'MXN')}
-          </p>
-          {totalCuentasUSD !== 0 && (
-            <p className="text-xs text-zinc-500 tabular-nums">+ {formatMoney(totalCuentasUSD, 'USD')}</p>
+      {/* Proyección */}
+      <section className={cn(
+        'card p-4 space-y-1',
+        disponibleProyectado >= 0 ? 'border-emerald-500/40' : 'border-rose-500/40'
+      )}>
+        <div className="flex items-center gap-2">
+          {disponibleProyectado >= 0 ? (
+            <TrendingUp className="h-4 w-4 text-emerald-400" />
+          ) : (
+            <AlertCircle className="h-4 w-4 text-rose-400" />
           )}
-          <p className="text-[10px] text-zinc-500">Movimientos del mes en tus cuentas</p>
+          <span className="label-caps">Después de pagar TODO este mes</span>
         </div>
-        <div className="card p-4 space-y-1">
-          <div className="flex items-center gap-1.5 text-rose-400">
-            <TrendingDown className="h-4 w-4" />
-            <span className="label-caps text-rose-400">Obligaciones mensuales</span>
-          </div>
-          <p className="text-xl font-bold tabular-nums text-rose-300">
-            {formatMoney(obligacionesMXN, 'MXN')}
-          </p>
-          {obligacionesUSD > 0 && (
-            <p className="text-xs text-zinc-500 tabular-nums">+ {formatMoney(obligacionesUSD, 'USD')}</p>
-          )}
-          <p className="text-[10px] text-zinc-500">Fijos + por pagar + nómina</p>
-        </div>
-      </div>
+        <p className={cn(
+          'text-2xl font-black tabular-nums',
+          disponibleProyectado >= 0 ? 'text-emerald-300' : 'text-rose-300'
+        )}>
+          {disponibleProyectado >= 0 ? '+' : ''}{formatMoney(disponibleProyectado, 'MXN')}
+        </p>
+        <p className="text-[10px] text-zinc-500">
+          Saldo total − obligaciones del mes ({formatMoney(obligacionesTotalMxn, 'MXN')})
+        </p>
+      </section>
 
-      {/* Desglose detallado de obligaciones */}
+      {/* Pendientes de capturar saldo inicial */}
+      {sinCapturar.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="label-caps inline-flex items-center gap-1.5 text-amber-300">
+            <AlertCircle className="h-3 w-3" />
+            Pendientes de capturar saldo inicial ({sinCapturar.length})
+          </h2>
+          <div className="space-y-2">
+            {sinCapturar.map((c) => {
+              const cuenta = cuentasArr.find((x) => x.id === c.cuenta_id)!
+              return (
+                <CuentaCard
+                  key={c.cuenta_id}
+                  cuenta={{
+                    ...cuenta,
+                    saldo_inicial_mxn: Number(cuenta.saldo_inicial_mxn ?? 0),
+                    saldo_inicial_usd: Number(cuenta.saldo_inicial_usd ?? 0),
+                    saldo_inicial_locked: !!cuenta.saldo_inicial_locked,
+                  }}
+                  movs={{ ingresos_mxn: c.ingresos_mxn, ingresos_usd: c.ingresos_usd, gastos_mxn: c.gastos_mxn, gastos_usd: c.gastos_usd }}
+                  fxRate={fxRate}
+                />
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Cuentas activas */}
+      {capturadas.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="label-caps inline-flex items-center gap-1.5">
+            <Lock className="h-3 w-3 text-emerald-400" />
+            Cuentas con saldo capturado ({capturadas.length})
+          </h2>
+          <div className="space-y-2">
+            {capturadas.map((c) => {
+              const cuenta = cuentasArr.find((x) => x.id === c.cuenta_id)!
+              return (
+                <CuentaCard
+                  key={c.cuenta_id}
+                  cuenta={{
+                    ...cuenta,
+                    saldo_inicial_mxn: Number(cuenta.saldo_inicial_mxn ?? 0),
+                    saldo_inicial_usd: Number(cuenta.saldo_inicial_usd ?? 0),
+                    saldo_inicial_locked: !!cuenta.saldo_inicial_locked,
+                  }}
+                  movs={{ ingresos_mxn: c.ingresos_mxn, ingresos_usd: c.ingresos_usd, gastos_mxn: c.gastos_mxn, gastos_usd: c.gastos_usd }}
+                  fxRate={fxRate}
+                />
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Agregar cuenta */}
+      <NuevaCuentaForm />
+
+      {/* Desglose obligaciones */}
       <section className="space-y-2">
-        <h2 className="label-caps">Desglose de obligaciones</h2>
+        <h2 className="label-caps">Obligaciones del mes (lo que sale fijo)</h2>
         <div className="card p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-blue-400" />
-              <span className="text-sm">Gastos fijos (equivalente mensual)</span>
+              <span className="text-sm">Gastos fijos equiv. mensual</span>
             </div>
             <p className="text-sm font-bold tabular-nums text-blue-300">
               {formatMoney(totalGastosFijos.mxn, 'MXN')}
+              {totalGastosFijos.usd > 0 && <span className="text-[10px] text-zinc-500 ml-1">+ {formatMoney(totalGastosFijos.usd, 'USD')}</span>}
             </p>
           </div>
           <div className="flex items-center justify-between">
@@ -161,6 +219,7 @@ export default async function CashFlowPage() {
             </div>
             <p className="text-sm font-bold tabular-nums text-rose-300">
               {formatMoney(totalPorPagarMXN, 'MXN')}
+              {totalPorPagarUSD > 0 && <span className="text-[10px] text-zinc-500 ml-1">+ {formatMoney(totalPorPagarUSD, 'USD')}</span>}
             </p>
           </div>
           <div className="flex items-center justify-between">
@@ -173,45 +232,46 @@ export default async function CashFlowPage() {
             </p>
           </div>
           <div className="border-t border-[var(--border-subtle)] pt-2 flex items-center justify-between">
-            <span className="text-sm font-bold">TOTAL</span>
+            <span className="text-sm font-bold">TOTAL OBLIGACIONES</span>
             <p className="text-base font-black tabular-nums text-rose-300">
-              {formatMoney(obligacionesMXN, 'MXN')}
+              {formatMoney(obligacionesTotalMxn, 'MXN')}
             </p>
           </div>
         </div>
       </section>
 
-      {/* Saldo por cuenta (movimientos del mes) */}
-      <section className="space-y-2">
-        <h2 className="label-caps">Movimiento neto por cuenta (este mes)</h2>
-        <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
-          {Array.from(saldoCuentas.values()).map((c, i) => {
-            const monto = c.moneda === 'USD' ? c.usd : c.mxn
-            return (
-              <li key={i} className="flex items-center justify-between p-3">
-                <div className="flex items-center gap-2">
-                  <Wallet className="h-4 w-4 text-cyan-400" />
-                  <span className="text-sm text-white">{c.nombre}</span>
-                </div>
-                <p className={cn(
-                  'text-sm font-bold tabular-nums',
-                  monto >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                )}>
-                  {monto >= 0 ? '+' : ''}{formatMoney(monto, c.moneda as 'MXN' | 'USD')}
-                </p>
-              </li>
-            )
-          })}
-        </ul>
-        <p className="text-[10px] text-zinc-500 px-1">
-          ⓘ Esto es el flujo neto del mes en cada cuenta (ingresos − gastos del mes). No es el saldo bancario real.
-        </p>
-      </section>
+      {/* Movimiento del mes por cuenta */}
+      {movsMes.size > 0 && (
+        <section className="space-y-2">
+          <h2 className="label-caps">Movimiento del mes por cuenta</h2>
+          <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
+            {Array.from(movsMes.entries()).map(([cuentaId, m]) => {
+              const cuenta = cuentasArr.find((c) => c.id === cuentaId)
+              if (!cuenta) return null
+              const monto = cuenta.moneda === 'USD' ? m.usd : m.mxn
+              return (
+                <li key={cuentaId} className="flex items-center justify-between p-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Wallet className="h-4 w-4 text-cyan-400 shrink-0" />
+                    <span className="text-sm text-white truncate">{cuenta.nombre}</span>
+                  </div>
+                  <p className={cn(
+                    'text-sm font-bold tabular-nums shrink-0',
+                    monto >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  )}>
+                    {monto >= 0 ? '+' : ''}{formatMoney(monto, cuenta.moneda)}
+                  </p>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
 
       {/* Disclaimer */}
       <div className="card border-dashed p-4 space-y-1">
-        <p className="text-xs text-zinc-400">
-          ⓘ <strong>Cómo se calcula:</strong> sumamos todas tus entradas y salidas del mes actual, luego restamos: gastos fijos equivalentes a 1 mes + cuentas por pagar pendientes + nómina mensual estimada. No incluye saldos bancarios anteriores.
+        <p className="text-xs text-zinc-400 leading-snug">
+          ⓘ <strong>Cómo se calcula:</strong> cada saldo = inicial capturado + Σ ingresos − Σ gastos de esa cuenta. El saldo inicial se bloquea al capturarlo; para corregir se usa <strong>Ajustar saldo</strong> que crea una transacción con motivo.
         </p>
       </div>
     </div>
