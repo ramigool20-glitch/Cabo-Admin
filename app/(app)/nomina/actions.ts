@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { proximaFechaPagoEmpleado } from '@/lib/proximo-pago'
 import { hoyEnCabos } from '@/lib/fechas'
 import { flashOk } from '@/lib/flash'
+import { aMxnEquivalente } from '@/lib/fx/server'
 
 const EmpleadoSchema = z.object({
   nombre: z.string().min(1).max(120),
@@ -180,10 +181,13 @@ export async function registrarPagoNomina(empleadoId: string, _prev: ActionState
   // 2) Crear transacción de gasto (categoría sueldo)
   const { data: emp } = await supabase.from('empleados').select('nombre').eq('id', empleadoId).single()
   const concepto = `Nómina ${emp?.nombre ?? ''} · ${parsed.data.fecha_pago}`
+  const fx = await aMxnEquivalente(parsed.data.total, parsed.data.moneda, parsed.data.fecha_pago)
   await supabase.from('transacciones').insert({
     tipo: 'gasto',
     monto: parsed.data.total,
     moneda: parsed.data.moneda,
+    monto_mxn_equivalente: fx.monto_mxn_equivalente,
+    tipo_cambio_usado: fx.tipo_cambio_usado,
     fecha: parsed.data.fecha_pago,
     concepto,
     negocio_id: parsed.data.negocio_id,

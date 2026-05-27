@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2, Send, Sun, Coffee, Moon, AlertTriangle, Bot, Calendar, RefreshCw } from 'lucide-react'
+import { Loader2, Send, Sun, Coffee, Moon, AlertTriangle, Bot, Calendar, RefreshCw, DollarSign } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 
 type CronAccion = {
@@ -21,6 +21,7 @@ const ACCIONES: CronAccion[] = [
   { tipo: 'auditor',           label: 'Insight del auditor', descripcion: 'Análisis IA del día',           icon: Bot, color: 'text-purple-400' },
   { tipo: 'recurrentes',       label: 'Avisar gastos fijos', descripcion: 'Gastos fijos próximos a vencer',icon: Calendar, color: 'text-blue-400' },
   { tipo: 'programar-notificaciones', label: 'Re-programar avisos', descripcion: 'Recalcula avisos pendientes',icon: RefreshCw, color: 'text-zinc-400' },
+  { tipo: 'fx-rate',           label: 'Fetch tipo de cambio', descripcion: 'Actualiza USD/MXN del día',         icon: DollarSign, color: 'text-emerald-400' },
 ]
 
 export function NotificacionesPanel() {

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { flashOk } from '@/lib/flash'
+import { aMxnEquivalente } from '@/lib/fx/server'
 
 const EventoSchema = z.object({
   negocio_id: z.string().uuid(),
@@ -85,13 +86,16 @@ export async function registrarPagoEvento(_prev: ActionState, formData: FormData
     .eq('id', parsed.data.evento_id)
     .single()
 
-  // Crear transacción tipo ingreso
+  // Crear transacción tipo ingreso (con conversión MXN si es USD)
+  const fx = await aMxnEquivalente(parsed.data.monto, parsed.data.moneda, parsed.data.fecha_pago)
   const { data: tx } = await supabase
     .from('transacciones')
     .insert({
       tipo: 'ingreso',
       monto: parsed.data.monto,
       moneda: parsed.data.moneda,
+      monto_mxn_equivalente: fx.monto_mxn_equivalente,
+      tipo_cambio_usado: fx.tipo_cambio_usado,
       fecha: parsed.data.fecha_pago,
       concepto: parsed.data.concepto || `${evento?.cliente_nombre ?? 'Cliente'} - Pago evento`,
       negocio_id: evento?.negocio_id,
@@ -140,11 +144,15 @@ export async function pagarProveedor(eventoId: string, cuentaId: string | null):
 
   const montoProveedor = Number(evento.monto_total) * (1 - Number(evento.comision_porcentaje) / 100)
 
+  const fechaHoy = new Date().toISOString().slice(0, 10)
+  const fxProv = await aMxnEquivalente(montoProveedor, evento.moneda as 'MXN' | 'USD', fechaHoy)
   await supabase.from('transacciones').insert({
     tipo: 'gasto',
     monto: montoProveedor,
     moneda: evento.moneda,
-    fecha: new Date().toISOString().slice(0, 10),
+    monto_mxn_equivalente: fxProv.monto_mxn_equivalente,
+    tipo_cambio_usado: fxProv.tipo_cambio_usado,
+    fecha: fechaHoy,
     concepto: `Pago a ${evento.proveedor_nombre ?? 'proveedor'} por evento ${evento.cliente_nombre}`,
     negocio_id: evento.negocio_id,
     cuenta_id: cuentaId,

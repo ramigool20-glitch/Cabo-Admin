@@ -18,6 +18,8 @@ export type Transaccion = {
   categoria: string | null
   negocios: { nombre: string } | null
   cuentas: { nombre: string } | null
+  monto_mxn_equivalente?: number | null
+  tipo_cambio_usado?: number | null
 }
 
 const tipoMeta = {
@@ -104,7 +106,13 @@ export function TransactionList({ transacciones }: { transacciones: Transaccion[
                         {t.tipo === 'gasto' || t.tipo === 'multa_interna' ? '−' : '+'}
                         {formatMoney(Number(t.monto), t.moneda)}
                       </p>
-                      <p className="text-[10px] text-zinc-400 uppercase">{t.moneda}</p>
+                      {t.moneda === 'USD' && t.monto_mxn_equivalente != null ? (
+                        <p className="text-[10px] text-zinc-500 tabular-nums">
+                          ≈ {formatMoney(Number(t.monto_mxn_equivalente), 'MXN')}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-zinc-400 uppercase">{t.moneda}</p>
+                      )}
                     </div>
                     {editable && <ChevronRight className="h-4 w-4 text-zinc-300 shrink-0" />}
                   </Link>

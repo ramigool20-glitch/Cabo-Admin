@@ -27,7 +27,7 @@ export default async function TransaccionesPage(
 
   let query = supabase
     .from('transacciones')
-    .select('id, tipo, monto, moneda, fecha, concepto, categoria, negocio_id, cuenta_id, negocios(nombre), cuentas(nombre)')
+    .select('id, tipo, monto, moneda, fecha, concepto, categoria, negocio_id, cuenta_id, monto_mxn_equivalente, tipo_cambio_usado, negocios(nombre), cuentas(nombre)')
     .gte('fecha', r.desde)
     .lte('fecha', r.hasta)
     .order('fecha', { ascending: false })

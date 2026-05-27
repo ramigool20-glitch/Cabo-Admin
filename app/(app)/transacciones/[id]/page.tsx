@@ -12,7 +12,7 @@ export default async function EditarTransaccionPage(
 
   const [{ data: t }, { data: negocios }, { data: cuentas }] = await Promise.all([
     supabase.from('transacciones')
-      .select('id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas')
+      .select('id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado')
       .eq('id', id)
       .single(),
     supabase.from('negocios').select('id, nombre, tipo, moneda_principal').eq('activo', true).order('nombre'),
@@ -51,6 +51,8 @@ export default async function EditarTransaccionPage(
           categoria: t.categoria,
           concepto: t.concepto,
           notas: t.notas,
+          monto_mxn_equivalente: t.monto_mxn_equivalente,
+          tipo_cambio_usado: t.tipo_cambio_usado,
         }}
       />
     </div>

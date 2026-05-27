@@ -28,6 +28,8 @@ export type TransaccionDefault = {
   categoria?: string | null
   concepto?: string | null
   notas?: string | null
+  monto_mxn_equivalente?: number | null
+  tipo_cambio_usado?: number | null
 }
 
 export function TransactionForm({
@@ -147,6 +149,12 @@ export function TransactionForm({
             ))}
           </div>
         </div>
+        {moneda === 'USD' && defaults.monto_mxn_equivalente != null && defaults.tipo_cambio_usado != null && (
+          <p className="text-[11px] text-cyan-400">
+            Equivale a ${Number(defaults.monto_mxn_equivalente).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN
+            <span className="text-zinc-500"> · rate ${Number(defaults.tipo_cambio_usado).toFixed(2)} del {defaults.fecha}</span>
+          </p>
+        )}
       </div>
 
       {/* Negocio */}

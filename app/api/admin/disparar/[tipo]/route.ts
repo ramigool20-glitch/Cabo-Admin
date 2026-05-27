@@ -19,6 +19,7 @@ const CRONS_PERMITIDOS = [
   'programar-notificaciones',
   'auditor',
   'recurrentes',
+  'fx-rate',
 ] as const
 
 type CronTipo = typeof CRONS_PERMITIDOS[number]

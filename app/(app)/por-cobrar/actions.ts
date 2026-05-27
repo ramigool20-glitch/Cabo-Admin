@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hoyEnCabos } from '@/lib/fechas'
 import { flashOk } from '@/lib/flash'
+import { aMxnEquivalente } from '@/lib/fx/server'
 
 const Schema = z.object({
   cliente_nombre: z.string().min(1),
@@ -85,13 +86,16 @@ export async function registrarCobro(cuentaId: string, _prev: ActionState, formD
 
   const admin = createAdminClient()
 
-  // 1) Crear transacción de ingreso
+  // 1) Crear transacción de ingreso (con conversión MXN si es USD)
+  const fx = await aMxnEquivalente(monto, cuenta.moneda as 'MXN' | 'USD', fecha_cobro)
   const { data: tx } = await supabase
     .from('transacciones')
     .insert({
       tipo: 'ingreso',
       monto,
       moneda: cuenta.moneda,
+      monto_mxn_equivalente: fx.monto_mxn_equivalente,
+      tipo_cambio_usado: fx.tipo_cambio_usado,
       fecha: fecha_cobro,
       concepto: `Cobro a ${cuenta.cliente_nombre}: ${cuenta.concepto}`,
       negocio_id: cuenta.negocio_id,
