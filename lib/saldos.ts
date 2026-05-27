@@ -58,8 +58,9 @@ export type SaldosResumen = {
  * Calcula saldos por cuenta y total agregado.
  *
  * Reglas:
- * - El saldo_inicial representa el saldo AL CIERRE del día `saldo_inicial_fecha`
- * - Solo cuentan tx con fecha ESTRICTAMENTE POSTERIOR a saldo_inicial_fecha
+ * - El saldo_inicial representa el saldo AL INICIO del día `saldo_inicial_fecha`
+ * - Cuentan tx con fecha >= saldo_inicial_fecha (incluyendo el mismo día)
+ * - Las tx ANTES del día inicial se ignoran (ya están reflejadas en el saldo)
  * - Cuentas SIN saldo inicial capturado NO suman al total (saldo = 0)
  */
 export function calcularSaldos(
@@ -75,13 +76,14 @@ export function calcularSaldos(
     fechaInicialPorCuenta.set(c.id, c.saldo_inicial_fecha)
   }
 
-  // Agregar movimientos por cuenta_id, SOLO los posteriores al saldo inicial
+  // Agregar movimientos por cuenta_id, SOLO los posteriores (incluyendo mismo día)
   const movs = new Map<string, { im: number; iu: number; gm: number; gu: number }>()
   for (const t of txs) {
     if (!t.cuenta_id) continue
     const fechaInicial = fechaInicialPorCuenta.get(t.cuenta_id)
-    // Si la cuenta tiene saldo inicial, ignorar tx <= fecha del inicial
-    if (fechaInicial && t.fecha <= fechaInicial) continue
+    // Si la cuenta tiene saldo inicial, ignorar tx ANTES del día inicial
+    // El mismo día SÍ cuenta (capturas saldo en la mañana y haces gastos en la tarde)
+    if (fechaInicial && t.fecha < fechaInicial) continue
 
     const monto = Number(t.monto) || 0
     if (!movs.has(t.cuenta_id)) movs.set(t.cuenta_id, { im: 0, iu: 0, gm: 0, gu: 0 })
