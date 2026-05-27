@@ -22,10 +22,11 @@ export default async function DetalleCuentaPorCobrarPage(
   const { id } = await props.params
   const supabase = await createClient()
 
-  const [{ data: cuenta }, { data: cobros }, { data: cuentas }] = await Promise.all([
+  const [{ data: cuenta }, { data: cobros }, { data: cuentas }, { data: fxLatest }] = await Promise.all([
     supabase.from('cuentas_por_cobrar').select('*, negocios(nombre)').eq('id', id).single(),
     supabase.from('cuentas_por_cobrar_cobros').select('*, cuentas(nombre)').eq('cuenta_id', id).order('fecha_cobro', { ascending: false }),
     supabase.from('cuentas').select('id, nombre, moneda').eq('activo', true).order('nombre'),
+    supabase.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   if (!cuenta) notFound()
@@ -35,6 +36,9 @@ export default async function DetalleCuentaPorCobrarPage(
   const hoy = hoyEnCabos()
   const vencido = cuenta.estado !== 'cobrado' && cuenta.fecha_vencimiento && cuenta.fecha_vencimiento < hoy
   const estado = vencido ? ESTADO_CHIP.vencido : ESTADO_CHIP[cuenta.estado as keyof typeof ESTADO_CHIP]
+  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : 17
+  const esUsd = cuenta.moneda === 'USD'
+  const equivMxnRestante = esUsd ? restante * fxRate : 0
 
   return (
     <div className="px-4 pt-4 pb-24 space-y-5 max-w-2xl mx-auto">
@@ -67,19 +71,25 @@ export default async function DetalleCuentaPorCobrarPage(
       <div className="card-glow p-5 space-y-2">
         <div className="flex items-baseline justify-between">
           <span className="label-caps">Restante</span>
-          <p className={cn('text-3xl font-black tabular-nums', restante > 0 ? 'text-emerald-300' : 'text-zinc-400')}>
-            {formatMoney(restante, cuenta.moneda as 'MXN' | 'USD')}
-          </p>
+          <div className="text-right">
+            <p className={cn('text-3xl font-black tabular-nums', restante > 0 ? 'text-emerald-300' : 'text-zinc-400')}>
+              {formatMoney(restante, cuenta.moneda as 'MXN' | 'USD')}
+              {esUsd && <span className="text-sm text-emerald-300/70 ml-1 font-bold">USD</span>}
+            </p>
+            {esUsd && (
+              <p className="text-[11px] text-zinc-500 tabular-nums">≈ {formatMoney(equivMxnRestante, 'MXN')} (rate {fxRate.toFixed(2)})</p>
+            )}
+          </div>
         </div>
         {Number(cuenta.monto_cobrado) > 0 && (
           <div className="flex items-baseline justify-between text-sm">
             <span className="text-zinc-500">Cobrado</span>
-            <span className="text-emerald-400 tabular-nums">{formatMoney(Number(cuenta.monto_cobrado), cuenta.moneda as 'MXN' | 'USD')}</span>
+            <span className="text-emerald-400 tabular-nums">{formatMoney(Number(cuenta.monto_cobrado), cuenta.moneda as 'MXN' | 'USD')}{esUsd && ' USD'}</span>
           </div>
         )}
         <div className="flex items-baseline justify-between text-sm">
           <span className="text-zinc-500">Total</span>
-          <span className="text-white tabular-nums">{formatMoney(Number(cuenta.monto_total), cuenta.moneda as 'MXN' | 'USD')}</span>
+          <span className="text-white tabular-nums">{formatMoney(Number(cuenta.monto_total), cuenta.moneda as 'MXN' | 'USD')}{esUsd && ' USD'}</span>
         </div>
 
         {Number(cuenta.monto_total) > 0 && (

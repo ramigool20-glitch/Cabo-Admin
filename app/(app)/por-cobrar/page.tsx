@@ -17,7 +17,8 @@ export default async function PorCobrarPage() {
   const supabase = await createClient()
   const hoy = hoyEnCabos()
 
-  const [{ data: cuentas }, { data: eventosActivos }] = await Promise.all([
+  const [{ data: cuentas }, { data: eventosActivos }, { data: fxLatest }] = await Promise.all([
+    // Fetch FX rate for conversions
     supabase
       .from('cuentas_por_cobrar')
       .select('id, cliente_nombre, concepto, monto_total, monto_cobrado, moneda, fecha_vencimiento, estado, negocios(nombre)')
@@ -31,7 +32,10 @@ export default async function PorCobrarPage() {
       .in('estado', ['reservado', 'confirmado'])
       .order('fecha_evento', { ascending: true })
       .limit(100),
+    supabase.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
   ])
+
+  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : 17
 
   // Procesar eventos pendientes
   type EventoPendiente = {
@@ -142,16 +146,19 @@ export default async function PorCobrarPage() {
           <span className="label-caps text-emerald-400">Total por cobrar</span>
         </div>
         <p className="text-3xl font-black tabular-nums text-emerald-300">
-          {formatMoney(totales.por_cobrar_mxn, 'MXN')}
+          {formatMoney(totales.por_cobrar_mxn + totales.por_cobrar_usd * fxRate, 'MXN')}
         </p>
+        <p className="text-[10px] text-zinc-500">equivalente total con rate ${fxRate.toFixed(2)}</p>
         {totales.por_cobrar_usd > 0 && (
-          <p className="text-base font-bold tabular-nums text-emerald-300/80">
-            + {formatMoney(totales.por_cobrar_usd, 'USD')}
-          </p>
+          <div className="flex items-baseline gap-2 text-xs text-zinc-400 tabular-nums">
+            <span>{formatMoney(totales.por_cobrar_mxn, 'MXN')}</span>
+            <span>+ {formatMoney(totales.por_cobrar_usd, 'USD')}</span>
+            <span className="text-zinc-600">(≈ {formatMoney(totales.por_cobrar_usd * fxRate, 'MXN')})</span>
+          </div>
         )}
         {(totales.vencido_mxn > 0 || totales.vencido_usd > 0) && (
           <p className="text-xs text-amber-400">
-            ⚠ {formatMoney(totales.vencido_mxn, 'MXN')} vencido{totales.vencido_usd > 0 ? ` + ${formatMoney(totales.vencido_usd, 'USD')}` : ''}
+            ⚠ Vencido: {formatMoney(totales.vencido_mxn + totales.vencido_usd * fxRate, 'MXN')} equivalente
           </p>
         )}
       </section>
@@ -187,7 +194,7 @@ export default async function PorCobrarPage() {
             <AlertCircle className="h-3 w-3 inline mr-1" /> Cuentas vencidas ({vencidas.length})
           </h2>
           <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
-            {vencidas.map((c) => <CuentaRow key={c.id} c={c} />)}
+            {vencidas.map((c) => <CuentaRow key={c.id} c={c} fxRate={fxRate} />)}
           </ul>
         </section>
       )}
@@ -198,7 +205,7 @@ export default async function PorCobrarPage() {
             <Clock className="h-3 w-3 inline mr-1" /> Pendientes ({proximas.length})
           </h2>
           <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
-            {proximas.map((c) => <CuentaRow key={c.id} c={c} />)}
+            {proximas.map((c) => <CuentaRow key={c.id} c={c} fxRate={fxRate} />)}
           </ul>
         </section>
       )}
@@ -296,7 +303,7 @@ export default async function PorCobrarPage() {
         <section className="space-y-2 opacity-60">
           <h2 className="label-caps">Cobradas recientes</h2>
           <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
-            {cobradas.slice(0, 5).map((c) => <CuentaRow key={c.id} c={c} />)}
+            {cobradas.slice(0, 5).map((c) => <CuentaRow key={c.id} c={c} fxRate={fxRate} />)}
           </ul>
         </section>
       )}
@@ -328,9 +335,11 @@ type Cuenta = {
   negocios: unknown
 }
 
-function CuentaRow({ c }: { c: Cuenta }) {
+function CuentaRow({ c, fxRate }: { c: Cuenta; fxRate: number }) {
   const neg = c.negocios as { nombre: string } | null
   const estado = c.vencido ? ESTADO_CHIP.vencido : ESTADO_CHIP[c.estado]
+  const esUsd = c.moneda === 'USD'
+  const equivMxn = esUsd ? c.restante * fxRate : 0
   return (
     <li>
       <Link href={`/por-cobrar/${c.id}`} className="flex items-center gap-3 p-3 hover:bg-[var(--bg-card-hover)] transition-colors">
@@ -350,7 +359,11 @@ function CuentaRow({ c }: { c: Cuenta }) {
         <div className="text-right shrink-0">
           <p className="text-sm font-bold tabular-nums text-emerald-300">
             {formatMoney(Number(c.restante), c.moneda as 'MXN' | 'USD')}
+            {esUsd && <span className="text-[10px] text-emerald-300/60 font-normal ml-1">USD</span>}
           </p>
+          {esUsd && (
+            <p className="text-[10px] text-zinc-500 tabular-nums">≈ {formatMoney(equivMxn, 'MXN')}</p>
+          )}
           {Number(c.monto_cobrado) > 0 && (
             <p className="text-[10px] text-zinc-500">
               de {formatMoney(Number(c.monto_total), c.moneda as 'MXN' | 'USD')}
