@@ -19,6 +19,9 @@ const EventoSchema = z.object({
   comision_porcentaje: z.coerce.number().min(0).max(100).default(25),
   proveedor_nombre: z.string().optional().nullable(),
   notas: z.string().optional().nullable(),
+  num_personas: z.coerce.number().int().min(0).optional().nullable(),
+  duracion_horas: z.coerce.number().int().min(0).max(48).optional().nullable(),
+  paquete: z.string().optional().nullable(),
 })
 
 const PagoSchema = z.object({
@@ -43,6 +46,9 @@ export async function createEvento(_prev: ActionState, formData: FormData): Prom
     hora_evento: raw.hora_evento || null,
     proveedor_nombre: raw.proveedor_nombre || null,
     notas: raw.notas || null,
+    num_personas: raw.num_personas || null,
+    duracion_horas: raw.duracion_horas || null,
+    paquete: raw.paquete || null,
   })
   if (!parsed.success) {
     return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }

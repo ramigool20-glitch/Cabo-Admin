@@ -42,9 +42,34 @@ export function EventoForm({ negocios, fechaInicial }: { negocios: Negocio[]; fe
         </div>
       </div>
 
-      <div className="space-y-2">
-        <label htmlFor="tipo_evento" className="label-caps">Tipo de evento</label>
-        <input id="tipo_evento" name="tipo_evento" type="text" placeholder="Boda, XV años, evento corporativo…" className="input-base w-full" />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <label htmlFor="tipo_evento" className="label-caps">Tipo de evento</label>
+          <input id="tipo_evento" name="tipo_evento" type="text" placeholder="Boda, XV años…" className="input-base w-full" />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="paquete" className="label-caps">Paquete</label>
+          <input id="paquete" name="paquete" type="text" list="paquetes-comunes" placeholder="ELIT, PLATINO, VIP…" className="input-base w-full" />
+          <datalist id="paquetes-comunes">
+            <option value="ELIT" />
+            <option value="ELITE" />
+            <option value="PLATINO" />
+            <option value="VIP" />
+            <option value="ELIT con sesión de fotos" />
+            <option value="ELITE 2 cabañas" />
+          </datalist>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <label htmlFor="num_personas" className="label-caps">Personas</label>
+          <input id="num_personas" name="num_personas" type="number" min="0" placeholder="100" className="input-base w-full" />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="duracion_horas" className="label-caps">Duración (horas)</label>
+          <input id="duracion_horas" name="duracion_horas" type="number" min="0" max="48" placeholder="10" className="input-base w-full" />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

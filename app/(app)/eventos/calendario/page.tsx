@@ -6,7 +6,9 @@ import { formatearFecha, hoyEnCabos, TZ } from '@/lib/fechas'
 import { formatInTimeZone } from 'date-fns-tz'
 import { EmptyState } from '@/components/ui/empty-state'
 
-type SearchParams = { ym?: string }
+type SearchParams = { ym?: string; estado?: string }
+
+const ESTADOS_VALIDOS = ['reservado', 'confirmado', 'realizado', 'pagado_proveedor', 'cancelado'] as const
 
 const ESTADO_COLORS: Record<string, { dot: string; bg: string; text: string }> = {
   reservado:        { dot: 'bg-amber-400',   bg: 'bg-amber-500/15  border-amber-500/40',   text: 'text-amber-300' },
@@ -34,6 +36,7 @@ export default async function CalendarioEventosPage(
 ) {
   const sp = await searchParams
   const { año, mes } = parseYM(sp.ym)
+  const filtroEstado = sp.estado && (ESTADOS_VALIDOS as readonly string[]).includes(sp.estado) ? sp.estado : null
 
   const inicio = new Date(año, mes, 1)
   const fin = new Date(año, mes + 1, 0)
@@ -41,13 +44,17 @@ export default async function CalendarioEventosPage(
   const finStr = `${año}-${String(mes + 1).padStart(2, '0')}-${String(fin.getDate()).padStart(2, '0')}`
 
   const supabase = await createClient()
-  const { data: eventos } = await supabase
+  let query = supabase
     .from('eventos')
-    .select('id, cliente_nombre, fecha_evento, hora_evento, tipo_evento, monto_total, moneda, estado, proveedor_nombre')
+    .select('id, cliente_nombre, fecha_evento, hora_evento, tipo_evento, monto_total, moneda, estado, proveedor_nombre, num_personas, duracion_horas, paquete')
     .gte('fecha_evento', inicioStr)
     .lte('fecha_evento', finStr)
     .order('fecha_evento', { ascending: true })
     .order('hora_evento', { ascending: true })
+
+  if (filtroEstado) query = query.eq('estado', filtroEstado)
+
+  const { data: eventos } = await query
 
   const hoy = hoyEnCabos()
   const lista = eventos ?? []
@@ -74,6 +81,9 @@ export default async function CalendarioEventosPage(
   // Totales del mes
   const cancelados = lista.filter((e) => e.estado === 'cancelado').length
   const activos = lista.length - cancelados
+  const totalPersonas = lista
+    .filter((e) => e.estado !== 'cancelado')
+    .reduce((sum, e) => sum + (e.num_personas ?? 0), 0)
   const ingresoEstimadoMxn = lista
     .filter((e) => e.estado !== 'cancelado' && e.moneda === 'MXN')
     .reduce((sum, e) => sum + Number(e.monto_total), 0)
@@ -128,13 +138,17 @@ export default async function CalendarioEventosPage(
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         <div className="card p-3">
           <p className="text-[10px] text-zinc-500">Eventos</p>
           <p className="text-lg font-bold text-white tabular-nums">{activos}</p>
         </div>
         <div className="card p-3">
-          <p className="text-[10px] text-zinc-500">Ingreso est. MXN</p>
+          <p className="text-[10px] text-zinc-500">Personas</p>
+          <p className="text-lg font-bold text-purple-300 tabular-nums">{totalPersonas}</p>
+        </div>
+        <div className="card p-3">
+          <p className="text-[10px] text-zinc-500">Ingreso MXN</p>
           <p className="text-sm font-bold text-emerald-400 tabular-nums">{formatMoney(ingresoEstimadoMxn, 'MXN')}</p>
         </div>
         <div className="card p-3">
@@ -147,14 +161,33 @@ export default async function CalendarioEventosPage(
         <p className="text-[11px] text-zinc-500 text-center">+ {formatMoney(ingresoEstimadoUsd, 'USD')} en USD</p>
       )}
 
-      {/* Leyenda */}
-      <div className="flex flex-wrap gap-2 text-[10px]">
-        {Object.entries(ESTADO_COLORS).map(([estado, c]) => (
-          <span key={estado} className="inline-flex items-center gap-1 text-zinc-400">
-            <span className={cn('h-2 w-2 rounded-full', c.dot)} />
-            <span className="capitalize">{estado.replace(/_/g, ' ')}</span>
-          </span>
-        ))}
+      {/* Filtro por estado (clickeable, conserva ym) */}
+      <div className="flex flex-wrap gap-1.5">
+        <Link
+          href={`/eventos/calendario?ym=${fmtYM(año, mes)}`}
+          className={cn(
+            'h-7 px-2.5 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-colors',
+            !filtroEstado ? 'border-cyan-500 bg-cyan-500/20 text-cyan-300' : 'border-[var(--border-subtle)] text-zinc-500 hover:text-white'
+          )}
+        >
+          Todos
+        </Link>
+        {Object.entries(ESTADO_COLORS).map(([estado, c]) => {
+          const active = filtroEstado === estado
+          return (
+            <Link
+              key={estado}
+              href={`/eventos/calendario?ym=${fmtYM(año, mes)}&estado=${estado}`}
+              className={cn(
+                'h-7 px-2.5 rounded-full text-[10px] font-bold uppercase tracking-wider border inline-flex items-center gap-1.5 transition-colors',
+                active ? `${c.bg} ${c.text}` : 'border-[var(--border-subtle)] text-zinc-500 hover:text-white'
+              )}
+            >
+              <span className={cn('h-2 w-2 rounded-full', c.dot)} />
+              <span>{estado.replace(/_/g, ' ')}</span>
+            </Link>
+          )
+        })}
       </div>
 
       {/* Grid del mes */}
@@ -257,22 +290,29 @@ export default async function CalendarioEventosPage(
                         return (
                           <li key={e.id}>
                             <Link href={`/eventos/${e.id}`} className="flex items-center gap-3 p-3 hover:bg-[var(--bg-card-hover)] transition-colors">
-                              <span className={cn('h-2.5 w-2.5 rounded-full shrink-0', colors.dot)} />
+                              <span className={cn('h-2.5 w-2.5 rounded-full shrink-0 mt-1', colors.dot)} />
                               <div className="flex-1 min-w-0 leading-tight">
                                 <p className="text-sm font-bold text-white truncate">
                                   {e.cliente_nombre}
                                   {e.hora_evento && <span className="text-zinc-500 font-normal"> · {e.hora_evento.slice(0, 5)}</span>}
                                 </p>
                                 <p className="text-[10px] text-zinc-500 truncate">
-                                  {e.tipo_evento || '—'}
-                                  {e.proveedor_nombre && ` · ${e.proveedor_nombre}`}
+                                  {e.paquete || e.tipo_evento || '—'}
                                 </p>
-                                <span className={cn('chip text-[9px] h-4 px-1.5 mt-1', colors.text)}>
-                                  {e.estado.replace(/_/g, ' ')}
-                                </span>
+                                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                  <span className={cn('chip text-[9px] h-4 px-1.5', colors.text)}>
+                                    {e.estado.replace(/_/g, ' ')}
+                                  </span>
+                                  {e.num_personas != null && (
+                                    <span className="text-[10px] text-zinc-400">👥 {e.num_personas}</span>
+                                  )}
+                                  {e.duracion_horas != null && (
+                                    <span className="text-[10px] text-zinc-400">⏱ {e.duracion_horas}h</span>
+                                  )}
+                                </div>
                               </div>
                               <p className="text-sm font-bold tabular-nums text-white shrink-0">
-                                {formatMoney(Number(e.monto_total), e.moneda as 'MXN' | 'USD')}
+                                {Number(e.monto_total) > 0 ? formatMoney(Number(e.monto_total), e.moneda as 'MXN' | 'USD') : <span className="text-zinc-500 text-[10px]">sin monto</span>}
                               </p>
                             </Link>
                           </li>

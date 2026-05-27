@@ -58,9 +58,24 @@ export default async function DetalleEventoPage(
           </div>
           <span className={cn('chip', estado.c)}>{estado.l}</span>
         </div>
-        {negocio && (
-          <p className="text-xs text-cyan-400">🏢 {negocio.nombre}</p>
-        )}
+        {/* Chips de detalles */}
+        <div className="flex flex-wrap gap-1.5">
+          {evento.paquete && (
+            <span className="chip chip-purple text-[10px]">📦 {evento.paquete}</span>
+          )}
+          {evento.num_personas != null && (
+            <span className="chip text-[10px]">👥 {evento.num_personas} personas</span>
+          )}
+          {evento.duracion_horas != null && (
+            <span className="chip text-[10px]">⏱ {evento.duracion_horas} hrs</span>
+          )}
+          {negocio && (
+            <span className="chip chip-cyan text-[10px]">🏢 {negocio.nombre}</span>
+          )}
+          {evento.cliente_telefono && (
+            <a href={`tel:${evento.cliente_telefono}`} className="chip chip-green text-[10px]">📞 {evento.cliente_telefono}</a>
+          )}
+        </div>
       </header>
 
       {/* Resumen financiero */}
