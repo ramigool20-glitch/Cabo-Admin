@@ -83,25 +83,31 @@ export default async function CashFlowPage() {
 
   const disponibleProyectado = saldos.total_mxn - obligacionesTotalMxn
 
-  // POR COBRAR (manuales + eventos)
+  // POR COBRAR (solo clientes que deben a la empresa — Rancho NO va aquí porque es comisión, va separado)
   const porCobrarMxn = (porCobrar ?? []).reduce((s, c) => c.moneda === 'MXN' ? s + (Number(c.monto_total) - Number(c.monto_cobrado)) : s, 0)
-  let porCobrarUsd = (porCobrar ?? []).reduce((s, c) => c.moneda === 'USD' ? s + (Number(c.monto_total) - Number(c.monto_cobrado)) : s, 0)
-  let eventosPorCobrarMxn = 0
+  const porCobrarUsd = (porCobrar ?? []).reduce((s, c) => c.moneda === 'USD' ? s + (Number(c.monto_total) - Number(c.monto_cobrado)) : s, 0)
+  const porCobrarTotalMxn = porCobrarMxn + porCobrarUsd * (fxRate ?? 17)
+
+  // RANCHO MCCOY — separado: solo nos quedamos con la comisión (25% default), no el monto total
+  let comisionRanchoMxn = 0, comisionRanchoUsd = 0
   for (const e of eventosPend ?? []) {
     const pagos = (e.eventos_pagos as Array<{ monto: number }>) ?? []
     const cobrado = pagos.reduce((sum, p) => sum + Number(p.monto), 0)
     const pend = Number(e.monto_total) - cobrado
     if (pend <= 0.01) continue
-    if (e.moneda === 'USD') porCobrarUsd += pend
-    else eventosPorCobrarMxn += pend
+    // El sistema usa 25% por defecto si no se especifica
+    const pct = 25 / 100
+    const comision = pend * pct
+    if (e.moneda === 'USD') comisionRanchoUsd += comision
+    else comisionRanchoMxn += comision
   }
-  const porCobrarTotalMxn = porCobrarMxn + eventosPorCobrarMxn + porCobrarUsd * (fxRate ?? 17)
+  const comisionRanchoTotalMxn = comisionRanchoMxn + comisionRanchoUsd * (fxRate ?? 17)
 
   // POR PAGAR equivalente total
   const porPagarTotalMxn = totalPorPagarMXN + totalPorPagarUSD * (fxRate ?? 17)
 
-  // Neto si todo entra/sale (saldo + por cobrar - por pagar - gastos fijos - nómina)
-  const netoFinal = saldos.total_mxn + porCobrarTotalMxn - obligacionesTotalMxn
+  // Neto si todo entra/sale: saldo + por cobrar empresa + comisión rancho - obligaciones
+  const netoFinal = saldos.total_mxn + porCobrarTotalMxn + comisionRanchoTotalMxn - obligacionesTotalMxn
 
   // Runway: cuántos días dura el saldo al ritmo de gasto mensual
   const gastoMensualEstimado = obligacionesMXN + obligacionesUSD * (fxRate ?? 17)
@@ -162,12 +168,15 @@ export default async function CashFlowPage() {
             <ChevronRight className="h-3 w-3 text-zinc-500" />
           </div>
           <p className="text-lg font-black tabular-nums text-emerald-300">
-            {formatMoney(porCobrarTotalMxn, 'MXN')}
+            {porCobrarUsd > 0 && porCobrarMxn === 0
+              ? formatMoney(porCobrarUsd, 'USD')
+              : formatMoney(porCobrarTotalMxn, 'MXN')}
           </p>
-          <div className="flex flex-wrap gap-1 text-[9px] text-zinc-500 tabular-nums">
-            {(porCobrarMxn + eventosPorCobrarMxn) > 0 && <span>{formatMoney(porCobrarMxn + eventosPorCobrarMxn, 'MXN')}</span>}
-            {porCobrarUsd > 0 && <span>+ {formatMoney(porCobrarUsd, 'USD')}</span>}
-          </div>
+          {porCobrarUsd > 0 && (
+            <p className="text-[10px] text-emerald-300/70 tabular-nums">
+              {porCobrarMxn > 0 ? `incl. ${formatMoney(porCobrarUsd, 'USD')}` : `≈ ${formatMoney(porCobrarUsd * (fxRate ?? 17), 'MXN')}`}
+            </p>
+          )}
         </Link>
 
         <Link
@@ -182,14 +191,40 @@ export default async function CashFlowPage() {
             <ChevronRight className="h-3 w-3 text-zinc-500" />
           </div>
           <p className="text-lg font-black tabular-nums text-rose-300">
-            {formatMoney(porPagarTotalMxn, 'MXN')}
+            {totalPorPagarUSD > 0 && totalPorPagarMXN === 0
+              ? formatMoney(totalPorPagarUSD, 'USD')
+              : formatMoney(porPagarTotalMxn, 'MXN')}
           </p>
-          <div className="flex flex-wrap gap-1 text-[9px] text-zinc-500 tabular-nums">
-            {totalPorPagarMXN > 0 && <span>{formatMoney(totalPorPagarMXN, 'MXN')}</span>}
-            {totalPorPagarUSD > 0 && <span>+ {formatMoney(totalPorPagarUSD, 'USD')}</span>}
-          </div>
+          {totalPorPagarUSD > 0 && (
+            <p className="text-[10px] text-rose-300/70 tabular-nums">
+              {totalPorPagarMXN > 0 ? `incl. ${formatMoney(totalPorPagarUSD, 'USD')}` : `≈ ${formatMoney(totalPorPagarUSD * (fxRate ?? 17), 'MXN')}`}
+            </p>
+          )}
         </Link>
       </div>
+
+      {/* Comisión Rancho McCoy (NO es de la empresa, solo nos llevamos el 25%) */}
+      {comisionRanchoTotalMxn > 0 && (
+        <Link
+          href="/eventos"
+          className="card p-3 hover:bg-[var(--bg-card-hover)] transition-colors border-purple-500/30 flex items-center gap-3"
+        >
+          <span className="h-10 w-10 inline-flex items-center justify-center rounded-xl bg-purple-500/15 border border-purple-500/30 text-lg shrink-0">
+            🎉
+          </span>
+          <div className="flex-1 leading-tight">
+            <p className="label-caps text-purple-300">Comisión Rancho (25% pendiente)</p>
+            <p className="text-base font-bold tabular-nums text-purple-200">
+              {formatMoney(comisionRanchoTotalMxn, 'MXN')}
+            </p>
+            {comisionRanchoUsd > 0 && (
+              <p className="text-[10px] text-purple-300/70 tabular-nums">incl. {formatMoney(comisionRanchoUsd, 'USD')}</p>
+            )}
+            <p className="text-[10px] text-zinc-500">Rancho McCoy no es parte de la empresa — solo cobramos comisión</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-zinc-500" />
+        </Link>
+      )}
 
       {/* Proyección — saldo - obligaciones */}
       <section className={cn(
@@ -231,7 +266,7 @@ export default async function CashFlowPage() {
           {netoFinal >= 0 ? '+' : ''}{formatMoney(netoFinal, 'MXN')}
         </p>
         <p className="text-[10px] text-zinc-500">
-          {formatMoney(saldos.total_mxn, 'MXN')} saldo + {formatMoney(porCobrarTotalMxn, 'MXN')} cobros − {formatMoney(obligacionesTotalMxn, 'MXN')} obligaciones
+          {formatMoney(saldos.total_mxn, 'MXN')} saldo + {formatMoney(porCobrarTotalMxn, 'MXN')} cobros + {formatMoney(comisionRanchoTotalMxn, 'MXN')} comisión Rancho − {formatMoney(obligacionesTotalMxn, 'MXN')} obligaciones
         </p>
         {runwayDias !== null && runwayDias < 90 && (
           <p className={cn(

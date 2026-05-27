@@ -354,6 +354,79 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  // ============================================================
+  // CASHFLOW / SALDOS / POR COBRAR / POR PAGAR
+  // ============================================================
+  {
+    type: 'function',
+    function: {
+      name: 'consultar_saldos_cuentas',
+      description: 'Devuelve saldos actuales por cuenta (Mercado Pago, Stripe, Efectivo, etc) y total del sistema en MXN. Úsala para "¿cuánto tengo en X cuenta?", "¿cuál es mi saldo total?", "¿en qué cuenta tengo más dinero?"',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'consultar_por_cobrar',
+      description: 'Devuelve resumen de cuentas/eventos por cobrar (clientes que deben a la empresa + eventos Rancho con anticipo pendiente). Úsala para "¿quién me debe?", "¿cuánto me deben?", "¿qué eventos faltan por cobrar?"',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'consultar_por_pagar',
+      description: 'Devuelve resumen de cuentas por pagar (deudas con proveedores). Úsala para "¿a quién le debo?", "¿qué tengo pendiente de pagar?"',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'consultar_cashflow',
+      description: 'Resumen completo: saldo total + por cobrar + por pagar + obligaciones + proyección neto. Úsala para "¿cómo voy en general?", "¿cuál es mi situación financiera?", "¿tengo suficiente para pagar todo?"',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'crear_cuenta_por_cobrar',
+      description: 'Registra una deuda de cliente hacia la empresa. Úsala cuando el usuario diga "X me debe Y", "fulano quedó debiendo Z".',
+      parameters: {
+        type: 'object',
+        properties: {
+          cliente_nombre: { type: 'string' },
+          concepto: { type: 'string', description: 'Qué te debe' },
+          monto: { type: 'number' },
+          moneda: { type: 'string', enum: ['MXN', 'USD'] },
+          fecha_vencimiento: { type: 'string', description: 'opcional, YYYY-MM-DD' },
+          negocio_nombre: { type: 'string', description: 'opcional, a cuál negocio le debe' },
+          notas: { type: 'string' },
+        },
+        required: ['cliente_nombre', 'concepto', 'monto'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'ajustar_saldo_cuenta',
+      description: 'Registra un ajuste manual de saldo en una cuenta (ej: comisión bancaria detectada, intereses recibidos, cargo no registrado). Crea una transacción con motivo obligatorio.',
+      parameters: {
+        type: 'object',
+        properties: {
+          cuenta_nombre: { type: 'string' },
+          tipo: { type: 'string', enum: ['entrada', 'salida'] },
+          monto: { type: 'number' },
+          moneda: { type: 'string', enum: ['MXN', 'USD'] },
+          motivo: { type: 'string', description: 'OBLIGATORIO. Por qué el ajuste.' },
+        },
+        required: ['cuenta_nombre', 'tipo', 'monto', 'motivo'],
+      },
+    },
+  },
 ]
 
 async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
@@ -1205,6 +1278,186 @@ async function ejecutarTool(
       } catch {}
     }
     return `✓ Agregado a shopping list: ${item}${prioridad === 'alta' ? ' (URGENTE — push enviada)' : ''}`
+  }
+
+  // ============================================================
+  // CASHFLOW / SALDOS HANDLERS
+  // ============================================================
+  if (name === 'consultar_saldos_cuentas') {
+    const { calcularSaldos } = await import('@/lib/saldos')
+    const [{ data: cuentas }, { data: txs }, { data: fx }] = await Promise.all([
+      admin.from('cuentas').select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas').eq('activo', true),
+      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
+      admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    const fxRate = fx ? Number(fx.rate_compra) : null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const saldos = calcularSaldos((cuentas ?? []) as any, (txs ?? []) as any, fxRate)
+    const detalle = saldos.por_cuenta
+      .filter((c) => c.locked)
+      .map((c) => {
+        const parts: string[] = []
+        if (c.saldo_mxn !== 0) parts.push(formatMoney(c.saldo_mxn, 'MXN'))
+        if (c.saldo_usd !== 0) parts.push(formatMoney(c.saldo_usd, 'USD'))
+        return `• ${c.nombre}: ${parts.join(' + ') || '$0'}`
+      }).join('\n')
+    const sinCapturar = saldos.por_cuenta.filter((c) => !c.locked).map((c) => c.nombre)
+    return [
+      `💵 Saldo total del sistema: ${formatMoney(saldos.total_mxn, 'MXN')}`,
+      `Desglose: ${formatMoney(saldos.total_solo_mxn, 'MXN')} en cuentas MXN + ${formatMoney(saldos.total_solo_usd, 'USD')} en cuentas USD${fxRate ? ` (rate ${fxRate.toFixed(2)})` : ''}`,
+      '',
+      detalle,
+      sinCapturar.length > 0 ? `\n⚠ Sin saldo inicial capturado: ${sinCapturar.join(', ')}` : '',
+    ].filter(Boolean).join('\n')
+  }
+
+  if (name === 'consultar_por_cobrar') {
+    const [{ data: cobr }, { data: ev }, { data: fx }] = await Promise.all([
+      admin.from('cuentas_por_cobrar').select('cliente_nombre, concepto, monto_total, monto_cobrado, moneda, fecha_vencimiento, estado').neq('estado', 'cobrado').neq('estado', 'cancelado'),
+      admin.from('eventos').select('cliente_nombre, monto_total, moneda, fecha_evento, estado, eventos_pagos(monto)').in('estado', ['reservado', 'confirmado']),
+      admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    const rate = fx ? Number(fx.rate_compra) : 17
+    let totalMxn = 0, totalUsd = 0
+    const items: string[] = []
+    for (const c of cobr ?? []) {
+      const r = Number(c.monto_total) - Number(c.monto_cobrado)
+      if (r <= 0) continue
+      if (c.moneda === 'USD') totalUsd += r; else totalMxn += r
+      items.push(`• ${c.cliente_nombre} (${c.concepto}): ${formatMoney(r, c.moneda as 'MXN' | 'USD')}${c.fecha_vencimiento ? ` · vence ${c.fecha_vencimiento}` : ''}`)
+    }
+    for (const e of ev ?? []) {
+      const pagos = (e.eventos_pagos as Array<{ monto: number }>) ?? []
+      const cobrado = pagos.reduce((s, p) => s + Number(p.monto), 0)
+      const pend = Number(e.monto_total) - cobrado
+      if (pend <= 0.01) continue
+      if (e.moneda === 'USD') totalUsd += pend; else totalMxn += pend
+      items.push(`🎉 ${e.cliente_nombre} (evento Rancho): ${formatMoney(pend, e.moneda as 'MXN' | 'USD')} · ${e.fecha_evento}`)
+    }
+    const equivTotal = totalMxn + totalUsd * rate
+    return [
+      `📈 Por cobrar: ${formatMoney(equivTotal, 'MXN')} equivalente`,
+      `${formatMoney(totalMxn, 'MXN')}${totalUsd > 0 ? ` + ${formatMoney(totalUsd, 'USD')} (≈ ${formatMoney(totalUsd * rate, 'MXN')})` : ''}`,
+      items.length > 0 ? '\n' + items.slice(0, 10).join('\n') : 'Sin pendientes.',
+    ].join('\n')
+  }
+
+  if (name === 'consultar_por_pagar') {
+    const [{ data: pag }, { data: fx }] = await Promise.all([
+      admin.from('cuentas_por_pagar').select('proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').neq('estado', 'pagado').neq('estado', 'cancelado'),
+      admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    const rate = fx ? Number(fx.rate_compra) : 17
+    const hoy = hoyEnCabos()
+    let totalMxn = 0, totalUsd = 0, vencidoMxn = 0
+    const items: string[] = []
+    for (const c of pag ?? []) {
+      const r = Number(c.monto_total) - Number(c.monto_pagado)
+      if (r <= 0) continue
+      const venc = !!c.fecha_vencimiento && c.fecha_vencimiento < hoy
+      if (c.moneda === 'USD') totalUsd += r; else { totalMxn += r; if (venc) vencidoMxn += r }
+      items.push(`${venc ? '⚠ VENCIDO ' : ''}• ${c.proveedor} (${c.concepto}): ${formatMoney(r, c.moneda as 'MXN' | 'USD')}${c.fecha_vencimiento ? ` · vence ${c.fecha_vencimiento}` : ''}`)
+    }
+    const equivTotal = totalMxn + totalUsd * rate
+    return [
+      `📉 Por pagar: ${formatMoney(equivTotal, 'MXN')} equivalente`,
+      `${formatMoney(totalMxn, 'MXN')}${totalUsd > 0 ? ` + ${formatMoney(totalUsd, 'USD')} (≈ ${formatMoney(totalUsd * rate, 'MXN')})` : ''}`,
+      vencidoMxn > 0 ? `⚠ Vencido: ${formatMoney(vencidoMxn, 'MXN')}` : '',
+      items.length > 0 ? '\n' + items.slice(0, 10).join('\n') : 'Sin pendientes.',
+    ].filter(Boolean).join('\n')
+  }
+
+  if (name === 'consultar_cashflow') {
+    const { calcularSaldos } = await import('@/lib/saldos')
+    const [{ data: cuentas }, { data: txs }, { data: fx }, { data: cobr }, { data: ev }, { data: pag }] = await Promise.all([
+      admin.from('cuentas').select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas').eq('activo', true),
+      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
+      admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+      admin.from('cuentas_por_cobrar').select('monto_total, monto_cobrado, moneda, estado').neq('estado', 'cobrado').neq('estado', 'cancelado'),
+      admin.from('eventos').select('monto_total, moneda, estado, eventos_pagos(monto)').in('estado', ['reservado', 'confirmado']),
+      admin.from('cuentas_por_pagar').select('monto_total, monto_pagado, moneda, estado').neq('estado', 'pagado').neq('estado', 'cancelado'),
+    ])
+    const rate = fx ? Number(fx.rate_compra) : 17
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const saldos = calcularSaldos((cuentas ?? []) as any, (txs ?? []) as any, rate)
+    let pcMxn = 0, pcUsd = 0
+    for (const c of cobr ?? []) {
+      const r = Number(c.monto_total) - Number(c.monto_cobrado)
+      if (r <= 0) continue
+      if (c.moneda === 'USD') pcUsd += r; else pcMxn += r
+    }
+    for (const e of ev ?? []) {
+      const pagos = (e.eventos_pagos as Array<{ monto: number }>) ?? []
+      const cobrado = pagos.reduce((s, p) => s + Number(p.monto), 0)
+      const pend = Number(e.monto_total) - cobrado
+      if (pend <= 0.01) continue
+      if (e.moneda === 'USD') pcUsd += pend; else pcMxn += pend
+    }
+    let ppMxn = 0, ppUsd = 0
+    for (const c of pag ?? []) {
+      const r = Number(c.monto_total) - Number(c.monto_pagado)
+      if (r <= 0) continue
+      if (c.moneda === 'USD') ppUsd += r; else ppMxn += r
+    }
+    const pcTotal = pcMxn + pcUsd * rate
+    const ppTotal = ppMxn + ppUsd * rate
+    const neto = saldos.total_mxn + pcTotal - ppTotal
+    return [
+      `💵 SITUACIÓN FINANCIERA`,
+      `Saldo en cuentas: ${formatMoney(saldos.total_mxn, 'MXN')}`,
+      `Por cobrar (clientes + eventos): ${formatMoney(pcTotal, 'MXN')}`,
+      `Por pagar (proveedores): ${formatMoney(ppTotal, 'MXN')}`,
+      ``,
+      `Neto si cobras todo y pagas todo: ${formatMoney(neto, 'MXN')}`,
+      neto >= 0 ? '✓ Tienes capacidad de pago.' : '⚠ Faltarían recursos.',
+    ].join('\n')
+  }
+
+  if (name === 'crear_cuenta_por_cobrar') {
+    const { data: negs } = await admin.from('negocios').select('id, nombre').eq('activo', true)
+    const findId = (list: { id: string; nombre: string }[] | null, hint: string) => {
+      if (!hint || !list) return null
+      const h = norm(hint)
+      return list.find((x) => norm(x.nombre).includes(h) || h.includes(norm(x.nombre)))?.id ?? null
+    }
+    const { error } = await admin.from('cuentas_por_cobrar').insert({
+      cliente_nombre: String(input.cliente_nombre),
+      concepto: String(input.concepto),
+      monto_total: Number(input.monto),
+      monto_cobrado: 0,
+      moneda: (input.moneda as 'MXN' | 'USD') || 'MXN',
+      fecha_vencimiento: (input.fecha_vencimiento as string) || null,
+      negocio_id: findId(negs, input.negocio_nombre as string),
+      notas: (input.notas as string) || null,
+      estado: 'pendiente',
+    })
+    return error ? `Error: ${error.message}` : `✓ Registrada deuda de ${input.cliente_nombre}: ${formatMoney(Number(input.monto), (input.moneda as 'MXN' | 'USD') || 'MXN')}`
+  }
+
+  if (name === 'ajustar_saldo_cuenta') {
+    const { data: cuentas } = await admin.from('cuentas').select('id, nombre').eq('activo', true)
+    const h = norm(input.cuenta_nombre as string)
+    const cuenta = (cuentas ?? []).find((c) => norm(c.nombre).includes(h) || h.includes(norm(c.nombre)))
+    if (!cuenta) return `Error: No encontré cuenta "${input.cuenta_nombre}". Disponibles: ${(cuentas ?? []).map((c) => c.nombre).join(', ')}`
+    const tipoTx = input.tipo === 'entrada' ? 'ingreso' : 'gasto'
+    const monto = Number(input.monto)
+    const moneda = (input.moneda as 'MXN' | 'USD') || 'MXN'
+    const fx = await (await import('@/lib/fx/server')).aMxnEquivalente(monto, moneda, hoyEnCabos())
+    const { error } = await admin.from('transacciones').insert({
+      tipo: tipoTx,
+      monto,
+      moneda,
+      monto_mxn_equivalente: fx.monto_mxn_equivalente,
+      tipo_cambio_usado: fx.tipo_cambio_usado,
+      fecha: hoyEnCabos(),
+      cuenta_id: cuenta.id,
+      categoria: 'ajuste-saldo',
+      concepto: `Ajuste: ${input.motivo}`,
+      notas: `Ajuste manual desde IA. Motivo: ${input.motivo}`,
+      metodo_pago: 'otro',
+      metodo_captura: 'api',
+    })
+    return error ? `Error: ${error.message}` : `✓ Ajuste registrado en ${cuenta.nombre}: ${input.tipo === 'entrada' ? '+' : '−'}${formatMoney(monto, moneda)}. Motivo: ${input.motivo}`
   }
 
   return `Tool ${name} no implementada.`
