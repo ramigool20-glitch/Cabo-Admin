@@ -427,6 +427,37 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'guardar_memoria',
+      description: 'Guarda algo importante en tu memoria persistente: preferencias del usuario, hechos confirmados, alertas a vigilar, contexto de negocio. Úsalo cuando aprendas algo nuevo que debas recordar en futuras conversaciones.',
+      parameters: {
+        type: 'object',
+        properties: {
+          tipo: { type: 'string', enum: ['preferencia', 'hecho', 'alerta', 'contexto', 'feedback'] },
+          contenido: { type: 'string', description: 'Lo que vas a recordar, en una frase corta y concreta.' },
+          ambito: { type: 'string', description: 'opcional. Ej: casa, pagina_1, rancho_mccoy, general' },
+          importancia: { type: 'number', description: '1-10. Default 5. Alto = se incluye siempre en contexto.' },
+        },
+        required: ['tipo', 'contenido'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'recordar_memorias',
+      description: 'Lista todas las memorias guardadas, opcionalmente filtradas por tipo o ámbito. Úsalo cuando quieras consultar qué sabes sobre algo o el usuario pregunte "¿qué recuerdas de X?"',
+      parameters: {
+        type: 'object',
+        properties: {
+          tipo: { type: 'string', enum: ['preferencia', 'hecho', 'alerta', 'contexto', 'feedback'] },
+          ambito: { type: 'string' },
+        },
+      },
+    },
+  },
 ]
 
 async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
@@ -470,6 +501,39 @@ async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
     admin.from('profiles').select('id, nombre, role_id, roles(nombre)').eq('activo', true),
     admin.from('casa_shopping').select('item, prioridad, comprado').eq('comprado', false).order('created_at', { ascending: false }).limit(10),
   ])
+
+  // Memorias IA activas (top por importancia)
+  let memorias: Array<{ tipo: string; contenido: string; ambito: string | null; importancia: number }> = []
+  try {
+    const { data: memData } = await admin
+      .from('memoria_ia')
+      .select('tipo, contenido, ambito, importancia')
+      .eq('activa', true)
+      .order('importancia', { ascending: false })
+      .limit(20)
+    memorias = memData ?? []
+  } catch { /* tabla no existe aún */ }
+
+  // Saldos del sistema (cashflow resumen rápido)
+  let saldosResumen = ''
+  try {
+    const { calcularSaldos } = await import('@/lib/saldos')
+    const [{ data: cuentasSaldo }, { data: txAll }, { data: fxRow }] = await Promise.all([
+      admin.from('cuentas').select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas').eq('activo', true),
+      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
+      admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    const rate = fxRow ? Number(fxRow.rate_compra) : null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const saldos = calcularSaldos((cuentasSaldo ?? []) as any, (txAll ?? []) as any, rate)
+    const lineas = saldos.por_cuenta.filter((c) => c.locked).map((c) => {
+      const p: string[] = []
+      if (c.saldo_mxn !== 0) p.push(formatMoney(c.saldo_mxn, 'MXN'))
+      if (c.saldo_usd !== 0) p.push(formatMoney(c.saldo_usd, 'USD'))
+      return `${c.nombre}: ${p.join(' + ') || '$0'}`
+    })
+    saldosResumen = `Total sistema: ${formatMoney(saldos.total_mxn, 'MXN')}. ${lineas.join(' | ')}`
+  } catch { /* skip */ }
 
   const t = totalizar(tx ?? [])
   const tAnt = totalizar(txMesAnterior ?? [])
@@ -599,6 +663,10 @@ async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
     empleados: (empleados ?? []).map((e) => `${e.nombre}${e.puesto ? ` (${e.puesto})` : ''}`).join(', ') || 'ninguno aún',
     recurrentes: (recurrentes ?? []).slice(0, 10).map((r) => `${r.nombre} ${formatMoney(Number(r.monto), r.moneda as 'MXN' | 'USD')} ${r.frecuencia} (próx: ${r.proximo_pago})`).join('; ') || 'ninguno aún',
     pendientes: (pendientes ?? []).map((p) => `[${p.prioridad}] ${p.pregunta}`).join(' | ') || 'ninguno',
+    memorias: memorias.length > 0
+      ? memorias.map((m) => `[${m.tipo}${m.ambito ? `/${m.ambito}` : ''}] ${m.contenido}`).join('\n')
+      : 'Sin memorias guardadas todavía.',
+    saldos_resumen: saldosResumen || 'Sin saldos capturados todavía.',
   }
 }
 
@@ -1434,6 +1502,38 @@ async function ejecutarTool(
     return error ? `Error: ${error.message}` : `✓ Registrada deuda de ${input.cliente_nombre}: ${formatMoney(Number(input.monto), (input.moneda as 'MXN' | 'USD') || 'MXN')}`
   }
 
+  if (name === 'guardar_memoria') {
+    const { error } = await admin.from('memoria_ia').insert({
+      tipo: String(input.tipo),
+      contenido: String(input.contenido),
+      ambito: (input.ambito as string) || null,
+      importancia: Number(input.importancia ?? 5),
+      activa: true,
+    })
+    if (error) {
+      if (/relation.*does not exist/i.test(error.message)) {
+        return 'Error: Tabla memoria_ia no existe. Pega la migración 0022_memoria_ia.sql en Supabase.'
+      }
+      return `Error: ${error.message}`
+    }
+    return `✓ Memoria guardada: "${input.contenido}"`
+  }
+
+  if (name === 'recordar_memorias') {
+    let q = admin.from('memoria_ia').select('tipo, contenido, ambito, importancia, created_at').eq('activa', true)
+    if (input.tipo) q = q.eq('tipo', input.tipo as string)
+    if (input.ambito) q = q.eq('ambito', input.ambito as string)
+    const { data, error } = await q.order('importancia', { ascending: false }).limit(30)
+    if (error) {
+      if (/relation.*does not exist/i.test(error.message)) {
+        return 'Tabla memoria_ia no existe aún. Pega la migración 0022_memoria_ia.sql para activar memoria persistente.'
+      }
+      return `Error: ${error.message}`
+    }
+    if (!data || data.length === 0) return 'Sin memorias guardadas todavía.'
+    return data.map((m) => `[${m.tipo}${m.ambito ? `/${m.ambito}` : ''}] ${m.contenido}`).join('\n')
+  }
+
   if (name === 'ajustar_saldo_cuenta') {
     const { data: cuentas } = await admin.from('cuentas').select('id, nombre').eq('activo', true)
     const h = norm(input.cuenta_nombre as string)
@@ -1484,6 +1584,8 @@ export async function POST(req: Request) {
       .replace('{EMPLEADOS}', ctx.empleados)
       .replace('{RECURRENTES}', ctx.recurrentes)
       .replace('{PENDIENTES}', ctx.pendientes)
+      .replace('{MEMORIAS}', ctx.memorias)
+      .replace('{SALDOS_RESUMEN}', ctx.saldos_resumen)
 
     // Guardar mensajes de usuario en BD para memoria persistente
     const ultimoMsg = body.messages[body.messages.length - 1]

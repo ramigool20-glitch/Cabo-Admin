@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Users, ChevronRight } from 'lucide-react'
+import { Users, ChevronRight, Plus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function NominaPage() {
@@ -11,12 +11,19 @@ export default async function NominaPage() {
     .order('nombre')
 
   return (
-    <div className="px-4 pt-6 pb-4 space-y-4">
-      <header className="space-y-1">
+    <div className="px-4 pt-6 pb-24 space-y-4 max-w-3xl mx-auto">
+      <header className="space-y-2">
         <h1 className="text-2xl font-bold tracking-tight">Nómina</h1>
         <p className="text-sm text-zinc-400">
           {empleados?.length ?? 0} {(empleados?.length ?? 0) === 1 ? 'empleado' : 'empleados'} activos.
         </p>
+        <Link
+          href="/nomina/nuevo"
+          className="btn-primary h-10 text-sm w-full"
+        >
+          <Plus className="h-4 w-4" />
+          Agregar empleado
+        </Link>
       </header>
 
       {empleados && empleados.length > 0 ? (
