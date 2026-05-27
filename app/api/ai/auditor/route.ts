@@ -229,6 +229,20 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'consultar_avances',
+      description: 'CRÍTICO: La empresa cubre TODOS los gastos de Casa. Cuando un socio captura un gasto Casa "atribuido a él", eso es un AVANCE que recibió de la empresa y se DEDUCIRÁ de su utilidad al corte (mes/quincena). Esta tool devuelve avances por socio en el período. Úsala para "¿cuánto llevo de avance?", "¿cuánto me van a deducir del corte?", "¿cuánto sacó Sergio personal?"',
+      parameters: {
+        type: 'object',
+        properties: {
+          dias_atras: { type: 'number', description: 'Default 30 (mes en curso típicamente)' },
+          socio_nombre: { type: 'string', description: 'Opcional. Si se da, devuelve solo el avance de ese socio.' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'cerrar_pendiente',
       description: 'Marca una pregunta pendiente como resuelta o descartada. Úsala cuando el usuario haya respondido la info o cuando ya no aplique. Identifica el pendiente por substring de la pregunta.',
       parameters: {
@@ -816,6 +830,67 @@ async function ejecutarTool(
           estado: diff > 0.01 ? 'le_deben' : diff < -0.01 ? 'debe' : 'empatado',
         }
       }),
+    })
+  }
+
+  if (name === 'consultar_avances') {
+    const dias = Number(input.dias_atras ?? 30)
+    const socioNombre = (input.socio_nombre as string) || ''
+    const desde = new Date()
+    desde.setDate(desde.getDate() - dias)
+    const desdeISO = desde.toISOString().slice(0, 10)
+
+    const { data: casa } = await admin.from('negocios').select('id').eq('tipo', 'casa').maybeSingle()
+    if (!casa) return JSON.stringify({ error: 'No existe negocio Casa' })
+
+    const [{ data: txCasa }, { data: socios }] = await Promise.all([
+      admin.from('transacciones').select('tipo, monto, moneda, capturado_por, atribuido_a, monto_mxn_equivalente').eq('negocio_id', casa.id).gte('fecha', desdeISO),
+      admin.from('profiles').select('id, nombre, role_id, roles(nombre)').eq('activo', true),
+    ])
+
+    const sFiltered = (socios ?? []).filter((p) => {
+      const r = p.roles as unknown as { nombre: string } | null
+      return r?.nombre === 'admin' || r?.nombre === 'socio'
+    })
+
+    let compartido = 0
+    const avancePor = new Map<string, number>()
+    for (const s of sFiltered) avancePor.set(s.id, 0)
+
+    for (const t of (txCasa ?? [])) {
+      if (t.tipo !== 'gasto' && t.tipo !== 'multa_interna') continue
+      const equiv = t.monto_mxn_equivalente != null ? Number(t.monto_mxn_equivalente) : (t.moneda === 'MXN' ? Number(t.monto) : 0)
+      if (t.atribuido_a) {
+        avancePor.set(t.atribuido_a, (avancePor.get(t.atribuido_a) ?? 0) + equiv)
+      } else {
+        compartido += equiv
+      }
+    }
+
+    const reporte = sFiltered.map((s) => ({
+      nombre: s.nombre,
+      avance_mxn: avancePor.get(s.id) ?? 0,
+      explicacion: `Este monto se DEDUCIRÁ de la utilidad de ${s.nombre} al hacer el corte (mes/quincena).`,
+    }))
+
+    if (socioNombre) {
+      const h = norm(socioNombre)
+      const match = reporte.find((r) => norm(r.nombre).includes(h) || h.includes(norm(r.nombre)))
+      if (match) {
+        return JSON.stringify({
+          periodo_dias: dias,
+          desde: desdeISO,
+          socio: match,
+        })
+      }
+    }
+
+    return JSON.stringify({
+      periodo_dias: dias,
+      desde: desdeISO,
+      compartido_mxn: compartido,
+      avances_por_socio: reporte,
+      nota: 'Compartido = gasto operativo de la sociedad (no se deduce a nadie). Avance = la empresa adelantó esa lana al socio, se deduce de su utilidad al corte.',
     })
   }
 

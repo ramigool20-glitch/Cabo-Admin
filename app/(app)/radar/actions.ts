@@ -11,19 +11,46 @@ export async function refrescarRadar() {
   if (!user) return { ok: false, error: 'No autenticado' }
 
   const admin = createAdminClient()
-  const { insights, error } = await ejecutarRadar()
+
+  // Verifica que la tabla exista antes de continuar
+  const probe = await admin.from('radar_insights').select('id').limit(1)
+  if (probe.error) {
+    return {
+      ok: false,
+      error: 'La tabla radar_insights no existe. Pega la migración 0014_radar.sql en Supabase.',
+    }
+  }
+
+  let result: Awaited<ReturnType<typeof ejecutarRadar>>
+  try {
+    result = await ejecutarRadar()
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'Error ejecutando radar'
+    try {
+      await admin.from('radar_runs').insert({
+        disparado_por: 'manual',
+        insights_creados: 0,
+        error: error.slice(0, 500),
+      })
+    } catch {}
+    return { ok: false, error }
+  }
+
+  const { insights, error } = result
 
   if (error) {
-    await admin.from('radar_runs').insert({
-      disparado_por: 'manual',
-      insights_creados: 0,
-      error,
-    })
+    try {
+      await admin.from('radar_runs').insert({
+        disparado_por: 'manual',
+        insights_creados: 0,
+        error: error.slice(0, 500),
+      })
+    } catch {}
     return { ok: false, error }
   }
 
   if (insights.length > 0) {
-    await admin.from('radar_insights').insert(
+    const insertRes = await admin.from('radar_insights').insert(
       insights.map((i) => ({
         tipo: i.tipo,
         titulo: i.titulo,
@@ -34,16 +61,21 @@ export async function refrescarRadar() {
         aplica_a: i.aplica_a,
         recomendacion: i.recomendacion,
         fecha_evento: i.fecha_evento,
-        modelo_ia: 'gpt-4o-mini',
+        modelo_ia: 'analisis-interno',
         query_origen: 'manual',
       }))
     )
+    if (insertRes.error) {
+      return { ok: false, error: `No se pudieron guardar insights: ${insertRes.error.message}` }
+    }
   }
 
-  await admin.from('radar_runs').insert({
-    disparado_por: 'manual',
-    insights_creados: insights.length,
-  })
+  try {
+    await admin.from('radar_runs').insert({
+      disparado_por: 'manual',
+      insights_creados: insights.length,
+    })
+  } catch {}
 
   revalidatePath('/radar')
   return { ok: true, count: insights.length }
