@@ -243,6 +243,58 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'registrar_venta',
+      description: 'Registra una venta de página digital. Úsala si dicen "vendí X producto por $Y" o "vendí 3 piezas a $50 USD c/u".',
+      parameters: {
+        type: 'object',
+        properties: {
+          negocio_nombre: { type: 'string', description: 'Nombre del negocio (página)' },
+          precio_venta: { type: 'number' },
+          moneda: { type: 'string', enum: ['MXN', 'USD'] },
+          producto: { type: 'string' },
+          costo_producto: { type: 'number' },
+          fecha: { type: 'string', description: 'YYYY-MM-DD' },
+        },
+        required: ['negocio_nombre', 'precio_venta'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'registrar_gasto_ads',
+      description: 'Registra un gasto de publicidad (Meta/Google/TikTok) para página digital. Úsala si dicen "gasté $50 USD en Meta ads".',
+      parameters: {
+        type: 'object',
+        properties: {
+          negocio_nombre: { type: 'string' },
+          monto: { type: 'number' },
+          moneda: { type: 'string', enum: ['MXN', 'USD'] },
+          plataforma: { type: 'string', description: 'meta, google, tiktok, otro' },
+          fecha: { type: 'string' },
+        },
+        required: ['negocio_nombre', 'monto'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'consultar_metricas_pagina',
+      description: 'Devuelve métricas de página digital: ROAS, margen real, ventas, gasto ads. Úsala para "¿cómo va la página X?", "¿cuál es mi ROAS?", "¿estoy rentable?"',
+      parameters: {
+        type: 'object',
+        properties: {
+          negocio_nombre: { type: 'string' },
+          dias_atras: { type: 'number', description: 'default 30' },
+        },
+        required: ['negocio_nombre'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'consultar_competidores',
       description: 'Devuelve competidores registrados en el Radar, opcionalmente filtrados por dominio (farmacia/consultorio/rancho_mccoy/pagina_X). Úsala cuando preguntan sobre competencia o quieres sugerir análisis.',
       parameters: {
@@ -922,6 +974,112 @@ async function ejecutarTool(
       compartido_mxn: compartido,
       avances_por_socio: reporte,
       nota: 'Compartido = gasto operativo de la sociedad (no se deduce a nadie). Avance = la empresa adelantó esa lana al socio, se deduce de su utilidad al corte.',
+    })
+  }
+
+  if (name === 'registrar_venta') {
+    const { data: negocios } = await admin.from('negocios').select('id, nombre').eq('activo', true)
+    const h = norm(input.negocio_nombre as string || '')
+    const neg = (negocios ?? []).find((x) => norm(x.nombre).includes(h) || h.includes(norm(x.nombre)))
+    if (!neg) return `No encontré negocio "${input.negocio_nombre}"`
+    const fecha = (input.fecha as string) || hoyEnCabos()
+    const precio = Number(input.precio_venta)
+    const moneda = (input.moneda as 'MXN' | 'USD') || 'MXN'
+    const costo = input.costo_producto ? Number(input.costo_producto) : null
+    // FX
+    const { aMxnEquivalente } = await import('@/lib/fx/server')
+    const fxPrecio = await aMxnEquivalente(precio, moneda, fecha)
+    const fxCosto = costo ? await aMxnEquivalente(costo, moneda, fecha) : null
+    const { error } = await admin.from('ventas').insert({
+      negocio_id: neg.id,
+      fecha,
+      producto: (input.producto as string) || null,
+      precio_venta: precio,
+      moneda,
+      costo_producto: costo,
+      precio_venta_mxn: fxPrecio.monto_mxn_equivalente,
+      costo_producto_mxn: fxCosto?.monto_mxn_equivalente ?? null,
+      tipo_cambio_usado: fxPrecio.tipo_cambio_usado,
+    })
+    return error ? `Error: ${error.message}` : `✓ Venta de ${precio} ${moneda} registrada en "${neg.nombre}"`
+  }
+
+  if (name === 'registrar_gasto_ads') {
+    const { data: negocios } = await admin.from('negocios').select('id, nombre').eq('activo', true)
+    const h = norm(input.negocio_nombre as string || '')
+    const neg = (negocios ?? []).find((x) => norm(x.nombre).includes(h) || h.includes(norm(x.nombre)))
+    if (!neg) return `No encontré negocio "${input.negocio_nombre}"`
+    const fecha = (input.fecha as string) || hoyEnCabos()
+    const monto = Number(input.monto)
+    const moneda = (input.moneda as 'MXN' | 'USD') || 'USD'
+    const { aMxnEquivalente } = await import('@/lib/fx/server')
+    const fx = await aMxnEquivalente(monto, moneda, fecha)
+    const { error } = await admin.from('gastos_ads').insert({
+      negocio_id: neg.id,
+      fecha,
+      monto,
+      moneda,
+      plataforma: (input.plataforma as string) || 'meta',
+      monto_mxn: fx.monto_mxn_equivalente,
+      tipo_cambio_usado: fx.tipo_cambio_usado,
+      metodo_captura: 'manual',
+    })
+    return error ? `Error: ${error.message}` : `✓ Gasto ads ${monto} ${moneda} registrado en "${neg.nombre}"`
+  }
+
+  if (name === 'consultar_metricas_pagina') {
+    const { data: negocios } = await admin.from('negocios').select('id, nombre, tipo, moneda_principal').eq('activo', true)
+    const h = norm(input.negocio_nombre as string || '')
+    const neg = (negocios ?? []).find((x) => norm(x.nombre).includes(h) || h.includes(norm(x.nombre)))
+    if (!neg) return `No encontré negocio "${input.negocio_nombre}"`
+    const dias = Number(input.dias_atras ?? 30)
+    const desde = new Date()
+    desde.setDate(desde.getDate() - dias)
+    const desdeISO = desde.toISOString().slice(0, 10)
+
+    const [{ data: ventas }, { data: gastos_ads }, { data: fx }] = await Promise.all([
+      admin.from('ventas').select('precio_venta, costo_producto, moneda, precio_venta_mxn, costo_producto_mxn').eq('negocio_id', neg.id).gte('fecha', desdeISO),
+      admin.from('gastos_ads').select('monto, moneda, monto_mxn').eq('negocio_id', neg.id).gte('fecha', desdeISO),
+      admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    const rate = fx ? Number(fx.rate_compra) : 17
+
+    type V = { precio_venta: number; precio_venta_mxn: number | null; costo_producto: number | null; costo_producto_mxn: number | null; moneda: string }
+    type GA = { monto: number; monto_mxn: number | null; moneda: string }
+    let ventasMxn = 0, costoMxn = 0, adsMxn = 0
+    for (const v of ((ventas ?? []) as V[])) {
+      ventasMxn += v.precio_venta_mxn != null ? Number(v.precio_venta_mxn) : (v.moneda === 'MXN' ? Number(v.precio_venta) : Number(v.precio_venta) * rate)
+      const c = v.costo_producto_mxn != null ? Number(v.costo_producto_mxn) : (v.moneda === 'MXN' ? Number(v.costo_producto ?? 0) : Number(v.costo_producto ?? 0) * rate)
+      costoMxn += c
+    }
+    for (const g of ((gastos_ads ?? []) as GA[])) {
+      adsMxn += g.monto_mxn != null ? Number(g.monto_mxn) : (g.moneda === 'MXN' ? Number(g.monto) : Number(g.monto) * rate)
+    }
+    const numVentas = (ventas ?? []).length
+    const roas = adsMxn > 0 ? ventasMxn / adsMxn : null
+    const margenReal = ventasMxn - costoMxn - adsMxn
+    const margenPct = ventasMxn > 0 ? (margenReal / ventasMxn) : null
+    const costoPorVenta = numVentas > 0 ? adsMxn / numVentas : null
+
+    return JSON.stringify({
+      negocio: neg.nombre,
+      tipo: neg.tipo,
+      periodo_dias: dias,
+      ventas_total_mxn: Math.round(ventasMxn * 100) / 100,
+      num_ventas: numVentas,
+      gasto_ads_mxn: Math.round(adsMxn * 100) / 100,
+      costo_producto_mxn: Math.round(costoMxn * 100) / 100,
+      roas: roas !== null ? Math.round(roas * 100) / 100 : null,
+      margen_real_mxn: Math.round(margenReal * 100) / 100,
+      margen_pct: margenPct !== null ? Math.round(margenPct * 1000) / 10 : null,
+      costo_por_venta_mxn: costoPorVenta !== null ? Math.round(costoPorVenta * 100) / 100 : null,
+      interpretacion: roas === null
+        ? 'Sin ads registrados, no se puede calcular ROAS.'
+        : roas >= 2
+          ? 'ROAS saludable (>=2): cada peso en ads genera $' + roas.toFixed(2) + ' en ventas.'
+          : roas >= 1
+            ? 'ROAS apenas rentable. Margen ajustado.'
+            : 'ROAS por debajo de 1: estás perdiendo dinero en ads.',
     })
   }
 

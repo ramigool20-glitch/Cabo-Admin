@@ -11,6 +11,8 @@ import { calcularMetricas } from '@/lib/roas'
 import { RangoSelector } from '@/components/dashboard/rango-selector'
 import { CategoriasList } from '@/components/dashboard/categorias-list'
 import { RoasCard } from '@/components/negocios/roas-card'
+import { VentaQuickForm } from '@/components/negocios/venta-quick-form'
+import { GastoAdQuickForm } from '@/components/negocios/gasto-ad-quick-form'
 
 export default async function DetalleNegocioPage(
   props: { params: Promise<{ id: string }>; searchParams: Promise<{ rango?: string; desde?: string; hasta?: string }> }
@@ -160,6 +162,14 @@ export default async function DetalleNegocioPage(
 
       {/* Métricas página digital (ROAS) */}
       {metricas && <RoasCard m={metricas} moneda={monedaNeg} />}
+
+      {/* Forms rápidos solo para páginas digitales */}
+      {esPagina && (
+        <div className="space-y-2">
+          <VentaQuickForm negocioId={id} defaultMoneda={monedaNeg} />
+          <GastoAdQuickForm negocioId={id} />
+        </div>
+      )}
 
       {/* Top categorías de gasto */}
       <CategoriasList data={topCats} />
