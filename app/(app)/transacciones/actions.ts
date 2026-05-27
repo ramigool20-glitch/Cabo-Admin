@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { flashOk } from '@/lib/flash'
 import { aMxnEquivalente } from '@/lib/fx/server'
 import { registrarHistorial } from '@/lib/historial'
+import { sincronizarTxASubTabla } from '@/lib/sync-ads-ventas'
 
 const TransaccionSchema = z.object({
   tipo: z.enum(['ingreso', 'gasto']),
@@ -83,10 +84,26 @@ export async function createTransaccion(
   // Registrar en historial
   if (nuevaTx?.id) {
     await registrarHistorial(nuevaTx.id, 'creada', user.id, null, insertData)
+    // Sincronizar a gastos_ads/ventas si la categoría/concepto aplica
+    await sincronizarTxASubTabla(supabase, {
+      txId: nuevaTx.id,
+      tipo: parsed.data.tipo,
+      negocio_id: parsed.data.negocio_id,
+      monto: parsed.data.monto,
+      moneda: parsed.data.moneda,
+      fecha: parsed.data.fecha,
+      categoria: parsed.data.categoria ?? null,
+      concepto: parsed.data.concepto ?? null,
+      user_id: user.id,
+      fx,
+    })
   }
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
+  revalidatePath(`/negocios/${parsed.data.negocio_id}`)
+  revalidatePath(`/negocios/${parsed.data.negocio_id}/ads`)
+  revalidatePath(`/negocios/${parsed.data.negocio_id}/ventas`)
   flashOk('/transacciones', 'tx_creada')
 }
 

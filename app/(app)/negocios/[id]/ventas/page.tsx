@@ -2,14 +2,35 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ChevronLeft, ShoppingBag, TrendingUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney } from '@/lib/utils'
 import { formatearFecha } from '@/lib/fechas'
 import { VentaQuickForm } from '@/components/negocios/venta-quick-form'
 import { EliminarItemBtn } from '@/components/negocios/eliminar-item-btn'
 
+function esCategoriaVenta(categoria: string | null, concepto: string | null): boolean {
+  const cat = (categoria ?? '').toLowerCase().trim()
+  if (cat === 'ventas' || cat === 'venta') return true
+  const con = (concepto ?? '').toLowerCase()
+  return /^venta:|^vendido:/.test(con)
+}
+
+type VentaItem = {
+  id: string
+  source: 'transaccion' | 'venta'
+  fecha: string
+  producto: string | null
+  precio_venta: number
+  moneda: 'MXN' | 'USD'
+  precio_venta_mxn: number
+  costo_producto_mxn: number
+  created_at: string
+}
+
 export default async function VentasPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params
   const supabase = await createClient()
+  const admin = createAdminClient()
 
   const { data: negocio } = await supabase
     .from('negocios')
@@ -19,28 +40,99 @@ export default async function VentasPage(props: { params: Promise<{ id: string }
 
   if (!negocio) notFound()
 
+  const { data: fxLatest } = await admin
+    .from('fx_rates')
+    .select('rate_compra')
+    .order('fecha', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
+
+  // Trae ventas dedicadas
   const { data: ventas } = await supabase
     .from('ventas')
-    .select('id, fecha, producto, precio_venta, moneda, costo_producto, precio_venta_mxn, costo_producto_mxn, tipo_cambio_usado')
+    .select('id, fecha, producto, precio_venta, moneda, costo_producto, precio_venta_mxn, costo_producto_mxn, tipo_cambio_usado, created_at')
     .eq('negocio_id', id)
     .order('fecha', { ascending: false })
     .order('created_at', { ascending: false })
 
-  const list = ventas ?? []
+  // Trae transacciones ingreso (para detectar las que sean ventas y no estén en tabla)
+  const { data: txs } = await supabase
+    .from('transacciones')
+    .select('id, tipo, monto, moneda, fecha, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado, created_at')
+    .eq('negocio_id', id)
+    .eq('tipo', 'ingreso')
+    .order('fecha', { ascending: false })
+    .order('created_at', { ascending: false })
 
-  // KPIs
-  const totalVentasMxn = list.reduce((acc, v) => acc + Number(v.precio_venta_mxn ?? 0), 0)
-  const totalCostoMxn = list.reduce((acc, v) => acc + Number(v.costo_producto_mxn ?? 0), 0)
+  const list: VentaItem[] = []
+
+  for (const v of ventas ?? []) {
+    const monto = Number(v.precio_venta)
+    const eqMxn = v.precio_venta_mxn != null
+      ? Number(v.precio_venta_mxn)
+      : v.moneda === 'MXN' ? monto : (fxRate ? monto * fxRate : 0)
+    const costoMxn = v.costo_producto_mxn != null
+      ? Number(v.costo_producto_mxn)
+      : v.costo_producto && v.moneda === 'MXN' ? Number(v.costo_producto)
+      : v.costo_producto && fxRate ? Number(v.costo_producto) * fxRate
+      : 0
+    list.push({
+      id: v.id,
+      source: 'venta',
+      fecha: v.fecha,
+      producto: v.producto,
+      precio_venta: monto,
+      moneda: v.moneda as 'MXN' | 'USD',
+      precio_venta_mxn: eqMxn,
+      costo_producto_mxn: costoMxn,
+      created_at: v.created_at,
+    })
+  }
+
+  // Marca tx que ya están ligadas
+  const linkedTxIds = new Set<string>()
+  for (const t of txs ?? []) {
+    if (t.notas && /Sincronizado desde ventas/.test(t.notas)) {
+      linkedTxIds.add(t.id)
+    }
+  }
+
+  // Agrega tx con categoría venta que NO estén ligadas
+  for (const t of txs ?? []) {
+    if (linkedTxIds.has(t.id)) continue
+    if (!esCategoriaVenta(t.categoria, t.concepto)) continue
+
+    const monto = Number(t.monto)
+    const eqMxn = t.monto_mxn_equivalente != null
+      ? Number(t.monto_mxn_equivalente)
+      : t.moneda === 'MXN' ? monto : (fxRate ? monto * fxRate : 0)
+    list.push({
+      id: t.id,
+      source: 'transaccion',
+      fecha: t.fecha,
+      producto: t.concepto,
+      precio_venta: monto,
+      moneda: t.moneda as 'MXN' | 'USD',
+      precio_venta_mxn: eqMxn,
+      costo_producto_mxn: 0,
+      created_at: t.created_at,
+    })
+  }
+
+  list.sort((a, b) => b.fecha.localeCompare(a.fecha) || b.created_at.localeCompare(a.created_at))
+
+  const totalVentasMxn = list.reduce((acc, v) => acc + v.precio_venta_mxn, 0)
+  const totalCostoMxn = list.reduce((acc, v) => acc + v.costo_producto_mxn, 0)
   const margenBruto = totalVentasMxn - totalCostoMxn
   const ticketPromedio = list.length ? totalVentasMxn / list.length : 0
-  const totalUsdOriginal = list.filter((v) => v.moneda === 'USD').reduce((acc, v) => acc + Number(v.precio_venta), 0)
+  const totalUsdOriginal = list.filter((v) => v.moneda === 'USD').reduce((acc, v) => acc + v.precio_venta, 0)
 
-  // Top productos
   const porProducto = list.reduce<Record<string, { count: number; mxn: number }>>((acc, v) => {
     const p = (v.producto || 'Sin producto').toLowerCase().trim()
     if (!acc[p]) acc[p] = { count: 0, mxn: 0 }
     acc[p].count += 1
-    acc[p].mxn += Number(v.precio_venta_mxn ?? 0)
+    acc[p].mxn += v.precio_venta_mxn
     return acc
   }, {})
   const topProductos = Object.entries(porProducto).sort(([, a], [, b]) => b.mxn - a.mxn).slice(0, 5)
@@ -62,7 +154,6 @@ export default async function VentasPage(props: { params: Promise<{ id: string }
         <p className="text-xs text-zinc-500">{negocio.nombre} · {list.length} {list.length === 1 ? 'venta' : 'ventas'}</p>
       </header>
 
-      {/* KPIs */}
       <div className="grid grid-cols-2 gap-3">
         <div className="card p-3">
           <div className="flex items-center gap-1.5 text-purple-400">
@@ -114,10 +205,8 @@ export default async function VentasPage(props: { params: Promise<{ id: string }
         </div>
       )}
 
-      {/* Form */}
       <VentaQuickForm negocioId={id} defaultMoneda={negocio.moneda_principal as 'MXN' | 'USD'} />
 
-      {/* Lista */}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold px-1">Historial</h2>
         {list.length === 0 ? (
@@ -127,34 +216,37 @@ export default async function VentasPage(props: { params: Promise<{ id: string }
         ) : (
           <ul className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] divide-y divide-[var(--border-subtle)] overflow-hidden">
             {list.map((v) => {
-              const mxnEq = Number(v.precio_venta_mxn ?? 0)
-              const costoMxn = Number(v.costo_producto_mxn ?? 0)
-              const margenItem = mxnEq - costoMxn
+              const margenItem = v.precio_venta_mxn - v.costo_producto_mxn
               return (
-                <li key={v.id} className="p-3 flex items-center gap-3">
+                <li key={`${v.source}-${v.id}`} className="p-3 flex items-center gap-3">
                   <div className="flex-1 min-w-0 leading-tight">
                     <p className="text-sm font-medium truncate capitalize">{v.producto || 'Sin producto'}</p>
                     <p className="text-[10px] text-zinc-500">{formatearFecha(v.fecha, 'dd MMM yyyy')}</p>
-                    {costoMxn > 0 && (
+                    {v.costo_producto_mxn > 0 && (
                       <p className="text-[10px] text-emerald-500/70 tabular-nums">
                         margen +{formatMoney(margenItem, 'MXN')}
                       </p>
                     )}
+                    {v.source === 'transaccion' && (
+                      <p className="text-[9px] text-zinc-700">desde transacción</p>
+                    )}
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-bold tabular-nums text-purple-300">
-                      {formatMoney(Number(v.precio_venta), v.moneda as 'MXN' | 'USD')}
+                      {formatMoney(v.precio_venta, v.moneda)}
                     </p>
                     {v.moneda === 'USD' && (
-                      <p className="text-[10px] text-zinc-500 tabular-nums">≈ {formatMoney(mxnEq, 'MXN')}</p>
+                      <p className="text-[10px] text-zinc-500 tabular-nums">≈ {formatMoney(v.precio_venta_mxn, 'MXN')}</p>
                     )}
                   </div>
-                  <EliminarItemBtn
-                    id={v.id}
-                    negocioId={id}
-                    tipo="venta"
-                    etiqueta={`${formatMoney(Number(v.precio_venta), v.moneda as 'MXN' | 'USD')} · ${v.producto || 'sin producto'}`}
-                  />
+                  {v.source === 'venta' && (
+                    <EliminarItemBtn
+                      id={v.id}
+                      negocioId={id}
+                      tipo="venta"
+                      etiqueta={`${formatMoney(v.precio_venta, v.moneda)} · ${v.producto || 'sin producto'}`}
+                    />
+                  )}
                 </li>
               )
             })}

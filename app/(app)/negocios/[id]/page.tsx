@@ -80,11 +80,36 @@ export default async function DetalleNegocioPage(
           .gte('fecha', r.desde)
           .lte('fecha', r.hasta)
       : Promise.resolve({ data: [] }),
+    // Count ventas: gastos_ads + transacciones con categoría ventas/venta
     esPagina
-      ? supabase.from('ventas').select('id', { count: 'exact', head: true }).eq('negocio_id', id)
+      ? (async () => {
+          const [{ count: c1 }, { count: c2 }] = await Promise.all([
+            supabase.from('ventas').select('id', { count: 'exact', head: true }).eq('negocio_id', id),
+            supabase.from('transacciones').select('id', { count: 'exact', head: true })
+              .eq('negocio_id', id).eq('tipo', 'ingreso').in('categoria', ['ventas', 'venta']),
+          ])
+          return { count: Math.max(c1 ?? 0, c2 ?? 0) }
+        })()
       : Promise.resolve({ count: 0 }),
+    // Count ads: gastos_ads + transacciones con categoría ads-*
     esPagina
-      ? supabase.from('gastos_ads').select('id', { count: 'exact', head: true }).eq('negocio_id', id)
+      ? (async () => {
+          const [{ count: c1 }, { data: txAds }] = await Promise.all([
+            supabase.from('gastos_ads').select('id', { count: 'exact', head: true }).eq('negocio_id', id),
+            supabase.from('transacciones').select('id, categoria, concepto')
+              .eq('negocio_id', id).eq('tipo', 'gasto'),
+          ])
+          let c2 = 0
+          for (const t of txAds ?? []) {
+            const cat = (t.categoria ?? '').toLowerCase()
+            const con = (t.concepto ?? '').toLowerCase()
+            if (cat === 'ads' || cat.startsWith('ads-') ||
+                (/\b(ads?|anuncio|publicidad)\b/.test(con) && /(meta|facebook|google|tiktok)/.test(con))) {
+              c2++
+            }
+          }
+          return { count: Math.max(c1 ?? 0, c2) }
+        })()
       : Promise.resolve({ count: 0 }),
   ])
 
