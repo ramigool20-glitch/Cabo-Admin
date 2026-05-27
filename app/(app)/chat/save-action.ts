@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { aMxnEquivalente } from '@/lib/fx/server'
 
 export type SavePayload = {
   tipo: 'ingreso' | 'gasto'
@@ -25,10 +26,14 @@ export async function saveAITransaccion(payload: SavePayload) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
 
+  const fx = await aMxnEquivalente(payload.monto, payload.moneda, payload.fecha)
+
   const { error, data } = await supabase
     .from('transacciones')
     .insert({
       ...payload,
+      monto_mxn_equivalente: fx.monto_mxn_equivalente,
+      tipo_cambio_usado: fx.tipo_cambio_usado,
       capturado_por: user.id,
     })
     .select('id')

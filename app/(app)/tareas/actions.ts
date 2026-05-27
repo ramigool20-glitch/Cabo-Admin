@@ -3,7 +3,9 @@
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { flashOk } from '@/lib/flash'
+import { enviarPushAProfiles } from '@/lib/push/server'
 
 const TareaSchema = z.object({
   titulo: z.string().min(1).max(200),
@@ -49,12 +51,51 @@ export async function createTarea(_prev: ActionState, formData: FormData): Promi
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
-  const { error } = await supabase.from('tareas').insert({
+  const { data: tareaCreada, error } = await supabase.from('tareas').insert({
     ...parsed.data,
     creada_por: user.id,
     estado: 'pendiente',
-  })
+  }).select('id, titulo, prioridad, fecha_limite, asignada_a').single()
+
   if (error) return { error: error.message }
+
+  // Push a TODOS los socios + asignados (sin duplicar y sin notificar al creador)
+  try {
+    const admin = createAdminClient()
+    const { data: socios } = await admin
+      .from('profiles')
+      .select('id, nombre, role_id, roles(nombre)')
+      .eq('activo', true)
+
+    const idsSocios = (socios ?? [])
+      .filter((p) => {
+        const r = p.roles as unknown as { nombre: string } | null
+        return r?.nombre === 'admin' || r?.nombre === 'socio'
+      })
+      .map((p) => p.id)
+
+    const asignados = (parsed.data.asignada_a ?? []) as string[]
+    const destinatarios = Array.from(new Set([...idsSocios, ...asignados]))
+      .filter((id) => id !== user.id)
+
+    if (destinatarios.length > 0 && tareaCreada) {
+      const creadorNombre = (socios ?? []).find((p) => p.id === user.id)?.nombre ?? 'Alguien'
+      const prioridadEmoji = parsed.data.prioridad === 'alta' ? '🔥' : parsed.data.prioridad === 'media' ? '⚡' : '📝'
+      const venceTxt = parsed.data.fecha_limite
+        ? ` · vence ${parsed.data.fecha_limite.slice(0, 10)}`
+        : ''
+
+      await enviarPushAProfiles(destinatarios, {
+        title: `${prioridadEmoji} Nueva tarea de ${creadorNombre}`,
+        body: `${parsed.data.titulo}${venceTxt}`,
+        url: '/tareas',
+        tag: `tarea-${tareaCreada.id}`,
+        data: { prioridad: parsed.data.prioridad },
+      })
+    }
+  } catch {
+    // No bloqueamos la creación de la tarea por errores de push
+  }
 
   revalidatePath('/tareas')
   revalidatePath('/dashboard')

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { flashOk } from '@/lib/flash'
+import { aMxnEquivalente } from '@/lib/fx/server'
 
 const TransaccionSchema = z.object({
   tipo: z.enum(['ingreso', 'gasto']),
@@ -57,8 +58,13 @@ export async function createTransaccion(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
+  // Calcular equivalente en MXN según el tipo de cambio del día de la transacción
+  const fx = await aMxnEquivalente(parsed.data.monto, parsed.data.moneda, parsed.data.fecha)
+
   const { error } = await supabase.from('transacciones').insert({
     ...parsed.data,
+    monto_mxn_equivalente: fx.monto_mxn_equivalente,
+    tipo_cambio_usado: fx.tipo_cambio_usado,
     metodo_captura: 'manual',
     capturado_por: user.id,
   })
@@ -81,7 +87,15 @@ export async function updateTransaccion(
   }
 
   const supabase = await createClient()
-  const { error } = await supabase.from('transacciones').update(parsed.data).eq('id', id)
+
+  // Recalcular equivalente MXN porque pudo haber cambiado monto/moneda/fecha
+  const fx = await aMxnEquivalente(parsed.data.monto, parsed.data.moneda, parsed.data.fecha)
+
+  const { error } = await supabase.from('transacciones').update({
+    ...parsed.data,
+    monto_mxn_equivalente: fx.monto_mxn_equivalente,
+    tipo_cambio_usado: fx.tipo_cambio_usado,
+  }).eq('id', id)
 
   if (error) return { error: error.message }
 

@@ -38,7 +38,7 @@ export default async function DashboardPage(
   ] = await Promise.all([
     supabase
       .from('transacciones')
-      .select('tipo, monto, moneda, fecha, categoria, negocio_id')
+      .select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente, tipo_cambio_usado')
       .gte('fecha', r.desde)
       .lte('fecha', r.hasta),
     supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
@@ -204,25 +204,27 @@ export default async function DashboardPage(
          💰 RESUMEN — utilidad + KPIs + por pagar/cobrar
          ============================================================ */}
       <CollapsibleSection id="resumen" title="Resumen" emoji="💰" defaultOpen>
-        {/* Hero: Utilidad */}
+        {/* Hero: Utilidad TOTAL (MXN + USD convertidos al rate del día) */}
         <section className="card-glow p-5 space-y-3">
           <div className="flex items-center justify-between">
             <span className="label-caps">Utilidad · {r.label}</span>
             <TrendingUp className="h-4 w-4 text-cyan-400/60" />
           </div>
           <div className="space-y-1">
-            <p className={`text-4xl font-black tabular-nums ${t.utilidad_mxn >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {t.utilidad_mxn >= 0 ? '+' : ''}{formatMoney(t.utilidad_mxn, 'MXN')}
+            <p className={`text-4xl font-black tabular-nums ${t.utilidad_total_mxn >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {t.utilidad_total_mxn >= 0 ? '+' : ''}{formatMoney(t.utilidad_total_mxn, 'MXN')}
             </p>
             {(t.ingresos_usd > 0 || t.gastos_usd > 0) && (
-              <p className={`text-base font-bold tabular-nums ${t.utilidad_usd >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {t.utilidad_usd >= 0 ? '+' : ''}{formatMoney(t.utilidad_usd, 'USD')}
+              <p className="text-[11px] text-zinc-500">
+                Incluye {t.ingresos_usd > 0 && `${formatMoney(t.ingresos_usd, 'USD')} ingresos`}
+                {t.gastos_usd > 0 && t.ingresos_usd > 0 && ' y '}
+                {t.gastos_usd > 0 && `${formatMoney(t.gastos_usd, 'USD')} gastos`} convertidos al rate del día
               </p>
             )}
           </div>
         </section>
 
-        {/* KPIs Ingresos / Gastos */}
+        {/* KPIs Ingresos / Gastos (totales en MXN, incluyen USD convertidos) */}
         <div className="grid grid-cols-2 gap-3">
           <div className="card p-4 space-y-2">
             <div className="flex items-center gap-1.5 text-emerald-400">
@@ -230,10 +232,10 @@ export default async function DashboardPage(
               <span className="label-caps text-emerald-400">Ingresos</span>
             </div>
             <p className="text-2xl font-black tabular-nums text-emerald-300">
-              {formatMoney(t.ingresos_mxn, 'MXN')}
+              {formatMoney(t.ingresos_total_mxn, 'MXN')}
             </p>
             {t.ingresos_usd > 0 && (
-              <p className="text-xs text-zinc-500 tabular-nums">+ {formatMoney(t.ingresos_usd, 'USD')}</p>
+              <p className="text-[10px] text-zinc-500 tabular-nums">incl. {formatMoney(t.ingresos_usd, 'USD')}</p>
             )}
           </div>
           <div className="card p-4 space-y-2">
@@ -242,10 +244,10 @@ export default async function DashboardPage(
               <span className="label-caps text-rose-400">Gastos</span>
             </div>
             <p className="text-2xl font-black tabular-nums text-rose-300">
-              {formatMoney(t.gastos_mxn, 'MXN')}
+              {formatMoney(t.gastos_total_mxn, 'MXN')}
             </p>
             {t.gastos_usd > 0 && (
-              <p className="text-xs text-zinc-500 tabular-nums">+ {formatMoney(t.gastos_usd, 'USD')}</p>
+              <p className="text-[10px] text-zinc-500 tabular-nums">incl. {formatMoney(t.gastos_usd, 'USD')}</p>
             )}
           </div>
         </div>

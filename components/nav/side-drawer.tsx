@@ -26,6 +26,7 @@ const HERRAMIENTAS = [
   { href: '/cashflow',      label: 'Cash Flow',   icon: LayoutDashboard, emoji: '💰', badge: 'NEW' },
   { href: '/calendario',    label: 'Calendario',  icon: Calendar,        emoji: '🗓️' },
   { href: '/buscar',        label: 'Buscar',      icon: LayoutDashboard, emoji: '🔍' },
+  { href: '/fx',            label: 'USD / MXN',   icon: LayoutDashboard, emoji: '💵', badge: 'NEW' },
   { href: '/chat',          label: 'Captura IA',  icon: MessageCircle,   emoji: '💬', badge: 'IA' },
   { href: '/cobros',        label: 'Cobros Stripe', icon: Receipt,       emoji: '💳', badge: 'NEW' },
   { href: '/transacciones', label: 'Transacciones', icon: Receipt,       emoji: '📋' },

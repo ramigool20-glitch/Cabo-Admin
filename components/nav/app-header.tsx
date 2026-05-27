@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Menu, Bell, Search } from 'lucide-react'
+import { Menu, Search } from 'lucide-react'
 import Link from 'next/link'
 import { SideDrawer } from './side-drawer'
 import { CaboLogo, CaboWordmark } from '@/components/ui/cabo-logo'
+import { FxPill } from '@/components/fx/fx-pill'
 
 export function AppHeader({ nombre }: { nombre: string }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -26,13 +27,14 @@ export function AppHeader({ nombre }: { nombre: string }) {
             <Menu className="h-5 w-5" />
           </button>
 
-          {/* Logo + wordmark */}
-          <div className="flex-1 flex items-center justify-center gap-2.5 min-w-0">
+          {/* Logo + wordmark + FX pill */}
+          <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
             <CaboLogo size={32} className="shrink-0 shadow-lg shadow-emerald-500/30 rounded-lg" />
             <CaboWordmark size="md" />
+            <FxPill />
           </div>
 
-          {/* Buscar + Bell */}
+          {/* Buscar */}
           <div className="flex items-center gap-2">
             <Link
               href="/buscar"
@@ -41,13 +43,6 @@ export function AppHeader({ nombre }: { nombre: string }) {
             >
               <Search className="h-4 w-4" />
             </Link>
-            <button
-              type="button"
-              aria-label="Notificaciones"
-              className="h-10 w-10 inline-flex items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] text-cyan-300"
-            >
-              <Bell className="h-4 w-4" />
-            </button>
           </div>
         </div>
       </header>

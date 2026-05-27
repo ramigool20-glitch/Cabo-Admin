@@ -48,11 +48,26 @@ self.addEventListener('push', (event: PushEvent) => {
     payload.body = event.data?.text() || payload.body
   }
 
-  const options: NotificationOptions = {
+  // Patrón de vibración variable según prioridad indicada en payload.data
+  const prioridad = (payload.data?.prioridad as string) || 'normal'
+  const vibracion =
+    prioridad === 'alta'    ? [200, 100, 200, 100, 200]
+    : prioridad === 'media' ? [150, 80, 150]
+    :                         [120, 60, 120]
+
+  const options: NotificationOptions & { vibrate?: number[]; renotify?: boolean } = {
     body: payload.body,
     icon: payload.icon || '/icons/icon-192.png',
     badge: payload.badge || '/icons/icon-192.png',
     tag: payload.tag,
+    // No silencioso: deja que iOS/Android suenen con el tono default del sistema
+    silent: false,
+    // Reabrir notificación aunque tenga mismo tag
+    renotify: true,
+    // Vibración (Android principalmente, iOS PWA respeta intensidad del sistema)
+    vibrate: vibracion,
+    // Tareas con prioridad alta exigen interacción
+    requireInteraction: prioridad === 'alta',
     data: { url: payload.url || '/dashboard', ...payload.data },
   }
 
