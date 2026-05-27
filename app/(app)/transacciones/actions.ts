@@ -130,7 +130,7 @@ export async function updateTransaccion(
   revalidatePath('/transacciones')
   revalidatePath(`/transacciones/${id}`)
   revalidatePath('/dashboard')
-  flashOk(`/transacciones/${id}`, 'tx_actualizada')
+  flashOk('/transacciones', 'tx_actualizada')
 }
 
 export async function deleteTransaccion(id: string) {
