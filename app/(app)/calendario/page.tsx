@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Calendar as CalIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos, TZ } from '@/lib/fechas'
 import { eventosDelMes, type EventoCalendario } from '@/lib/calendario'
 import { formatInTimeZone } from 'date-fns-tz'
+import { EmptyState } from '@/components/ui/empty-state'
 
 type SearchParams = { ym?: string }  // formato 2026-05
 
@@ -160,10 +161,11 @@ export default async function CalendarioPage(
       <section className="space-y-2">
         <h2 className="label-caps">Detalle del mes</h2>
         {eventos.length === 0 ? (
-          <div className="card border-dashed p-8 text-center text-sm text-zinc-500">
-            <CalIcon className="h-6 w-6 mx-auto mb-2 text-zinc-500" />
-            Sin eventos en este mes
-          </div>
+          <EmptyState
+            emoji="🗓️"
+            title="Sin eventos en este mes"
+            description="Cuando programes pagos fijos, tareas con vencimiento, eventos o cuentas por pagar aparecerán aquí."
+          />
         ) : (
           <ul className="space-y-2">
             {Array.from(porDia.entries()).map(([fecha, evs]) => (

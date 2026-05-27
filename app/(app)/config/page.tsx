@@ -1,9 +1,10 @@
-import { Bell, Users, Building2, Send, History, Stethoscope } from 'lucide-react'
+import { Bell, Users, Building2, Send, History, Stethoscope, Wand2 } from 'lucide-react'
 import Link from 'next/link'
 import { PushSection } from '@/components/config/push-section'
 import { NotificacionesPanel } from '@/components/config/notificaciones-panel'
 import { HistorialNotificaciones } from '@/components/config/historial-notificaciones'
 import { DiagnosticoPush } from '@/components/config/diagnostico-push'
+import { BackfillFxButton } from '@/components/config/backfill-fx-button'
 
 export default function ConfigPage() {
   return (
@@ -45,6 +46,14 @@ export default function ConfigPage() {
           <h2 className="text-sm font-semibold text-white">Historial reciente</h2>
         </div>
         <HistorialNotificaciones />
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center gap-2 px-1">
+          <Wand2 className="h-4 w-4 text-cyan-400" />
+          <h2 className="text-sm font-semibold text-white">Mantenimiento</h2>
+        </div>
+        <BackfillFxButton />
       </section>
 
       <section className="space-y-2">

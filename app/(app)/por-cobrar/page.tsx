@@ -3,6 +3,7 @@ import { TrendingUp, AlertCircle, Clock, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
+import { EmptyState } from '@/components/ui/empty-state'
 
 const ESTADO_CHIP = {
   pendiente: { l: 'Pendiente', c: 'chip-yellow' },
@@ -144,9 +145,13 @@ export default async function PorCobrarPage() {
       )}
 
       {lista.length === 0 && (
-        <div className="card border-dashed p-10 text-center text-sm text-zinc-500">
-          Sin cuentas por cobrar. Usa el botón <strong>+</strong> abajo o dile al chat IA: <em>&ldquo;Maria me debe $3000 de evento, paga el 15&rdquo;</em>.
-        </div>
+        <EmptyState
+          emoji="💰"
+          title="Sin cuentas por cobrar"
+          description="Aquí van los dineros que te deben tus clientes. Captura una en lenguaje natural desde el chat IA."
+          hint={<>Ej: <em>&ldquo;María me debe $3,000 del evento, paga el 15&rdquo;</em></>}
+          cta={{ label: 'Nueva cuenta', href: '/por-cobrar/nueva' }}
+        />
       )}
     </div>
   )

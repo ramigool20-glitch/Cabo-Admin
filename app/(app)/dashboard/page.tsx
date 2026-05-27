@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, Plus, ChevronRight, Sparkles, AlertCircle } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, Plus, ChevronRight, Sparkles, AlertCircle, DollarSign } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney, cn } from '@/lib/utils'
@@ -11,6 +11,7 @@ import { UtilidadChart } from '@/components/dashboard/utilidad-chart'
 import { NegociosBar } from '@/components/dashboard/negocios-bar'
 import { CategoriasList } from '@/components/dashboard/categorias-list'
 import { CollapsibleSection } from '@/components/dashboard/collapsible-section'
+import { FxMiniWidget } from '@/components/dashboard/fx-mini-widget'
 
 type SearchParams = { rango?: string; desde?: string; hasta?: string }
 
@@ -25,6 +26,11 @@ export default async function DashboardPage(
   const supabase = await createClient()
   const admin = createAdminClient()
 
+  // En 7 días desde hoy
+  const en7Dias = new Date(new Date(hoy + 'T00:00:00').getTime() + 7 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
+
   const [
     { data: transacciones },
     { data: negocios },
@@ -35,6 +41,10 @@ export default async function DashboardPage(
     { data: eventosProx },
     { data: porPagarRows },
     { data: porCobrarRows },
+    { data: fxRateHoy },
+    { data: fxHistorial },
+    { data: gastosFijosProx },
+    { data: porPagarProx },
   ] = await Promise.all([
     supabase
       .from('transacciones')
@@ -76,6 +86,36 @@ export default async function DashboardPage(
       .select('monto_total, monto_cobrado, moneda, fecha_vencimiento, estado')
       .neq('estado', 'cancelado')
       .neq('estado', 'cobrado'),
+    // Rate de hoy
+    admin
+      .from('fx_rates')
+      .select('fecha, rate_compra, source, manual')
+      .eq('fecha', hoy)
+      .maybeSingle(),
+    // Últimos 7 días de rates para el sparkline
+    admin
+      .from('fx_rates')
+      .select('fecha, rate_compra')
+      .order('fecha', { ascending: false })
+      .limit(7),
+    // Gastos fijos con vencimiento en los próximos 7 días
+    admin
+      .from('gastos_recurrentes')
+      .select('id, nombre, monto, moneda, proximo_pago, negocios(nombre)')
+      .eq('activo', true)
+      .gte('proximo_pago', hoy)
+      .lte('proximo_pago', en7Dias)
+      .order('proximo_pago', { ascending: true })
+      .limit(5),
+    // Por pagar próximos a vencer en 7 días
+    admin
+      .from('cuentas_por_pagar')
+      .select('id, proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, negocios(nombre)')
+      .in('estado', ['pendiente', 'parcial'])
+      .gte('fecha_vencimiento', hoy)
+      .lte('fecha_vencimiento', en7Dias)
+      .order('fecha_vencimiento', { ascending: true })
+      .limit(5),
   ])
 
   const rows = transacciones ?? []
@@ -131,6 +171,20 @@ export default async function DashboardPage(
         </div>
         <RangoSelector actual={rangoId} customDesde={sp.desde} customHasta={sp.hasta} />
       </div>
+
+      {/* ============================================================
+         💵 Alerta: sin rate del día
+         ============================================================ */}
+      {!fxRateHoy && (
+        <Link href="/fx" className="card-glow border-amber-500/50 bg-amber-500/5 p-4 flex items-center gap-3 hover:bg-amber-500/10 transition-colors">
+          <DollarSign className="h-5 w-5 text-amber-300" />
+          <div className="flex-1 leading-tight">
+            <p className="text-sm font-bold text-amber-300">Falta el tipo de cambio de hoy</p>
+            <p className="text-[11px] text-amber-200/70">Captura o trae de Google · USD/MXN se usa en todos los totales</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-amber-300" />
+        </Link>
+      )}
 
       {/* ============================================================
          🚨 ALERTAS — siempre arriba, default abierta
@@ -252,6 +306,9 @@ export default async function DashboardPage(
           </div>
         </div>
 
+        {/* FX widget */}
+        <FxMiniWidget rateHoy={fxRateHoy} historial={fxHistorial ?? []} />
+
         {/* Por Pagar + Por Cobrar */}
         <div className="grid grid-cols-2 gap-3">
           <Link href="/por-pagar" className="card p-4 space-y-2 hover:bg-[var(--bg-card-hover)] transition-colors">
@@ -306,9 +363,9 @@ export default async function DashboardPage(
       </CollapsibleSection>
 
       {/* ============================================================
-         📅 PRÓXIMOS — eventos + últimas tx
+         📅 PRÓXIMOS — eventos + gastos fijos + por-pagar + últimas tx
          ============================================================ */}
-      <CollapsibleSection id="proximos" title="Próximos & recientes" emoji="📅" defaultOpen>
+      <CollapsibleSection id="proximos" title="Próximos 7 días & recientes" emoji="📅" defaultOpen>
         {eventosProx && eventosProx.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center justify-between px-1">
@@ -329,6 +386,77 @@ export default async function DashboardPage(
                   </Link>
                 </li>
               ))}
+            </ul>
+          </div>
+        )}
+
+        {gastosFijosProx && gastosFijosProx.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <p className="label-caps">📅 Gastos fijos próximos</p>
+              <Link href="/recurrentes" className="text-xs text-cyan-400 font-semibold">Ver todos →</Link>
+            </div>
+            <ul className="space-y-1.5">
+              {gastosFijosProx.map((g) => {
+                const neg = g.negocios as unknown as { nombre: string } | null
+                const diasFalta = Math.ceil(
+                  (new Date(g.proximo_pago + 'T00:00:00').getTime() - new Date(hoy + 'T00:00:00').getTime())
+                  / (24 * 60 * 60 * 1000)
+                )
+                return (
+                  <li key={g.id}>
+                    <Link href={`/recurrentes/${g.id}`} className="card flex items-center gap-3 p-3 hover:bg-[var(--bg-card-hover)] transition-colors">
+                      <div className="flex-1 min-w-0 leading-tight">
+                        <p className="text-sm font-bold text-white truncate">{g.nombre}</p>
+                        <p className="text-[10px] text-zinc-500">
+                          {neg?.nombre ?? '—'} · {diasFalta === 0 ? 'HOY' : diasFalta === 1 ? 'mañana' : `en ${diasFalta} días`}
+                        </p>
+                      </div>
+                      <p className="text-sm font-bold text-blue-400 tabular-nums">
+                        {formatMoney(Number(g.monto), g.moneda as 'MXN' | 'USD')}
+                      </p>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
+
+        {porPagarProx && porPagarProx.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <p className="label-caps">💸 Por pagar próximas</p>
+              <Link href="/por-pagar" className="text-xs text-cyan-400 font-semibold">Ver todas →</Link>
+            </div>
+            <ul className="space-y-1.5">
+              {porPagarProx.map((c) => {
+                const neg = c.negocios as unknown as { nombre: string } | null
+                const restante = Number(c.monto_total) - Number(c.monto_pagado)
+                const diasFalta = c.fecha_vencimiento
+                  ? Math.ceil(
+                      (new Date(c.fecha_vencimiento + 'T00:00:00').getTime() - new Date(hoy + 'T00:00:00').getTime())
+                      / (24 * 60 * 60 * 1000)
+                    )
+                  : null
+                return (
+                  <li key={c.id}>
+                    <Link href={`/por-pagar/${c.id}`} className="card flex items-center gap-3 p-3 hover:bg-[var(--bg-card-hover)] transition-colors">
+                      <div className="flex-1 min-w-0 leading-tight">
+                        <p className="text-sm font-bold text-white truncate">{c.proveedor}</p>
+                        <p className="text-[10px] text-zinc-500 truncate">
+                          {c.concepto}
+                          {neg?.nombre && ` · ${neg.nombre}`}
+                          {diasFalta !== null && ` · ${diasFalta === 0 ? 'HOY' : diasFalta === 1 ? 'mañana' : `en ${diasFalta}d`}`}
+                        </p>
+                      </div>
+                      <p className="text-sm font-bold text-rose-400 tabular-nums">
+                        {formatMoney(restante, c.moneda as 'MXN' | 'USD')}
+                      </p>
+                    </Link>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}
@@ -380,7 +508,7 @@ export default async function DashboardPage(
       {/* ============================================================
          📊 ANALYTICS — gráficas, plegadas por default
          ============================================================ */}
-      <CollapsibleSection id="analytics" title="Analytics" emoji="📊" defaultOpen={false}>
+      <CollapsibleSection id="analytics" title="Analytics" emoji="📊" defaultOpen>
         <UtilidadChart data={seriePorDia} />
         <NegociosBar data={barNegocios} />
         <CategoriasList data={topCats} />

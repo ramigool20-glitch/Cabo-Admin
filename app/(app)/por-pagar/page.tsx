@@ -1,8 +1,9 @@
 import Link from 'next/link'
-import { TrendingDown, AlertCircle, Clock, ChevronRight, Building } from 'lucide-react'
+import { TrendingDown, AlertCircle, Clock, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
+import { EmptyState } from '@/components/ui/empty-state'
 
 const ESTADO_CHIP = {
   pendiente: { l: 'Pendiente', c: 'chip-yellow' },
@@ -152,9 +153,13 @@ export default async function PorPagarPage() {
       )}
 
       {lista.length === 0 && (
-        <div className="card border-dashed p-10 text-center text-sm text-zinc-500">
-          Sin cuentas por pagar. Usa el botón <strong>+</strong> abajo a la derecha o dile al chat IA: <em>&ldquo;Le debo $5000 a Suministros Cabo por mercancía, vence el 30&rdquo;</em>.
-        </div>
+        <EmptyState
+          emoji="💸"
+          title="Sin cuentas por pagar"
+          description="Aquí van las deudas con proveedores. Captura una factura desde el chat IA o crea manual."
+          hint={<>Ej: <em>&ldquo;Le debo $5,000 a Suministros Cabo por mercancía, vence el 30&rdquo;</em></>}
+          cta={{ label: 'Nueva cuenta', href: '/por-pagar/nueva' }}
+        />
       )}
     </div>
   )
