@@ -137,6 +137,39 @@ export async function registrarPago(cuentaId: string, _prev: ActionState, formDa
   return { ok: true, saldada: nuevoEstado === 'pagado' }
 }
 
+export async function actualizarCuentaPorPagar(cuentaId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  const parsed = parseForm(formData)
+  if (!parsed.success) return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' }
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('cuentas_por_pagar')
+    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .eq('id', cuentaId)
+  if (error) return { error: error.message }
+
+  revalidatePath('/por-pagar')
+  revalidatePath(`/por-pagar/${cuentaId}`)
+  flashOk(`/por-pagar/${cuentaId}`, 'cuenta_actualizada')
+}
+
+export async function eliminarCuentaPorPagar(cuentaId: string): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+
+  const admin = createAdminClient()
+  await admin.from('cuentas_por_pagar_pagos').delete().eq('cuenta_por_pagar_id', cuentaId)
+  await admin.from('cuentas_por_pagar').delete().eq('id', cuentaId)
+
+  revalidatePath('/por-pagar')
+  flashOk('/por-pagar', 'cuenta_eliminada')
+}
+
 export async function cancelarCuenta(cuentaId: string): Promise<void> {
   const supabase = await createClient()
   await supabase

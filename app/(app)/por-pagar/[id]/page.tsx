@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ChevronLeft, Trash2, Building, Phone, Mail, FileText } from 'lucide-react'
+import { ChevronLeft, Trash2, Building, Phone, Mail, FileText, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { RegistrarPagoForm } from '@/components/por-pagar/registrar-pago-form'
 import { cancelarCuenta } from '@/app/(app)/por-pagar/actions'
+import { EliminarCuentaPagarBtn } from '@/components/por-pagar/eliminar-btn'
 
 const ESTADO_CHIP = {
   pendiente: { l: 'Pendiente', c: 'chip-yellow' },
@@ -37,9 +38,21 @@ export default async function DetalleCuentaPorPagarPage(
 
   return (
     <div className="px-4 pt-4 pb-24 space-y-5 max-w-2xl mx-auto">
-      <Link href="/por-pagar" className="inline-flex items-center gap-1 text-sm text-zinc-400">
-        <ChevronLeft className="h-4 w-4" /> Por Pagar
-      </Link>
+      <div className="flex items-center justify-between gap-2">
+        <Link href="/por-pagar" className="inline-flex items-center gap-1 text-sm text-zinc-400">
+          <ChevronLeft className="h-4 w-4" /> Por Pagar
+        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/por-pagar/${id}/editar`}
+            className="h-10 px-3 rounded-md text-xs font-bold inline-flex items-center justify-center gap-1.5 border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Editar
+          </Link>
+          <EliminarCuentaPagarBtn id={id} proveedor={cuenta.proveedor} />
+        </div>
+      </div>
 
       <header className="space-y-2">
         <div className="flex items-start justify-between gap-3">

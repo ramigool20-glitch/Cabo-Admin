@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { TrendingDown, AlertCircle, Clock, ChevronRight } from 'lucide-react'
+import { TrendingDown, AlertCircle, Clock, ChevronRight, Plus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
@@ -66,12 +66,19 @@ export default async function PorPagarPage() {
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-5 max-w-3xl mx-auto">
-      <header className="space-y-1">
+      <header className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-black heading-gradient">Por Pagar</h1>
           <span className="chip">{lista.length} cuentas</span>
         </div>
         <p className="text-sm text-zinc-400">Deudas con proveedores. La IA detecta vencidos y te avisa.</p>
+        <Link
+          href="/por-pagar/nueva"
+          className="btn-primary h-10 text-sm w-full"
+        >
+          <Plus className="h-4 w-4" />
+          Agregar deuda con proveedor
+        </Link>
       </header>
 
       {/* Total adeudado */}
