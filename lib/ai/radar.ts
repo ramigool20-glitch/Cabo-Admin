@@ -1,4 +1,5 @@
-import { openai } from '@/lib/ai/openai'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { hoyEnCabos } from '@/lib/fechas'
 
 export type RadarInsight = {
   tipo: 'noticia' | 'tendencia' | 'riesgo' | 'oportunidad' | 'evento_local'
@@ -12,105 +13,317 @@ export type RadarInsight = {
   fecha_evento: string | null
 }
 
-const PROMPT_RADAR = `Eres el RADAR de inteligencia de mercado de Cabo Admin (Los Cabos, BCS, México).
-
-Tu trabajo: identificar 5-10 insights ACCIONABLES que podrían afectar negocios en Los Cabos en las próximas semanas. Usa búsqueda web para encontrar información REAL y RECIENTE (últimos 7-14 días).
-
-Negocios del usuario:
-- 2 farmacias en Los Cabos (Cabo San Lucas y San José)
-- 1 consultorio médico/IV drips para turistas en SJD
-- 1 salón de eventos (Rancho McCoy) — bodas y eventos sociales
-- 8 páginas digitales (e-commerce)
-
-QUÉ BUSCAR:
-1. Noticias de turismo en Los Cabos (llegadas, ocupación, temporada)
-2. Eventos locales grandes (Fiestas, conciertos, deportes, conferencias)
-3. Clima / huracanes / tormentas tropicales que afecten temporada
-4. Cambios regulatorios (Salubridad, COFEPRIS, ayuntamiento)
-5. Tipo de cambio USD/MXN si hay movimiento notable
-6. Tendencias en redes (Reddit r/cabosanlucas, r/mexico, TikTok)
-7. Competencia nueva o eventos virales
-8. Cruceros llegando, vuelos cancelados, etc.
-9. Eventos del Rancho McCoy o salones similares
-
-FORMATO de salida JSON ESTRICTO:
-{
-  "insights": [
-    {
-      "tipo": "noticia" | "tendencia" | "riesgo" | "oportunidad" | "evento_local",
-      "titulo": "Headline corto y claro",
-      "resumen": "2-3 oraciones explicando qué pasa y por qué importa",
-      "fuente": "Nombre del medio (ej: El Sudcaliforniano, Reddit r/cabosanlucas)",
-      "fuente_url": "URL si la tienes",
-      "impacto": "alta" | "media" | "baja",
-      "aplica_a": ["farmacia" | "consultorio" | "rancho_mccoy" | "pagina_digital" | "general"],
-      "recomendacion": "Una acción concreta que deberían tomar (1 frase)",
-      "fecha_evento": "YYYY-MM-DD si aplica" | null
-    }
-  ]
-}
-
-REGLAS:
-- Si no encuentras nada relevante, devuelve { "insights": [] }
-- NUNCA inventes. Si no hay info verificable, omítelo.
-- Cada insight debe tener una RECOMENDACIÓN específica (no genérica).
-- aplica_a debe ser array con uno o más negocios.
-- Prioriza información de los últimos 7 días.
-
-Responde SOLO el JSON, sin markdown ni texto extra.`
-
 /**
- * Ejecuta el radar usando OpenAI con web search (Responses API).
- * Devuelve insights actualizados.
+ * Radar determinístico basado en TU PROPIA DATA.
+ *
+ * Reemplaza el approach anterior de web search (poco confiable y propenso
+ * a errores con SDK de OpenAI). Esta versión analiza patrones en tus
+ * transacciones, gastos fijos, eventos, FX, balance, multas, tareas, etc.
+ * y genera insights accionables específicos a tu negocio.
+ *
+ * 100% confiable, sin dependencias externas, sin errores de API.
  */
 export async function ejecutarRadar(): Promise<{ insights: RadarInsight[]; error?: string }> {
   try {
-    // Usar OpenAI Responses API con web_search_preview
-    // (gpt-4o-mini soporta tool web_search_preview)
-    type ResponsesAPI = {
-      responses: {
-        create: (args: unknown) => Promise<{ output_text?: string; output?: Array<{ type: string; content?: Array<{ text?: string; type?: string }> }> }>
+    const admin = createAdminClient()
+    const insights: RadarInsight[] = []
+    const hoy = hoyEnCabos()
+
+    // ============================================================
+    // 1. CRECIMIENTO MES vs MES por negocio
+    // ============================================================
+    const inicioMesActual = hoy.slice(0, 7) + '-01'
+    const inicioMesPrev = new Date(new Date(inicioMesActual + 'T00:00:00').getTime() - 24 * 60 * 60 * 1000)
+    inicioMesPrev.setDate(1)
+    const finMesPrev = new Date(inicioMesActual + 'T00:00:00')
+    finMesPrev.setDate(0)
+    const desdePrev = inicioMesPrev.toISOString().slice(0, 10)
+    const hastaPrev = finMesPrev.toISOString().slice(0, 10)
+
+    const [{ data: txActual }, { data: txPrev }, { data: negocios }] = await Promise.all([
+      admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', inicioMesActual).lte('fecha', hoy),
+      admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', desdePrev).lte('fecha', hastaPrev),
+      admin.from('negocios').select('id, nombre, tipo').eq('activo', true),
+    ])
+
+    type TxRow = { monto: number | string; moneda: string; monto_mxn_equivalente?: number | string | null; tipo: string; categoria: string | null; negocio_id: string | null }
+    const equivOf = (t: TxRow): number =>
+      t.monto_mxn_equivalente != null ? Number(t.monto_mxn_equivalente) : (t.moneda === 'MXN' ? Number(t.monto) : 0)
+
+    const negocioMap = new Map((negocios ?? []).map((n) => [n.id, { nombre: n.nombre, tipo: n.tipo }]))
+    const sumPorNegocio = (rows: TxRow[] | null) => {
+      const map = new Map<string, { gastos: number; ingresos: number }>()
+      for (const t of rows ?? []) {
+        if (!t.negocio_id) continue
+        const entry = map.get(t.negocio_id) ?? { gastos: 0, ingresos: 0 }
+        const eq = equivOf(t)
+        if (t.tipo === 'gasto' || t.tipo === 'multa_interna') entry.gastos += eq
+        else if (t.tipo === 'ingreso') entry.ingresos += eq
+        map.set(t.negocio_id, entry)
+      }
+      return map
+    }
+    const actualN = sumPorNegocio((txActual ?? []) as TxRow[])
+    const prevN = sumPorNegocio((txPrev ?? []) as TxRow[])
+
+    for (const [negId, a] of actualN.entries()) {
+      const p = prevN.get(negId) ?? { gastos: 0, ingresos: 0 }
+      const neg = negocioMap.get(negId)
+      if (!neg) continue
+      if (p.gastos > 1000 && a.gastos > p.gastos * 1.3) {
+        const pct = Math.round(((a.gastos - p.gastos) / p.gastos) * 100)
+        insights.push({
+          tipo: 'riesgo',
+          titulo: `Gastos en "${neg.nombre}" subieron ${pct}%`,
+          resumen: `Este mes llevas $${a.gastos.toFixed(0)} MXN en gastos. El mes pasado fueron $${p.gastos.toFixed(0)}.`,
+          fuente: 'Análisis interno · Cabo Admin',
+          fuente_url: '/transacciones',
+          impacto: pct > 60 ? 'alta' : 'media',
+          aplica_a: [neg.tipo],
+          recomendacion: `Revisa categorías de "${neg.nombre}" para identificar dónde subió.`,
+          fecha_evento: null,
+        })
+      }
+      if (p.ingresos > 1000 && a.ingresos < p.ingresos * 0.8) {
+        const pct = Math.round(((p.ingresos - a.ingresos) / p.ingresos) * 100)
+        insights.push({
+          tipo: 'riesgo',
+          titulo: `Ingresos de "${neg.nombre}" bajaron ${pct}%`,
+          resumen: `Llevas $${a.ingresos.toFixed(0)} MXN este mes vs $${p.ingresos.toFixed(0)} el anterior.`,
+          fuente: 'Análisis interno',
+          fuente_url: '/dashboard',
+          impacto: 'alta',
+          aplica_a: [neg.tipo],
+          recomendacion: 'Investiga qué pasó. Temporada baja, cambio operativo o competencia.',
+          fecha_evento: null,
+        })
+      }
+      if (p.ingresos > 1000 && a.ingresos > p.ingresos * 1.3) {
+        const pct = Math.round(((a.ingresos - p.ingresos) / p.ingresos) * 100)
+        insights.push({
+          tipo: 'oportunidad',
+          titulo: `🚀 Ingresos de "${neg.nombre}" +${pct}%`,
+          resumen: `Este mes $${a.ingresos.toFixed(0)} MXN vs $${p.ingresos.toFixed(0)} el anterior.`,
+          fuente: 'Análisis interno',
+          fuente_url: '/dashboard',
+          impacto: 'media',
+          aplica_a: [neg.tipo],
+          recomendacion: `Identifica qué está funcionando en "${neg.nombre}" y dóblala.`,
+          fecha_evento: null,
+        })
       }
     }
-    const oai = openai as unknown as ResponsesAPI
-    if (!oai.responses) {
-      return { insights: [], error: 'OpenAI Responses API no disponible' }
+
+    // ============================================================
+    // 2. EVENTOS RANCHO MCCOY próximos con pendiente
+    // ============================================================
+    const en30 = new Date(new Date(hoy + 'T00:00:00').getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const { data: eventos } = await admin
+      .from('eventos')
+      .select('id, cliente_nombre, fecha_evento, monto_total, moneda, eventos_pagos(monto)')
+      .in('estado', ['reservado', 'confirmado'])
+      .gte('fecha_evento', hoy)
+      .lte('fecha_evento', en30)
+      .order('fecha_evento')
+    let totalPendiente = 0
+    let countPendiente = 0
+    const eventosCrit: Array<{ cliente: string; fecha: string; pendiente: number }> = []
+    for (const e of eventos ?? []) {
+      const pagos = (e.eventos_pagos as Array<{ monto: number }>) ?? []
+      const cobrado = pagos.reduce((s, p) => s + Number(p.monto), 0)
+      const pend = Number(e.monto_total) - cobrado
+      if (pend > 0.01 && e.moneda === 'MXN') {
+        totalPendiente += pend
+        countPendiente++
+        eventosCrit.push({ cliente: e.cliente_nombre, fecha: e.fecha_evento, pendiente: pend })
+      }
+    }
+    if (countPendiente > 0) {
+      insights.push({
+        tipo: 'oportunidad',
+        titulo: `$${totalPendiente.toFixed(0)} MXN por cobrar (eventos próximos 30 días)`,
+        resumen: `${countPendiente} evento${countPendiente > 1 ? 's' : ''} pendiente${countPendiente > 1 ? 's' : ''}: ${eventosCrit.slice(0, 3).map((e) => `${e.cliente} (${e.fecha})`).join(', ')}.`,
+        fuente: 'Eventos Rancho',
+        fuente_url: '/por-cobrar',
+        impacto: totalPendiente > 50000 ? 'alta' : 'media',
+        aplica_a: ['salon_eventos'],
+        recomendacion: 'Manda recordatorio de pago. Los anticipos confirman la reserva.',
+        fecha_evento: eventos?.[0]?.fecha_evento ?? null,
+      })
     }
 
-    const response = await oai.responses.create({
-      model: 'gpt-4o-mini',
-      input: PROMPT_RADAR + '\n\nGenera el JSON con los insights más relevantes ahorita.',
-      tools: [{ type: 'web_search_preview' }],
-      tool_choice: 'auto',
-    })
+    // ============================================================
+    // 3. GASTOS FIJOS VENCIDOS
+    // ============================================================
+    const { data: vencidos } = await admin
+      .from('gastos_recurrentes')
+      .select('id, nombre, monto, moneda, proximo_pago')
+      .eq('activo', true)
+      .lt('proximo_pago', hoy)
+    if (vencidos && vencidos.length > 0) {
+      const totalVenc = vencidos.reduce((s, v) => s + Number(v.monto), 0)
+      insights.push({
+        tipo: 'riesgo',
+        titulo: `${vencidos.length} gasto${vencidos.length > 1 ? 's' : ''} fijo${vencidos.length > 1 ? 's' : ''} vencido${vencidos.length > 1 ? 's' : ''}`,
+        resumen: `Total $${totalVenc.toFixed(0)} MXN. Incluye: ${vencidos.slice(0, 3).map((v) => v.nombre).join(', ')}.`,
+        fuente: 'Gastos Fijos',
+        fuente_url: '/recurrentes',
+        impacto: 'alta',
+        aplica_a: ['general'],
+        recomendacion: 'Marca como pagados los que ya cubriste, o paga los pendientes.',
+        fecha_evento: null,
+      })
+    }
 
-    // Extraer texto de la respuesta
-    let raw = response.output_text ?? ''
-    if (!raw && response.output) {
-      for (const item of response.output) {
-        if (item.type === 'message' && item.content) {
-          for (const c of item.content) {
-            if (c.type === 'output_text' && c.text) raw += c.text
-          }
-        }
+    // ============================================================
+    // 4. CUENTAS POR PAGAR VENCIDAS
+    // ============================================================
+    const { data: cppVencidas } = await admin
+      .from('cuentas_por_pagar')
+      .select('id, proveedor, monto_total, monto_pagado, fecha_vencimiento')
+      .in('estado', ['pendiente', 'parcial'])
+      .lt('fecha_vencimiento', hoy)
+    if (cppVencidas && cppVencidas.length > 0) {
+      const totalVenc = cppVencidas.reduce((s, c) => s + (Number(c.monto_total) - Number(c.monto_pagado)), 0)
+      insights.push({
+        tipo: 'riesgo',
+        titulo: `${cppVencidas.length} cuenta${cppVencidas.length > 1 ? 's' : ''} POR PAGAR vencida${cppVencidas.length > 1 ? 's' : ''}`,
+        resumen: `Total $${totalVenc.toFixed(0)} MXN. Proveedores: ${cppVencidas.slice(0, 3).map((c) => c.proveedor).join(', ')}.`,
+        fuente: 'Por Pagar',
+        fuente_url: '/por-pagar',
+        impacto: 'alta',
+        aplica_a: ['general'],
+        recomendacion: 'Págalas hoy o renegocia plazo. Las deudas con proveedores afectan tu reputación.',
+        fecha_evento: null,
+      })
+    }
+
+    // ============================================================
+    // 5. FX USD/MXN — movimiento notable
+    // ============================================================
+    const { data: fxs } = await admin
+      .from('fx_rates')
+      .select('fecha, rate_compra')
+      .order('fecha', { ascending: false })
+      .limit(8)
+    if (fxs && fxs.length >= 2) {
+      const ahora = Number(fxs[0].rate_compra)
+      const semanaAtras = Number(fxs[fxs.length - 1].rate_compra)
+      const cambio = ahora - semanaAtras
+      if (Math.abs(cambio) >= 0.3) {
+        insights.push({
+          tipo: cambio > 0 ? 'oportunidad' : 'riesgo',
+          titulo: cambio > 0 ? `📈 USD subió $${cambio.toFixed(2)} esta semana` : `📉 USD bajó $${Math.abs(cambio).toFixed(2)}`,
+          resumen: `Hoy: $${ahora.toFixed(2)} MXN. Hace ${fxs.length} días: $${semanaAtras.toFixed(2)}.`,
+          fuente: 'FX rate · Cabo Admin',
+          fuente_url: '/fx',
+          impacto: Math.abs(cambio) > 0.5 ? 'alta' : 'media',
+          aplica_a: ['pagina_digital', 'consultorio'],
+          recomendacion: cambio > 0
+            ? 'Aprovecha: tus ingresos USD valen más en MXN. Cobra pronto cuentas USD pendientes.'
+            : 'USD bajó: si tienes USD pendientes, conviene esperar antes de convertir.',
+          fecha_evento: null,
+        })
       }
     }
 
-    if (!raw) return { insights: [], error: 'Sin respuesta del modelo' }
-
-    // Limpiar markdown si lo hay
-    const trimmed = raw.trim()
-    const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
-    const jsonStr = fence ? fence[1] : trimmed
-
-    let parsed: { insights?: RadarInsight[] } = {}
-    try {
-      parsed = JSON.parse(jsonStr)
-    } catch {
-      return { insights: [], error: 'JSON inválido del modelo' }
+    // ============================================================
+    // 6. MULTAS SIN RESOLVER
+    // ============================================================
+    const { data: multas } = await admin
+      .from('multas')
+      .select('id, motivo, monto_propuesto, moneda, estado')
+      .in('estado', ['propuesta', 'justificada', 'reduccion_solicitada', 'pendiente_conversacion'])
+    if (multas && multas.length > 0) {
+      const totalMultas = multas.reduce((s, m) => s + Number(m.monto_propuesto), 0)
+      insights.push({
+        tipo: 'riesgo',
+        titulo: `${multas.length} multa${multas.length > 1 ? 's' : ''} sin resolver`,
+        resumen: `Total $${totalMultas.toFixed(0)} MXN entre socios.`,
+        fuente: 'Multas internas',
+        fuente_url: '/multas',
+        impacto: 'media',
+        aplica_a: ['general'],
+        recomendacion: 'Resuélvanlas hoy. Quedar en limbo causa fricción innecesaria.',
+        fecha_evento: null,
+      })
     }
 
-    return { insights: parsed.insights ?? [] }
+    // ============================================================
+    // 7. TAREAS VENCIDAS
+    // ============================================================
+    const { data: tareasVenc } = await admin
+      .from('tareas')
+      .select('id, titulo, fecha_limite, prioridad')
+      .in('estado', ['pendiente', 'en_progreso'])
+      .lt('fecha_limite', new Date().toISOString())
+    if (tareasVenc && tareasVenc.length > 0) {
+      insights.push({
+        tipo: 'riesgo',
+        titulo: `${tareasVenc.length} tarea${tareasVenc.length > 1 ? 's' : ''} vencida${tareasVenc.length > 1 ? 's' : ''}`,
+        resumen: tareasVenc.slice(0, 3).map((t) => t.titulo).join(' · '),
+        fuente: 'Tareas',
+        fuente_url: '/tareas',
+        impacto: tareasVenc.some((t) => t.prioridad === 'alta') ? 'alta' : 'media',
+        aplica_a: ['general'],
+        recomendacion: 'Complétalas o reasígnalas. Tareas vencidas con multa cuestan dinero real.',
+        fecha_evento: null,
+      })
+    }
+
+    // ============================================================
+    // 8. TENDENCIA: categoría con crecimiento notable
+    // ============================================================
+    const catActual = new Map<string, number>()
+    const catPrev = new Map<string, number>()
+    for (const t of (txActual ?? []) as TxRow[]) {
+      if (t.tipo !== 'gasto' || !t.categoria) continue
+      catActual.set(t.categoria, (catActual.get(t.categoria) ?? 0) + equivOf(t))
+    }
+    for (const t of (txPrev ?? []) as TxRow[]) {
+      if (t.tipo !== 'gasto' || !t.categoria) continue
+      catPrev.set(t.categoria, (catPrev.get(t.categoria) ?? 0) + equivOf(t))
+    }
+    for (const [cat, a] of catActual.entries()) {
+      const p = catPrev.get(cat) ?? 0
+      if (p > 2000 && a > p * 1.5) {
+        const pct = Math.round(((a - p) / p) * 100)
+        insights.push({
+          tipo: 'tendencia',
+          titulo: `"${cat}" creció ${pct}%`,
+          resumen: `Este mes $${a.toFixed(0)} MXN, antes $${p.toFixed(0)}.`,
+          fuente: 'Análisis categorías',
+          fuente_url: '/transacciones',
+          impacto: pct > 100 ? 'alta' : 'media',
+          aplica_a: ['general'],
+          recomendacion: `Revisa qué transacciones componen "${cat}".`,
+          fecha_evento: null,
+        })
+        break
+      }
+    }
+
+    // ============================================================
+    // 9. UTILIDAD GLOBAL
+    // ============================================================
+    const totalIngresoActual = (txActual ?? []).reduce((s, t) => s + (t.tipo === 'ingreso' ? equivOf(t as TxRow) : 0), 0)
+    const totalGastoActual = (txActual ?? []).reduce((s, t) => s + ((t.tipo === 'gasto' || t.tipo === 'multa_interna') ? equivOf(t as TxRow) : 0), 0)
+    const utilidadActual = totalIngresoActual - totalGastoActual
+    if (totalIngresoActual > 0 && utilidadActual < 0) {
+      insights.push({
+        tipo: 'riesgo',
+        titulo: `Utilidad negativa este mes: -$${Math.abs(utilidadActual).toFixed(0)} MXN`,
+        resumen: `Ingresos $${totalIngresoActual.toFixed(0)} vs Gastos $${totalGastoActual.toFixed(0)}. Estás gastando más de lo que entras.`,
+        fuente: 'Estado financiero',
+        fuente_url: '/dashboard',
+        impacto: 'alta',
+        aplica_a: ['general'],
+        recomendacion: 'Reduce gastos no esenciales o impulsa ingresos urgentemente.',
+        fecha_evento: null,
+      })
+    }
+
+    return { insights: insights.slice(0, 12) }
   } catch (e) {
     return { insights: [], error: e instanceof Error ? e.message : 'Error desconocido' }
   }
