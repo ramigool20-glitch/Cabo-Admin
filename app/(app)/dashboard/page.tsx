@@ -7,6 +7,7 @@ import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { isRangoId, rangoFechas, type RangoId } from '@/lib/rangos'
 import { totalizar, porDia, porNegocio, porCategoria } from '@/lib/agregaciones'
 import { calcularSaldos, type CuentaConSaldoInicial, type TxParaSaldo } from '@/lib/saldos'
+import { dispararPushesProgramados } from '@/lib/push/scheduler'
 import { RangoSelector } from '@/components/dashboard/rango-selector'
 import { UtilidadChart } from '@/components/dashboard/utilidad-chart'
 import { NegociosBar } from '@/components/dashboard/negocios-bar'
@@ -26,6 +27,9 @@ export default async function DashboardPage(
 
   const supabase = await createClient()
   const admin = createAdminClient()
+
+  // Disparar pushes programados (best-effort, no bloquea render)
+  dispararPushesProgramados().catch(() => {})
 
   // En 7 días desde hoy
   const en7Dias = new Date(new Date(hoy + 'T00:00:00').getTime() + 7 * 24 * 60 * 60 * 1000)

@@ -83,6 +83,36 @@ export function DiagnosticoPush() {
         </button>
       </div>
 
+      <button
+        type="button"
+        onClick={async () => {
+          setPending(true)
+          try {
+            const res = await fetch('/api/push/burst', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ count: 3, intervaloMin: 15, title: '🛰️ Cabo Admin', mensaje: 'Sistema activo · prueba de ráfaga' }),
+            })
+            const data = await res.json()
+            if (data.ok) {
+              toast.success(
+                `${data.inmediato_enviados} push inmediata`,
+                `+${data.programados} programadas cada ${data.intervalo_min}min`
+              )
+            } else {
+              toast.error('Falló ráfaga', data.error)
+            }
+          } finally {
+            setPending(false)
+          }
+        }}
+        disabled={pending}
+        className="h-10 text-xs w-full rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold hover:bg-amber-500/20 inline-flex items-center justify-center gap-1.5"
+      >
+        {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : '🚀'}
+        Ráfaga: 1 ahora + 3 cada 15min
+      </button>
+
       {resultado && (
         <div className="space-y-3 pt-1">
           {/* Env vars */}
