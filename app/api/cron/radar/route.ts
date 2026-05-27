@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ejecutarRadar } from '@/lib/ai/radar'
+import { ejecutarRadarCompleto } from '@/lib/radar/orquestador'
 import { enviarPushAProfiles } from '@/lib/push/server'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
 
 export async function GET(req: Request) {
   if (!isAuthorizedCron(req)) {
@@ -13,19 +14,16 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient()
-  const { insights, error } = await ejecutarRadar()
 
+  // 1) Análisis interno (insights basados en tu data)
+  const { insights, error } = await ejecutarRadar()
   if (error) {
     await admin.from('radar_runs').insert({
       disparado_por: 'cron',
       insights_creados: 0,
       error,
     })
-    return NextResponse.json({ ok: false, error })
-  }
-
-  // Insertar todos los insights nuevos
-  if (insights.length > 0) {
+  } else if (insights.length > 0) {
     await admin.from('radar_insights').insert(
       insights.map((i) => ({
         tipo: i.tipo,
@@ -37,20 +35,37 @@ export async function GET(req: Request) {
         aplica_a: i.aplica_a,
         recomendacion: i.recomendacion,
         fecha_evento: i.fecha_evento,
-        modelo_ia: 'gpt-4o-mini',
+        modelo_ia: 'analisis-interno',
         query_origen: 'cron-radar',
       }))
     )
   }
 
+  // 2) Noticias frescas + espionaje de competidores + sugerencias + scores
+  let monitor: Awaited<ReturnType<typeof ejecutarRadarCompleto>> | null = null
+  try {
+    monitor = await ejecutarRadarCompleto()
+  } catch (e) {
+    monitor = {
+      noticias_guardadas: 0,
+      ads_nuevos: 0,
+      ads_inactivados: 0,
+      sugerencias_nuevas: 0,
+      scores_recalculados: 0,
+      errores: [e instanceof Error ? e.message : String(e)],
+    }
+  }
+
   await admin.from('radar_runs').insert({
     disparado_por: 'cron',
     insights_creados: insights.length,
+    error: monitor.errores.length > 0 ? monitor.errores.slice(0, 3).join(' | ').slice(0, 500) : null,
   })
 
-  // Push si hay insights de impacto alta
+  // Push si hay novedades importantes
   const altas = insights.filter((i) => i.impacto === 'alta')
-  if (altas.length > 0) {
+  const novedades = monitor.ads_nuevos > 0 || monitor.sugerencias_nuevas > 0
+  if (altas.length > 0 || novedades) {
     try {
       const { data: socios } = await admin
         .from('profiles')
@@ -63,15 +78,30 @@ export async function GET(req: Request) {
         })
         .map((p) => p.id)
       if (destinatarios.length > 0) {
+        let title = '🛰️ Radar actualizado'
+        let body = ''
+        if (altas.length > 0) {
+          title = `🚨 Radar: ${altas.length} alerta${altas.length > 1 ? 's' : ''} alta`
+          body = altas[0].titulo
+        } else if (monitor.ads_nuevos > 0) {
+          body = `${monitor.ads_nuevos} ad${monitor.ads_nuevos > 1 ? 's' : ''} nuevo${monitor.ads_nuevos > 1 ? 's' : ''} de competidores`
+          if (monitor.sugerencias_nuevas > 0) body += ` · ${monitor.sugerencias_nuevas} nuevos competidores sugeridos`
+        } else if (monitor.sugerencias_nuevas > 0) {
+          body = `${monitor.sugerencias_nuevas} competidor${monitor.sugerencias_nuevas > 1 ? 'es' : ''} nuevo${monitor.sugerencias_nuevas > 1 ? 's' : ''} detectado${monitor.sugerencias_nuevas > 1 ? 's' : ''}`
+        }
         await enviarPushAProfiles(destinatarios, {
-          title: `🛰️ Radar: ${altas.length} alerta${altas.length > 1 ? 's' : ''} de alto impacto`,
-          body: altas[0].titulo + (altas.length > 1 ? ` (+${altas.length - 1} más)` : ''),
+          title,
+          body: body || 'Revisa el radar para ver detalles',
           url: '/radar',
-          tag: 'radar-alta',
+          tag: 'radar-update',
         })
       }
     } catch {}
   }
 
-  return NextResponse.json({ ok: true, insights_creados: insights.length })
+  return NextResponse.json({
+    ok: true,
+    insights_creados: insights.length,
+    ...monitor,
+  })
 }
