@@ -19,31 +19,57 @@ type FxData = {
 export function FxPill() {
   const [data, setData] = useState<FxData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     async function load() {
       try {
         const res = await fetch('/api/fx/now', { cache: 'no-store' })
-        if (!res.ok) return
+        if (!res.ok) {
+          if (!cancelled) setError(true)
+          return
+        }
         const json = await res.json()
-        if (!cancelled && json.ok) setData(json)
+        if (!cancelled) {
+          if (json.ok) {
+            setData(json)
+            setError(false)
+          } else {
+            setError(true)
+          }
+        }
+      } catch {
+        if (!cancelled) setError(true)
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
     load()
-    // Refresh cada 10 min
     const t = setInterval(load, 10 * 60 * 1000)
     return () => { cancelled = true; clearInterval(t) }
   }, [])
 
-  if (loading || !data) {
+  if (loading) {
     return (
       <div className="h-10 px-2.5 inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-500">
         <DollarSign className="h-3.5 w-3.5" />
         <span className="text-[10px] font-mono">…</span>
       </div>
+    )
+  }
+
+  // Error o sin data → pill clickeable que lleva a /fx para capturar manual
+  if (error || !data) {
+    return (
+      <Link
+        href="/fx"
+        aria-label="Capturar tipo de cambio"
+        className="h-10 px-2.5 inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300"
+      >
+        <DollarSign className="h-3 w-3 opacity-70" />
+        <span className="text-[10px] font-bold leading-none">FX?</span>
+      </Link>
     )
   }
 

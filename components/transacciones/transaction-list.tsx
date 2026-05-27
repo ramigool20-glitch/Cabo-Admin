@@ -16,10 +16,11 @@ export type Transaccion = {
   fecha: string
   concepto: string | null
   categoria: string | null
-  negocios: { nombre: string } | null
+  negocios: { nombre: string; tipo?: string | null } | null
   cuentas: { nombre: string } | null
   monto_mxn_equivalente?: number | null
   tipo_cambio_usado?: number | null
+  atribuido_a?: string | null
 }
 
 const tipoMeta = {
@@ -100,6 +101,13 @@ export function TransactionList({ transacciones }: { transacciones: Transaccion[
                       <p className="text-xs text-zinc-500 truncate">
                         {t.negocios?.nombre ?? '—'} · {t.cuentas?.nombre ?? '—'}
                       </p>
+                      {t.negocios?.tipo === 'casa' && (
+                        <p className="text-[9px] mt-0.5">
+                          {t.atribuido_a
+                            ? <span className="text-purple-300">👤 personal</span>
+                            : <span className="text-cyan-300">⚖ compartido</span>}
+                        </p>
+                      )}
                     </div>
                     <div className="text-right shrink-0">
                       <p className={cn('text-sm font-semibold tabular-nums', meta.color)}>
