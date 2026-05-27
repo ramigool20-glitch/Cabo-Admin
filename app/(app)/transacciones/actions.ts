@@ -21,6 +21,7 @@ const TransaccionSchema = z.object({
   categoria: z.string().max(60).optional().nullable(),
   concepto: z.string().max(200).optional().nullable(),
   notas: z.string().max(500).optional().nullable(),
+  atribuido_a: z.string().uuid().optional().nullable(),
 })
 
 export type ActionState = {
@@ -41,6 +42,7 @@ function parseFormData(formData: FormData) {
     categoria: formData.get('categoria') || null,
     concepto: formData.get('concepto') || null,
     notas: formData.get('notas') || null,
+    atribuido_a: formData.get('atribuido_a') || null,
   }
   return TransaccionSchema.safeParse(raw)
 }

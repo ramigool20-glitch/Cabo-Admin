@@ -1,6 +1,5 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
-import { Home, ArrowDownCircle, Plus, ShoppingCart, Scale, TrendingUp, ChevronRight, AlertCircle } from 'lucide-react'
+import { Home, ArrowDownCircle, ShoppingCart, Scale, ChevronRight, Users, User } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney, cn } from '@/lib/utils'
@@ -13,17 +12,26 @@ import { ShoppingList } from '@/components/casa/shopping-list'
 import { LiquidarRoomatesForm } from '@/components/casa/liquidar-form'
 import { EmptyState } from '@/components/ui/empty-state'
 
+type SearchParams = {
+  rango?: string
+  desde?: string
+  hasta?: string
+  /** 'compartido' | 'personal' | socio_id */
+  vista?: string
+}
+
 export default async function CasaPage(
-  { searchParams }: { searchParams: Promise<{ rango?: string; desde?: string; hasta?: string }> }
+  { searchParams }: { searchParams: Promise<SearchParams> }
 ) {
   const sp = await searchParams
   const rangoId: RangoId = isRangoId(sp.rango) ? sp.rango : 'mes_actual'
   const r = rangoFechas(rangoId, sp.desde, sp.hasta)
+  const vista = sp.vista ?? 'todo'
 
   const supabase = await createClient()
   const admin = createAdminClient()
 
-  // 1) Encontrar negocio Casa
+  // 1) Negocio Casa
   const { data: casa } = await admin
     .from('negocios')
     .select('id, nombre')
@@ -42,7 +50,7 @@ export default async function CasaPage(
     )
   }
 
-  // 2) Socios activos (Miguel + Sergio)
+  // 2) Socios activos
   const { data: socios } = await admin
     .from('profiles')
     .select('id, nombre, role_id, roles(nombre)')
@@ -58,10 +66,12 @@ export default async function CasaPage(
     { data: txs },
     { data: shopping },
     { data: ultimasCasa },
+    { data: proxGfCasa },
+    { data: cuentas },
   ] = await Promise.all([
     supabase
       .from('transacciones')
-      .select('tipo, monto, moneda, fecha, categoria, capturado_por, monto_mxn_equivalente')
+      .select('id, tipo, monto, moneda, fecha, categoria, capturado_por, atribuido_a, monto_mxn_equivalente, concepto')
       .eq('negocio_id', casa.id)
       .gte('fecha', r.desde)
       .lte('fecha', r.hasta),
@@ -73,75 +83,118 @@ export default async function CasaPage(
       .limit(50),
     supabase
       .from('transacciones')
-      .select('id, tipo, monto, moneda, fecha, concepto, categoria, capturado_por, monto_mxn_equivalente, profiles!transacciones_capturado_por_fkey(nombre)')
+      .select('id, tipo, monto, moneda, fecha, concepto, categoria, capturado_por, atribuido_a, monto_mxn_equivalente')
       .eq('negocio_id', casa.id)
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(10),
+      .limit(15),
+    admin
+      .from('gastos_recurrentes')
+      .select('id, nombre, monto, moneda, proximo_pago')
+      .eq('negocio_id', casa.id)
+      .eq('activo', true)
+      .gte('proximo_pago', hoyEnCabos())
+      .lte('proximo_pago', new Date(new Date(hoyEnCabos() + 'T00:00:00').getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+      .order('proximo_pago', { ascending: true }),
+    admin
+      .from('cuentas')
+      .select('id, nombre, moneda')
+      .eq('activo', true)
+      .order('nombre'),
   ])
 
   const rows = txs ?? []
+  const N = Math.max(1, sociosFiltered.length)
 
-  // 4) Calcular balance por socio (gastos en Casa)
-  type Balance = { id: string; nombre: string; gastosMxn: number; ingresosMxn: number }
-  const balancePorSocio = new Map<string, Balance>()
+  // === LÓGICA DE BUCKETS ===
+  // compartido = sin atribuido_a → split entre todos
+  // personal de X = atribuido_a == X → 100% le toca a X
+  let compartidoMxn = 0
+  const personalPorSocio = new Map<string, number>()
+  const totalPagadoPorSocio = new Map<string, number>() // capturado_por
+
   for (const s of sociosFiltered) {
-    balancePorSocio.set(s.id, { id: s.id, nombre: s.nombre, gastosMxn: 0, ingresosMxn: 0 })
+    personalPorSocio.set(s.id, 0)
+    totalPagadoPorSocio.set(s.id, 0)
   }
+
   for (const t of rows) {
-    if (!t.capturado_por) continue
-    const equiv = t.monto_mxn_equivalente != null ? Number(t.monto_mxn_equivalente) : (t.moneda === 'MXN' ? Number(t.monto) : 0)
-    const bal = balancePorSocio.get(t.capturado_por)
-    if (!bal) continue
-    if (t.tipo === 'gasto' || t.tipo === 'multa_interna') bal.gastosMxn += equiv
-    else if (t.tipo === 'ingreso') bal.ingresosMxn += equiv
-    else if (t.tipo === 'liquidacion_socio') {
-      // Liquidación: el que captura es el que pagó al otro
-      // Lo tratamos como un "ingreso al receptor" en términos de saldo, pero
-      // como no sabemos quién es el receptor sin extra metadata, lo dejamos como ajuste
-      bal.gastosMxn -= equiv // resta lo que ya pagó para compensar
+    const equiv = t.monto_mxn_equivalente != null
+      ? Number(t.monto_mxn_equivalente)
+      : (t.moneda === 'MXN' ? Number(t.monto) : 0)
+
+    if (t.tipo === 'gasto' || t.tipo === 'multa_interna') {
+      if (t.atribuido_a) {
+        personalPorSocio.set(t.atribuido_a, (personalPorSocio.get(t.atribuido_a) ?? 0) + equiv)
+      } else {
+        compartidoMxn += equiv
+      }
+      // Track quien lo pagó físicamente
+      if (t.capturado_por) {
+        totalPagadoPorSocio.set(t.capturado_por, (totalPagadoPorSocio.get(t.capturado_por) ?? 0) + equiv)
+      }
+    } else if (t.tipo === 'liquidacion_socio' && t.capturado_por) {
+      // Liquidación entre socios: el que captura pagó al otro
+      totalPagadoPorSocio.set(t.capturado_por, (totalPagadoPorSocio.get(t.capturado_por) ?? 0) - equiv)
     }
   }
 
-  const balanceArr = Array.from(balancePorSocio.values())
-  const totalGastosCasa = balanceArr.reduce((sum, b) => sum + b.gastosMxn, 0)
-  const cuotaJusta = balanceArr.length > 0 ? totalGastosCasa / balanceArr.length : 0
+  const cuotaCompartida = compartidoMxn / N
+  const totalGastosCasa = compartidoMxn + Array.from(personalPorSocio.values()).reduce((a, b) => a + b, 0)
 
-  // Quién le debe a quién
-  const conSaldo = balanceArr.map((b) => ({
-    ...b,
-    diferencia: b.gastosMxn - cuotaJusta, // positivo = puso de más, le deben; negativo = puso menos, debe
-  }))
+  // Por socio: cuánto "le toca" pagar = cuotaCompartida + sus personales
+  type SocioReport = {
+    id: string
+    nombre: string
+    personal: number       // sus gastos personales (la cuenta los cubrió)
+    cuotaCompartida: number // su parte del compartido
+    leToca: number         // total que es "suyo" = personal + cuota compartida
+    pagoFisico: number     // total que él/ella registró físicamente
+    diferencia: number     // pagoFisico - leToca (positivo = puso de más, le deben)
+  }
+  const reportes: SocioReport[] = sociosFiltered.map((s) => {
+    const personal = personalPorSocio.get(s.id) ?? 0
+    const pagoFisico = totalPagadoPorSocio.get(s.id) ?? 0
+    const leToca = cuotaCompartida + personal
+    return {
+      id: s.id,
+      nombre: s.nombre,
+      personal,
+      cuotaCompartida,
+      leToca,
+      pagoFisico,
+      diferencia: pagoFisico - leToca,
+    }
+  })
 
-  // Asumiendo 2 roomates típico
-  const deudores = conSaldo.filter((b) => b.diferencia < -0.01)
-  const acreedores = conSaldo.filter((b) => b.diferencia > 0.01)
+  // Quién le debe a quién para empatar
+  const deudores = reportes.filter((b) => b.diferencia < -0.01)
+  const acreedores = reportes.filter((b) => b.diferencia > 0.01)
 
-  // Por categoría
-  const topCats = porCategoria(rows.map((t) => ({ ...t, negocio_id: casa.id })))
+  // Filtrar transacciones para la lista visible según vista
+  const rowsFiltered = ultimasCasa?.filter((t) => {
+    if (vista === 'todo') return true
+    if (vista === 'compartido') return !t.atribuido_a
+    return t.atribuido_a === vista
+  }) ?? []
 
-  // Próximos gastos fijos de Casa
-  const en7 = new Date(new Date(hoy_safe() + 'T00:00:00').getTime() + 7 * 24 * 60 * 60 * 1000)
-    .toISOString().slice(0, 10)
-  const { data: proxGfCasa } = await admin
-    .from('gastos_recurrentes')
-    .select('id, nombre, monto, moneda, proximo_pago')
-    .eq('negocio_id', casa.id)
-    .eq('activo', true)
-    .gte('proximo_pago', hoy_safe())
-    .lte('proximo_pago', en7)
-    .order('proximo_pago', { ascending: true })
+  // Top categorías Casa según vista
+  const topCats = porCategoria(
+    rows
+      .filter((t) => {
+        if (vista === 'todo') return true
+        if (vista === 'compartido') return !t.atribuido_a
+        return t.atribuido_a === vista
+      })
+      .map((t) => ({ ...t, negocio_id: casa.id }))
+  )
 
-  // Cuentas para liquidar
-  const { data: cuentas } = await admin
-    .from('cuentas')
-    .select('id, nombre, moneda')
-    .eq('activo', true)
-    .order('nombre')
+  // Total reembolso personal pendiente (suma de los gastos personales = lo que la cuenta común cubrió y debería volver)
+  const totalReembolsoPersonal = Array.from(personalPorSocio.values()).reduce((a, b) => a + b, 0)
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-5 max-w-3xl mx-auto">
-      <header className="space-y-1">
+      <header className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-black heading-gradient inline-flex items-center gap-2">
             <Home className="h-6 w-6 text-cyan-400" />
@@ -149,7 +202,7 @@ export default async function CasaPage(
           </h1>
           <span className="chip chip-cyan">{rows.length} mov</span>
         </div>
-        <p className="text-sm text-zinc-400">Gastos compartidos entre roomates · split 50/50.</p>
+        <p className="text-sm text-zinc-400">Gastos compartidos + personales. La cuenta cubre todo, aquí ves quién gasta qué.</p>
         <RangoSelector actual={rangoId} customDesde={sp.desde} customHasta={sp.hasta} />
       </header>
 
@@ -162,47 +215,103 @@ export default async function CasaPage(
         <p className="text-4xl font-black tabular-nums text-rose-300">
           {formatMoney(totalGastosCasa, 'MXN')}
         </p>
-        {balanceArr.length > 0 && (
-          <p className="text-xs text-zinc-400">
-            Cuota justa por persona: <strong className="text-white">{formatMoney(cuotaJusta, 'MXN')}</strong>
-          </p>
-        )}
+        <div className="grid grid-cols-3 gap-2 pt-2 text-[10px]">
+          <div>
+            <p className="text-zinc-500">⚖ Compartido</p>
+            <p className="text-sm font-bold text-cyan-300 tabular-nums">{formatMoney(compartidoMxn, 'MXN')}</p>
+          </div>
+          <div>
+            <p className="text-zinc-500">👤 Personales</p>
+            <p className="text-sm font-bold text-purple-300 tabular-nums">{formatMoney(totalReembolsoPersonal, 'MXN')}</p>
+          </div>
+          <div>
+            <p className="text-zinc-500">Cuota /persona</p>
+            <p className="text-sm font-bold text-white tabular-nums">{formatMoney(cuotaCompartida, 'MXN')}</p>
+          </div>
+        </div>
       </section>
 
-      {/* Balance entre roomates */}
+      {/* Tabs de vista */}
+      <div className="flex flex-wrap gap-1.5">
+        {[
+          { key: 'todo', label: 'Todos' },
+          { key: 'compartido', label: '⚖ Compartido' },
+          ...sociosFiltered.map((s) => ({ key: s.id, label: `👤 ${s.nombre}` })),
+        ].map((opt) => {
+          const active = vista === opt.key
+          const qs = new URLSearchParams({ rango: rangoId })
+          if (sp.desde) qs.set('desde', sp.desde)
+          if (sp.hasta) qs.set('hasta', sp.hasta)
+          if (opt.key !== 'todo') qs.set('vista', opt.key)
+          return (
+            <Link
+              key={opt.key}
+              href={`/casa?${qs.toString()}`}
+              className={cn(
+                'h-7 px-2.5 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-colors',
+                active ? 'border-cyan-500 bg-cyan-500/20 text-cyan-300' : 'border-[var(--border-subtle)] text-zinc-500 hover:text-white'
+              )}
+            >
+              {opt.label}
+            </Link>
+          )
+        })}
+      </div>
+
+      {/* Balance por socio: cuánto le toca pagar */}
       <section className="space-y-2">
         <h2 className="label-caps inline-flex items-center gap-1.5">
-          <Scale className="h-3 w-3" /> Balance entre roomates
+          <Scale className="h-3 w-3" /> Cuánto le toca a cada uno
         </h2>
-        <div className="grid grid-cols-2 gap-2">
-          {balanceArr.map((b) => {
-            const conSaldoB = conSaldo.find((x) => x.id === b.id)!
-            const teDeben = conSaldoB.diferencia > 0.01
-            const debes = conSaldoB.diferencia < -0.01
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {reportes.map((b) => {
+            const teDeben = b.diferencia > 0.01
+            const debes = b.diferencia < -0.01
             return (
-              <div key={b.id} className="card p-3 space-y-1">
-                <p className="text-[10px] text-zinc-500 truncate">{b.nombre}</p>
-                <p className="text-base font-bold tabular-nums text-white">
-                  {formatMoney(b.gastosMxn, 'MXN')}
+              <div key={b.id} className={cn(
+                'card p-3 space-y-1.5 border',
+                teDeben ? 'border-emerald-500/30' : debes ? 'border-rose-500/30' : 'border-[var(--border-subtle)]'
+              )}>
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-cyan-400" />
+                  <p className="text-sm font-bold text-white">{b.nombre}</p>
+                </div>
+                <p className="text-xl font-black tabular-nums text-white">
+                  {formatMoney(b.leToca, 'MXN')}
                 </p>
+                <div className="space-y-0.5 text-[10px] text-zinc-500">
+                  <div className="flex items-center justify-between">
+                    <span>Su personal:</span>
+                    <span className="text-purple-300 tabular-nums">{formatMoney(b.personal, 'MXN')}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>+ ½ compartido:</span>
+                    <span className="text-cyan-300 tabular-nums">{formatMoney(b.cuotaCompartida, 'MXN')}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-0.5 border-t border-[var(--border-subtle)]">
+                    <span>Pagó físicamente:</span>
+                    <span className="text-white tabular-nums">{formatMoney(b.pagoFisico, 'MXN')}</span>
+                  </div>
+                </div>
                 {teDeben && (
-                  <p className="text-[11px] text-emerald-400 tabular-nums">
-                    +{formatMoney(conSaldoB.diferencia, 'MXN')} a favor
+                  <p className="text-[11px] text-emerald-400 tabular-nums font-bold">
+                    +{formatMoney(b.diferencia, 'MXN')} le deben
                   </p>
                 )}
                 {debes && (
-                  <p className="text-[11px] text-rose-400 tabular-nums">
-                    debe {formatMoney(Math.abs(conSaldoB.diferencia), 'MXN')}
+                  <p className="text-[11px] text-rose-400 tabular-nums font-bold">
+                    debe {formatMoney(Math.abs(b.diferencia), 'MXN')}
                   </p>
                 )}
-                {!teDeben && !debes && balanceArr.length > 0 && (
+                {!teDeben && !debes && (
                   <p className="text-[11px] text-zinc-500">empatado</p>
                 )}
               </div>
             )
           })}
         </div>
-        {/* Quién le debe a quién */}
+
+        {/* Liquidar */}
         {deudores.length > 0 && acreedores.length > 0 && (
           <div className="card border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
             <p className="text-sm font-bold text-amber-300">⚖ Para empatar:</p>
@@ -217,7 +326,7 @@ export default async function CasaPage(
               )
             })}
             <LiquidarRoomatesForm
-              socios={balanceArr.map((b) => ({ id: b.id, nombre: b.nombre }))}
+              socios={reportes.map((b) => ({ id: b.id, nombre: b.nombre }))}
               cuentas={cuentas ?? []}
               sugeridoMonto={deudores[0] && Math.abs(deudores[0].diferencia)}
               sugeridoPagador={deudores[0]?.id}
@@ -226,6 +335,31 @@ export default async function CasaPage(
           </div>
         )}
       </section>
+
+      {/* Reembolsos personales pendientes */}
+      {totalReembolsoPersonal > 0 && (
+        <section className="card-glow border-purple-500/30 p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-purple-300" />
+            <p className="label-caps text-purple-300">Gastos personales (cubiertos por la cuenta común)</p>
+          </div>
+          <p className="text-[11px] text-zinc-400">
+            Estos son gastos personales que salieron de la cuenta del trabajo y deberían reembolsarse a la sociedad.
+          </p>
+          <ul className="space-y-1 pt-1">
+            {reportes.map((b) => b.personal > 0 ? (
+              <li key={b.id} className="flex items-center justify-between text-xs">
+                <span className="text-zinc-300">👤 {b.nombre}</span>
+                <span className="text-purple-300 font-bold tabular-nums">{formatMoney(b.personal, 'MXN')}</span>
+              </li>
+            ) : null)}
+            <li className="flex items-center justify-between text-xs pt-1.5 border-t border-purple-500/20 font-bold">
+              <span className="text-white">Total a reembolsar</span>
+              <span className="text-purple-300 tabular-nums">{formatMoney(totalReembolsoPersonal, 'MXN')}</span>
+            </li>
+          </ul>
+        </section>
+      )}
 
       {/* Próximos gastos fijos de Casa */}
       {proxGfCasa && proxGfCasa.length > 0 && (
@@ -250,7 +384,7 @@ export default async function CasaPage(
         </section>
       )}
 
-      {/* Top categorías Casa */}
+      {/* Top categorías Casa (según vista) */}
       {topCats.length > 0 && (
         <CategoriasList data={topCats} />
       )}
@@ -263,25 +397,34 @@ export default async function CasaPage(
         <ShoppingList items={shopping ?? []} />
       </section>
 
-      {/* Últimas tx Casa */}
+      {/* Últimas tx Casa (filtradas por vista) */}
       <section className="space-y-2">
         <div className="flex items-center justify-between px-1">
-          <h2 className="label-caps">Últimas en Casa</h2>
+          <h2 className="label-caps">
+            {vista === 'todo' ? 'Últimas en Casa' :
+             vista === 'compartido' ? 'Últimas compartidas' :
+             `Últimas de ${sociosFiltered.find((s) => s.id === vista)?.nombre ?? '—'}`}
+          </h2>
           <Link href={`/transacciones?negocio=${casa.id}`} className="text-xs text-cyan-400 font-semibold">Ver todas →</Link>
         </div>
-        {ultimasCasa && ultimasCasa.length > 0 ? (
+        {rowsFiltered.length > 0 ? (
           <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
-            {ultimasCasa.map((u) => {
-              const prof = u.profiles as unknown as { nombre: string } | null
+            {rowsFiltered.map((u) => {
               const isGasto = u.tipo === 'gasto' || u.tipo === 'multa_interna'
+              const atribuidoSocio = u.atribuido_a ? sociosFiltered.find((s) => s.id === u.atribuido_a) : null
               return (
                 <li key={u.id}>
                   <Link href={`/transacciones/${u.id}`} className="flex items-center gap-3 p-3 hover:bg-white/5 transition-colors">
                     <div className="flex-1 min-w-0 leading-tight">
                       <p className="text-sm font-semibold truncate text-zinc-100">{u.concepto || u.categoria || 'Sin concepto'}</p>
-                      <p className="text-xs text-zinc-500 truncate">
-                        {prof?.nombre ?? '—'} · {formatearFecha(u.fecha, 'dd MMM')}
-                      </p>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-[10px] text-zinc-500">{formatearFecha(u.fecha, 'dd MMM')}</span>
+                        {atribuidoSocio ? (
+                          <span className="chip text-[9px] h-4 px-1.5 chip-purple">👤 {atribuidoSocio.nombre}</span>
+                        ) : (
+                          <span className="chip text-[9px] h-4 px-1.5 chip-cyan">⚖ Compartido</span>
+                        )}
+                      </div>
                     </div>
                     <p className={cn('text-sm font-bold tabular-nums', isGasto ? 'text-rose-400' : 'text-emerald-400')}>
                       {isGasto ? '−' : '+'}{formatMoney(Number(u.monto), u.moneda as 'MXN' | 'USD')}
@@ -294,7 +437,7 @@ export default async function CasaPage(
         ) : (
           <EmptyState
             emoji="🏠"
-            title="Sin movimientos en Casa"
+            title={vista === 'todo' ? 'Sin movimientos en Casa' : 'Sin movimientos en esta vista'}
             description="Cuando captures un gasto con negocio Casa, aparecerá aquí."
             cta={{ label: 'Nueva transacción', href: '/transacciones/nueva' }}
           />
@@ -302,8 +445,4 @@ export default async function CasaPage(
       </section>
     </div>
   )
-}
-
-function hoy_safe() {
-  return hoyEnCabos()
 }

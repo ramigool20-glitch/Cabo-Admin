@@ -17,8 +17,8 @@ export default async function DetalleTransaccionPage(
       id, tipo, monto, moneda, fecha, concepto, categoria, notas,
       metodo_pago, metodo_captura, foto_url,
       monto_mxn_equivalente, tipo_cambio_usado,
-      created_at, capturado_por,
-      negocios(nombre),
+      created_at, capturado_por, atribuido_a,
+      negocios(nombre, tipo),
       cuentas(nombre)
     `)
     .eq('id', id)
@@ -37,11 +37,23 @@ export default async function DetalleTransaccionPage(
     capturador = prof
   }
 
+  // Atribución (para gastos Casa)
+  let atribuidoNombre: string | null = null
+  if (t.atribuido_a) {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('nombre')
+      .eq('id', t.atribuido_a)
+      .maybeSingle()
+    atribuidoNombre = prof?.nombre ?? null
+  }
+
   const isGasto = t.tipo === 'gasto' || t.tipo === 'multa_interna'
   const Icon = isGasto ? ArrowDownCircle : ArrowUpCircle
   const colorClass = isGasto ? 'text-rose-400' : 'text-emerald-400'
-  const negocio = t.negocios as unknown as { nombre: string } | null
+  const negocio = t.negocios as unknown as { nombre: string; tipo: string } | null
   const cuenta = t.cuentas as unknown as { nombre: string } | null
+  const esCasa = negocio?.tipo === 'casa'
   const editable = t.tipo === 'ingreso' || t.tipo === 'gasto'
 
   return (
@@ -80,6 +92,15 @@ export default async function DetalleTransaccionPage(
         )}
         {t.concepto && (
           <p className="text-base text-zinc-200 pt-1">{t.concepto}</p>
+        )}
+        {esCasa && (
+          <div className="pt-1">
+            {atribuidoNombre ? (
+              <span className="chip chip-purple text-[10px]">👤 Personal de {atribuidoNombre}</span>
+            ) : (
+              <span className="chip chip-cyan text-[10px]">⚖ Compartido (split 50/50)</span>
+            )}
+          </div>
         )}
       </section>
 

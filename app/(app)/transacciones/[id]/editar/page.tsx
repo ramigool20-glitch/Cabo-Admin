@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { TransactionForm } from '@/components/transacciones/transaction-form'
 
 export default async function EditarTransaccionPage(
@@ -9,15 +10,24 @@ export default async function EditarTransaccionPage(
 ) {
   const { id } = await props.params
   const supabase = await createClient()
+  const admin = createAdminClient()
 
-  const [{ data: t }, { data: negocios }, { data: cuentas }] = await Promise.all([
+  const [{ data: t }, { data: negocios }, { data: cuentas }, { data: socios }] = await Promise.all([
     supabase.from('transacciones')
-      .select('id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado')
+      .select('id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado, atribuido_a')
       .eq('id', id)
       .single(),
     supabase.from('negocios').select('id, nombre, tipo, moneda_principal').eq('activo', true).order('nombre'),
     supabase.from('cuentas').select('id, nombre, tipo, moneda').eq('activo', true).order('nombre'),
+    admin.from('profiles').select('id, nombre, role_id, roles(nombre)').eq('activo', true),
   ])
+
+  const sociosFiltered = (socios ?? [])
+    .filter((p) => {
+      const r = p.roles as unknown as { nombre: string } | null
+      return r?.nombre === 'admin' || r?.nombre === 'socio'
+    })
+    .map((p) => ({ id: p.id, nombre: p.nombre }))
 
   if (!t) notFound()
   if (t.tipo !== 'ingreso' && t.tipo !== 'gasto') notFound()
@@ -39,6 +49,7 @@ export default async function EditarTransaccionPage(
       <TransactionForm
         negocios={negocios ?? []}
         cuentas={cuentas ?? []}
+        socios={sociosFiltered}
         defaults={{
           id: t.id,
           tipo: t.tipo as 'ingreso' | 'gasto',
@@ -53,6 +64,7 @@ export default async function EditarTransaccionPage(
           notas: t.notas,
           monto_mxn_equivalente: t.monto_mxn_equivalente,
           tipo_cambio_usado: t.tipo_cambio_usado,
+          atribuido_a: t.atribuido_a,
         }}
       />
     </div>

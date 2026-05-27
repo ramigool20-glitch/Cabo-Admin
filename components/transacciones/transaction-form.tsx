@@ -15,6 +15,7 @@ import { toast } from '@/components/ui/toast'
 
 export type NegocioOpt = { id: string; nombre: string; tipo: string; moneda_principal: string }
 export type CuentaOpt  = { id: string; nombre: string; tipo: string | null; moneda: string }
+export type SocioOpt   = { id: string; nombre: string }
 
 export type TransaccionDefault = {
   id?: string
@@ -30,15 +31,18 @@ export type TransaccionDefault = {
   notas?: string | null
   monto_mxn_equivalente?: number | null
   tipo_cambio_usado?: number | null
+  atribuido_a?: string | null
 }
 
 export function TransactionForm({
   negocios,
   cuentas,
+  socios = [],
   defaults,
 }: {
   negocios: NegocioOpt[]
   cuentas: CuentaOpt[]
+  socios?: SocioOpt[]
   defaults: TransaccionDefault
 }) {
   const router = useRouter()
@@ -50,6 +54,7 @@ export function TransactionForm({
   const [cuentaId, setCuentaId] = useState<string>(defaults.cuenta_id ?? '')
   const [metodoPago, setMetodoPago] = useState<string>(defaults.metodo_pago ?? '')
   const [categoria, setCategoria] = useState<string>(defaults.categoria ?? '')
+  const [atribuidoA, setAtribuidoA] = useState<string>(defaults.atribuido_a ?? '')
   const [mostrarMas, setMostrarMas] = useState(false)
 
   const action = isEdit
@@ -207,6 +212,53 @@ export function TransactionForm({
           ))}
         </div>
       </div>
+
+      {/* Atribución (solo cuando es Casa) */}
+      {esCasa && socios.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">¿Para quién es este gasto?</label>
+            <span className="chip chip-purple text-[9px] h-4 px-1.5">🏠 Casa</span>
+          </div>
+          <input type="hidden" name="atribuido_a" value={atribuidoA} />
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setAtribuidoA('')}
+              className={cn(
+                'h-12 rounded-xl border text-xs font-bold transition-colors',
+                atribuidoA === ''
+                  ? 'border-cyan-500 bg-cyan-500 text-white'
+                  : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400'
+              )}
+            >
+              <span className="block text-base">⚖️</span>
+              <span className="block text-[10px] mt-0.5">Compartido</span>
+            </button>
+            {socios.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setAtribuidoA(s.id)}
+                className={cn(
+                  'h-12 rounded-xl border text-xs font-bold transition-colors',
+                  atribuidoA === s.id
+                    ? 'border-emerald-500 bg-emerald-500 text-white'
+                    : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400'
+                )}
+              >
+                <span className="block text-base">👤</span>
+                <span className="block text-[10px] mt-0.5 truncate">{s.nombre}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-zinc-500 px-1">
+            {atribuidoA === ''
+              ? 'Se divide 50/50 entre roomates'
+              : `Cuenta como gasto personal de ${socios.find((s) => s.id === atribuidoA)?.nombre ?? '—'}`}
+          </p>
+        </div>
+      )}
 
       {/* Concepto */}
       <div className="space-y-2">
