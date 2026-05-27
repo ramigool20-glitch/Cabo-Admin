@@ -29,6 +29,15 @@ export default async function CasaPage(
   const supabase = await createClient()
   const admin = createAdminClient()
 
+  // FX rate más reciente para fallback runtime (USD sin equivalente persistido)
+  const { data: fxLatest } = await admin
+    .from('fx_rates')
+    .select('rate_compra')
+    .order('fecha', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
+
   const { data: casa } = await admin
     .from('negocios')
     .select('id, nombre')
@@ -136,29 +145,47 @@ export default async function CasaPage(
 
   const rows = txs
 
-  // === MODELO CORRECTO ===
-  // Compartido = gasto operativo de la sociedad (no afecta a socios individualmente)
-  // Personal de X = AVANCE que la empresa le dio a X (se deducirá de su utilidad al corte)
+  // === MODELO NUEVO ===
+  // Compartido = se REPARTE 50/50 (o N partes iguales) entre socios → suma a cada avance
+  // Personal de X = 100% al avance de X
+  // Liquidación = reduce el avance del que paga
+  function equivMxn(t: CasaTx): number {
+    if (t.monto_mxn_equivalente != null) return Number(t.monto_mxn_equivalente)
+    if (t.moneda === 'MXN') return Number(t.monto)
+    // USD sin equivalente persistido → convertimos al vuelo con fxRate
+    if (t.moneda === 'USD' && fxRate) return Number(Number(t.monto) * fxRate)
+    return 0
+  }
+
   function bucketize(rows: CasaTx[]) {
     let compartido = 0
-    const avancePor = new Map<string, number>() // avance personal de cada socio
+    let totalSalido = 0
+    const avancePor = new Map<string, number>()
     for (const s of sociosFiltered) avancePor.set(s.id, 0)
+    const nSocios = sociosFiltered.length
+
     for (const t of rows) {
-      const equiv = t.monto_mxn_equivalente != null ? Number(t.monto_mxn_equivalente) : (t.moneda === 'MXN' ? Number(t.monto) : 0)
+      const equiv = equivMxn(t)
       if (t.tipo === 'gasto' || t.tipo === 'multa_interna') {
+        totalSalido += equiv
         if (t.atribuido_a) {
+          // Personal: 100% al socio
           avancePor.set(t.atribuido_a, (avancePor.get(t.atribuido_a) ?? 0) + equiv)
+        } else if (nSocios > 0) {
+          // Compartido: se reparte equitativamente
+          compartido += equiv
+          const cuota = equiv / nSocios
+          for (const s of sociosFiltered) {
+            avancePor.set(s.id, (avancePor.get(s.id) ?? 0) + cuota)
+          }
         } else {
           compartido += equiv
         }
       } else if (t.tipo === 'liquidacion_socio' && t.capturado_por) {
-        // Liquidación: el que paga REDUCE su avance pendiente
         avancePor.set(t.capturado_por, (avancePor.get(t.capturado_por) ?? 0) - equiv)
       }
     }
-    const totalAvances = Array.from(avancePor.values()).reduce((a, b) => a + b, 0)
-    const total = compartido + totalAvances
-    return { compartido, avancePor, totalAvances, total }
+    return { compartido, avancePor, totalSalido }
   }
 
   const actual = bucketize(rows)
@@ -213,10 +240,10 @@ export default async function CasaPage(
   }
 
   // Top categoría
-  const topCatsAll = porCategoria(rows.map((t) => ({ ...t, negocio_id: casa.id })))
-  if (topCatsAll.length > 0 && actual.total > 0) {
+  const topCatsAll = porCategoria(rows.map((t) => ({ ...t, negocio_id: casa.id })), 6, fxRate)
+  if (topCatsAll.length > 0 && actual.totalSalido > 0) {
     const top = topCatsAll[0]
-    const pct = Math.round((top.monto / actual.total) * 100)
+    const pct = Math.round((top.monto / actual.totalSalido) * 100)
     if (pct >= 30) {
       recos.push({
         tipo: 'info',
@@ -244,12 +271,15 @@ export default async function CasaPage(
     }
   }
 
-  // Vista filter
-  const rowsFiltered = ultimasCasa.filter((t) => {
-    if (vista === 'todo') return true
-    if (vista === 'compartido') return !t.atribuido_a
-    return t.atribuido_a === vista
-  })
+  // Vista filter — usamos rows (filtradas por rango) para que la lista respete el rango
+  // ordenadas: fecha desc luego, en mismo día, mantenemos el orden original
+  const rowsFiltered = [...rows]
+    .filter((t) => {
+      if (vista === 'todo') return true
+      if (vista === 'compartido') return !t.atribuido_a
+      return t.atribuido_a === vista
+    })
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
 
   const topCats = porCategoria(
     rows.filter((t) => {
@@ -275,25 +305,30 @@ export default async function CasaPage(
         <RangoSelector actual={rangoId} customDesde={sp.desde} customHasta={sp.hasta} />
       </header>
 
-      {/* HERO: Total */}
+      {/* HERO: Total salido */}
       <section className="card-glow p-4 space-y-2">
         <div className="flex items-center justify-between">
           <span className="label-caps text-[9px]">Total casa salido de la empresa · {r.label}</span>
           <ArrowDownCircle className="h-3.5 w-3.5 text-rose-400/60" />
         </div>
         <p className="text-3xl sm:text-4xl font-black tabular-nums text-rose-300">
-          {formatMoney(actual.total, 'MXN')}
+          {formatMoney(actual.totalSalido, 'MXN')}
+        </p>
+        <p className="text-[10px] text-zinc-500">
+          {formatMoney(actual.compartido, 'MXN')} compartido (50/50) + personales
         </p>
       </section>
 
-      {/* AVANCES PERSONALES — sección destacada */}
+      {/* AVANCES PERSONALES — incluyen cuota compartida + personal */}
       <section className="space-y-2">
         <h2 className="label-caps inline-flex items-center gap-1.5 text-purple-300">
           <PiggyBank className="h-3 w-3" />
-          Avances personales (se deducen de utilidad al corte)
+          Avances por socio (compartido/2 + personal)
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {reportes.map((b) => {
+            const cuotaCompartida = sociosFiltered.length > 0 ? actual.compartido / sociosFiltered.length : 0
+            const personalSolo = b.avance - cuotaCompartida
             return (
               <div key={b.id} className="card-glow border-purple-500/30 p-3 space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -313,6 +348,18 @@ export default async function CasaPage(
                 <p className="text-2xl font-black tabular-nums text-purple-200">
                   {formatMoney(b.avance, 'MXN')}
                 </p>
+                <div className="space-y-0.5">
+                  {cuotaCompartida > 0 && (
+                    <p className="text-[10px] text-cyan-300/80 tabular-nums">
+                      ⚖ {formatMoney(cuotaCompartida, 'MXN')} cuota compartida
+                    </p>
+                  )}
+                  {personalSolo > 0 && (
+                    <p className="text-[10px] text-purple-300/80 tabular-nums">
+                      👤 {formatMoney(personalSolo, 'MXN')} personal directo
+                    </p>
+                  )}
+                </div>
                 {b.avancePrev > 0 && (
                   <p className="text-[10px] text-zinc-500">
                     período anterior: {formatMoney(b.avancePrev, 'MXN')}
@@ -354,16 +401,18 @@ export default async function CasaPage(
       <section className="card border-cyan-500/30 bg-cyan-500/5 p-3 space-y-1">
         <div className="flex items-center justify-between">
           <p className="label-caps text-cyan-300 inline-flex items-center gap-1.5">
-            ⚖ Gasto compartido (operativo)
+            ⚖ Gasto compartido (se reparte 50/50)
           </p>
-          <span className="text-[10px] text-zinc-500">no se deduce a nadie</span>
+          <span className="text-[10px] text-zinc-500">{sociosFiltered.length} socios</span>
         </div>
         <p className="text-xl font-black tabular-nums text-cyan-200">
           {formatMoney(actual.compartido, 'MXN')}
         </p>
-        <p className="text-[10px] text-zinc-400">
-          Renta, luz, internet, despensa compartida — la sociedad lo absorbe como gasto operativo.
-        </p>
+        {sociosFiltered.length > 0 && (
+          <p className="text-[10px] text-zinc-400">
+            Cada socio carga {formatMoney(actual.compartido / sociosFiltered.length, 'MXN')} como avance personal.
+          </p>
+        )}
       </section>
 
       {/* Recomendaciones */}
@@ -450,43 +499,22 @@ export default async function CasaPage(
         <CategoriasList data={topCats} />
       )}
 
-      {/* Últimas tx */}
+      {/* Últimas tx — agrupadas por día */}
       <section className="space-y-2">
         <div className="flex items-center justify-between px-1">
           <h2 className="label-caps">
-            {vista === 'todo' ? 'Últimas' :
+            {vista === 'todo' ? 'Últimas por día' :
              vista === 'compartido' ? 'Últimas compartidas' :
              `Últimas de ${sociosFiltered.find((s) => s.id === vista)?.nombre ?? '—'}`}
           </h2>
           <Link href={`/transacciones?negocio=${casa.id}`} className="text-xs text-cyan-400 font-semibold">Ver todas →</Link>
         </div>
         {rowsFiltered.length > 0 ? (
-          <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
-            {rowsFiltered.map((u) => {
-              const isGasto = u.tipo === 'gasto' || u.tipo === 'multa_interna'
-              const atribuidoSocio = u.atribuido_a ? sociosFiltered.find((s) => s.id === u.atribuido_a) : null
-              return (
-                <li key={u.id}>
-                  <Link href={`/transacciones/${u.id}`} className="flex items-center gap-3 p-3 hover:bg-white/5 transition-colors">
-                    <div className="flex-1 min-w-0 leading-tight">
-                      <p className="text-sm font-semibold truncate text-zinc-100">{u.concepto || u.categoria || 'Sin concepto'}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span className="text-[10px] text-zinc-500">{formatearFecha(u.fecha, 'dd MMM')}</span>
-                        {atribuidoSocio ? (
-                          <span className="chip text-[9px] h-4 px-1.5 chip-purple">Avance {atribuidoSocio.nombre}</span>
-                        ) : (
-                          <span className="chip text-[9px] h-4 px-1.5 chip-cyan">⚖ Compartido</span>
-                        )}
-                      </div>
-                    </div>
-                    <p className={cn('text-sm font-bold tabular-nums', isGasto ? 'text-rose-400' : 'text-emerald-400')}>
-                      {isGasto ? '−' : '+'}{formatMoney(Number(u.monto), u.moneda as 'MXN' | 'USD')}
-                    </p>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
+          <DiaGroups
+            rows={rowsFiltered}
+            sociosFiltered={sociosFiltered}
+            fxRate={fxRate}
+          />
         ) : (
           <EmptyState
             emoji="🏠"
@@ -496,6 +524,100 @@ export default async function CasaPage(
           />
         )}
       </section>
+    </div>
+  )
+}
+
+// ============================================================
+// Agrupador por día
+// ============================================================
+type DiaGroupTx = {
+  id: string
+  tipo: string
+  monto: number
+  moneda: string
+  fecha: string
+  categoria: string | null
+  concepto: string | null
+  capturado_por: string | null
+  monto_mxn_equivalente: number | null
+  atribuido_a?: string | null
+}
+
+function DiaGroups({
+  rows,
+  sociosFiltered,
+  fxRate,
+}: {
+  rows: DiaGroupTx[]
+  sociosFiltered: Array<{ id: string; nombre: string }>
+  fxRate: number | null
+}) {
+  // Agrupar por fecha (YYYY-MM-DD)
+  const byDate = new Map<string, DiaGroupTx[]>()
+  for (const r of rows) {
+    if (!byDate.has(r.fecha)) byDate.set(r.fecha, [])
+    byDate.get(r.fecha)!.push(r)
+  }
+  const fechasOrdenadas = Array.from(byDate.keys()).sort((a, b) => b.localeCompare(a))
+
+  function eqMxn(t: DiaGroupTx): number {
+    if (t.monto_mxn_equivalente != null) return Number(t.monto_mxn_equivalente)
+    if (t.moneda === 'MXN') return Number(t.monto)
+    if (t.moneda === 'USD' && fxRate) return Number(t.monto) * fxRate
+    return 0
+  }
+
+  return (
+    <div className="space-y-3">
+      {fechasOrdenadas.map((fecha) => {
+        const items = byDate.get(fecha)!
+        const subtotal = items.reduce((acc, t) => {
+          if (t.tipo === 'gasto' || t.tipo === 'multa_interna') return acc + eqMxn(t)
+          return acc
+        }, 0)
+        return (
+          <div key={fecha} className="space-y-1.5">
+            <div className="flex items-center justify-between px-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                {formatearFecha(fecha, 'EEEE dd MMM')}
+              </p>
+              <p className="text-[10px] tabular-nums text-rose-300/80 font-bold">
+                {formatMoney(subtotal, 'MXN')}
+              </p>
+            </div>
+            <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
+              {items.map((u) => {
+                const isGasto = u.tipo === 'gasto' || u.tipo === 'multa_interna'
+                const atribuidoSocio = u.atribuido_a ? sociosFiltered.find((s) => s.id === u.atribuido_a) : null
+                const eq = eqMxn(u)
+                return (
+                  <li key={u.id}>
+                    <Link href={`/transacciones/${u.id}`} className="flex items-center gap-3 p-3 hover:bg-white/5 transition-colors">
+                      <div className="flex-1 min-w-0 leading-tight">
+                        <p className="text-sm font-semibold truncate text-zinc-100">{u.concepto || u.categoria || 'Sin concepto'}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          {atribuidoSocio ? (
+                            <span className="chip text-[9px] h-4 px-1.5 chip-purple">Avance {atribuidoSocio.nombre}</span>
+                          ) : (
+                            <span className="chip text-[9px] h-4 px-1.5 chip-cyan">⚖ Compartido 50/50</span>
+                          )}
+                          {u.moneda === 'USD' && (
+                            <span className="text-[9px] text-zinc-500 tabular-nums">≈ {formatMoney(eq, 'MXN')}</span>
+                          )}
+                        </div>
+                      </div>
+                      <p className={cn('text-sm font-bold tabular-nums', isGasto ? 'text-rose-400' : 'text-emerald-400')}>
+                        {isGasto ? '−' : '+'}{formatMoney(Number(u.monto), u.moneda as 'MXN' | 'USD')}
+                      </p>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )
+      })}
     </div>
   )
 }
