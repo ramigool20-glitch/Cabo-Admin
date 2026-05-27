@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowDownCircle, ArrowUpCircle, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney } from '@/lib/utils'
 import { formatearFecha } from '@/lib/fechas'
 import { isRangoId, rangoFechas, type RangoId } from '@/lib/rangos'
@@ -32,6 +33,17 @@ export default async function DetalleNegocioPage(
   const esPagina = negocio.tipo === 'pagina_digital'
   const monedaNeg = negocio.moneda_principal as 'MXN' | 'USD'
 
+  const admin = createAdminClient()
+
+  // Fetch FX rate más reciente para conversiones
+  const { data: fxLatest } = await admin
+    .from('fx_rates')
+    .select('rate_compra')
+    .order('fecha', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
+
   const [
     { data: transacciones },
     { data: ultimas },
@@ -40,13 +52,13 @@ export default async function DetalleNegocioPage(
   ] = await Promise.all([
     supabase
       .from('transacciones')
-      .select('tipo, monto, moneda, fecha, categoria, negocio_id')
+      .select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente, tipo_cambio_usado')
       .eq('negocio_id', id)
       .gte('fecha', r.desde)
       .lte('fecha', r.hasta),
     supabase
       .from('transacciones')
-      .select('id, tipo, monto, moneda, fecha, concepto')
+      .select('id, tipo, monto, moneda, fecha, concepto, monto_mxn_equivalente, tipo_cambio_usado')
       .eq('negocio_id', id)
       .order('created_at', { ascending: false })
       .limit(10),
@@ -71,7 +83,7 @@ export default async function DetalleNegocioPage(
   const t = totalizar(transacciones ?? [])
   const topCats = porCategoria(transacciones ?? [])
   const metricas = esPagina
-    ? calcularMetricas({ ventas: ventas ?? [], gastos_ads: gastos_ads ?? [] })
+    ? calcularMetricas({ ventas: ventas ?? [], gastos_ads: gastos_ads ?? [], fxRate })
     : null
 
   return (
@@ -104,32 +116,34 @@ export default async function DetalleNegocioPage(
         <RangoSelector actual={rangoId} customDesde={sp.desde} customHasta={sp.hasta} />
       </header>
 
-      {/* Utilidad principal */}
+      {/* Utilidad principal — usa totales en MXN (incluyen USD convertidos) */}
       <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-1">
         <div className="flex items-center gap-1.5 text-zinc-400">
           <TrendingUp className="h-4 w-4" />
           <span className="text-xs font-medium uppercase tracking-wide">Utilidad · {r.label}</span>
         </div>
-        <p className={`text-3xl font-bold tabular-nums ${t.utilidad_mxn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-          {t.utilidad_mxn >= 0 ? '+' : ''}{formatMoney(t.utilidad_mxn, 'MXN')}
+        <p className={`text-3xl font-bold tabular-nums ${t.utilidad_total_mxn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+          {t.utilidad_total_mxn >= 0 ? '+' : ''}{formatMoney(t.utilidad_total_mxn, 'MXN')}
         </p>
         {(t.ingresos_usd > 0 || t.gastos_usd > 0) && (
-          <p className={`text-sm font-semibold tabular-nums ${t.utilidad_usd >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-            {t.utilidad_usd >= 0 ? '+' : ''}{formatMoney(t.utilidad_usd, 'USD')}
+          <p className="text-[11px] text-zinc-500">
+            Incluye {t.ingresos_usd > 0 && `${formatMoney(t.ingresos_usd, 'USD')} ingresos`}
+            {t.gastos_usd > 0 && t.ingresos_usd > 0 && ' y '}
+            {t.gastos_usd > 0 && `${formatMoney(t.gastos_usd, 'USD')} gastos`} convertidos al rate del día
           </p>
         )}
       </div>
 
-      {/* Ingresos / Gastos */}
+      {/* Ingresos / Gastos (totales en MXN incluyen USD convertidos) */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-1">
           <div className="flex items-center gap-1.5 text-emerald-600">
             <ArrowUpCircle className="h-4 w-4" />
             <span className="text-xs font-medium">Ingresos</span>
           </div>
-          <p className="text-xl font-bold tabular-nums">{formatMoney(t.ingresos_mxn, 'MXN')}</p>
+          <p className="text-xl font-bold tabular-nums">{formatMoney(t.ingresos_total_mxn, 'MXN')}</p>
           {t.ingresos_usd > 0 && (
-            <p className="text-xs text-zinc-500 tabular-nums">+ {formatMoney(t.ingresos_usd, 'USD')}</p>
+            <p className="text-[10px] text-zinc-500 tabular-nums">incl. {formatMoney(t.ingresos_usd, 'USD')}</p>
           )}
         </div>
         <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-1">
@@ -137,9 +151,9 @@ export default async function DetalleNegocioPage(
             <ArrowDownCircle className="h-4 w-4" />
             <span className="text-xs font-medium">Gastos</span>
           </div>
-          <p className="text-xl font-bold tabular-nums">{formatMoney(t.gastos_mxn, 'MXN')}</p>
+          <p className="text-xl font-bold tabular-nums">{formatMoney(t.gastos_total_mxn, 'MXN')}</p>
           {t.gastos_usd > 0 && (
-            <p className="text-xs text-zinc-500 tabular-nums">+ {formatMoney(t.gastos_usd, 'USD')}</p>
+            <p className="text-[10px] text-zinc-500 tabular-nums">incl. {formatMoney(t.gastos_usd, 'USD')}</p>
           )}
         </div>
       </div>
@@ -158,6 +172,9 @@ export default async function DetalleNegocioPage(
             {ultimas.map((u) => {
               const isGasto = u.tipo === 'gasto' || u.tipo === 'multa_interna'
               const editable = u.tipo === 'ingreso' || u.tipo === 'gasto'
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const uAny = u as any
+              const mxnEq = uAny.monto_mxn_equivalente as number | null | undefined
               return (
                 <li key={u.id}>
                   <Link
@@ -168,9 +185,16 @@ export default async function DetalleNegocioPage(
                       <p className="text-sm font-medium truncate">{u.concepto || 'Sin concepto'}</p>
                       <p className="text-xs text-zinc-500">{formatearFecha(u.fecha, 'dd MMM yyyy')}</p>
                     </div>
-                    <p className={`text-sm font-semibold tabular-nums ${isGasto ? 'text-red-600' : 'text-emerald-600'}`}>
-                      {isGasto ? '−' : '+'}{formatMoney(Number(u.monto), u.moneda as 'MXN' | 'USD')}
-                    </p>
+                    <div className="text-right shrink-0">
+                      <p className={`text-sm font-semibold tabular-nums ${isGasto ? 'text-red-600' : 'text-emerald-600'}`}>
+                        {isGasto ? '−' : '+'}{formatMoney(Number(u.monto), u.moneda as 'MXN' | 'USD')}
+                      </p>
+                      {u.moneda === 'USD' && mxnEq != null ? (
+                        <p className="text-[10px] text-zinc-500 tabular-nums">≈ {formatMoney(Number(mxnEq), 'MXN')}</p>
+                      ) : (
+                        <p className="text-[10px] text-zinc-400 uppercase">{u.moneda}</p>
+                      )}
+                    </div>
                     {editable && <ChevronRight className="h-4 w-4 text-zinc-300" />}
                   </Link>
                 </li>

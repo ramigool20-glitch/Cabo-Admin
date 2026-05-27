@@ -2,7 +2,11 @@ import { TrendingUp, ShoppingCart, Target, BadgePercent } from 'lucide-react'
 import { formatMoney } from '@/lib/utils'
 import type { MetricasPagina } from '@/lib/roas'
 
-export function RoasCard({ m, moneda = 'MXN' }: { m: MetricasPagina; moneda?: 'MXN' | 'USD' }) {
+/**
+ * RoasCard ahora muestra TODO en MXN. Las USD se convirtieron al rate del día
+ * en lib/roas.ts. Si hay ventas USD, mostramos breakdown abajo informativo.
+ */
+export function RoasCard({ m }: { m: MetricasPagina; moneda?: 'MXN' | 'USD' }) {
   return (
     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -21,23 +25,30 @@ export function RoasCard({ m, moneda = 'MXN' }: { m: MetricasPagina; moneda?: 'M
           color="text-blue-600"
           label="Margen real"
           value={m.margen_pct === null ? '—' : `${(m.margen_pct * 100).toFixed(1)}%`}
-          hint={formatMoney(m.margen_real, moneda)}
+          hint={formatMoney(m.margen_real, 'MXN')}
         />
         <Metric
           icon={ShoppingCart}
           color="text-purple-600"
           label="Ventas"
-          value={formatMoney(m.ventas, moneda)}
+          value={formatMoney(m.ventas, 'MXN')}
           hint={`${m.num_ventas} ${m.num_ventas === 1 ? 'venta' : 'ventas'}`}
         />
         <Metric
           icon={TrendingUp}
           color="text-amber-600"
           label="Costo / venta"
-          value={m.costo_por_venta === null ? '—' : formatMoney(m.costo_por_venta, moneda)}
-          hint={`Ads: ${formatMoney(m.gasto_ads, moneda)}`}
+          value={m.costo_por_venta === null ? '—' : formatMoney(m.costo_por_venta, 'MXN')}
+          hint={`Ads: ${formatMoney(m.gasto_ads, 'MXN')}`}
         />
       </div>
+      {(m.ventas_usd > 0 || m.ventas_mxn > 0) && (m.ventas_usd > 0 && m.ventas_mxn > 0 ? true : m.ventas_usd > 0) && (
+        <p className="text-[10px] text-zinc-500 text-center">
+          {m.ventas_usd > 0 && <>Ventas USD originales: {formatMoney(m.ventas_usd, 'USD')}</>}
+          {m.ventas_usd > 0 && m.ventas_mxn > 0 && <> · </>}
+          {m.ventas_mxn > 0 && m.ventas_usd > 0 && <>MXN: {formatMoney(m.ventas_mxn, 'MXN')}</>}
+        </p>
+      )}
     </div>
   )
 }
