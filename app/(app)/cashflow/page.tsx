@@ -1,4 +1,5 @@
-import { TrendingUp, TrendingDown, AlertCircle, Calendar, Users, CreditCard, Lock, Wallet } from 'lucide-react'
+import Link from 'next/link'
+import { TrendingUp, TrendingDown, AlertCircle, Calendar, Users, CreditCard, Lock, Wallet, ChevronRight, Clock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney, cn } from '@/lib/utils'
@@ -22,6 +23,8 @@ export default async function CashFlowPage() {
     { data: porPagar },
     { data: empleados },
     { data: fxLatest },
+    { data: porCobrar },
+    { data: eventosPend },
   ] = await Promise.all([
     // Cuentas con campos de saldo inicial (defensivo si migración 0021 no aplicada)
     admin.from('cuentas')
@@ -36,6 +39,10 @@ export default async function CashFlowPage() {
     admin.from('cuentas_por_pagar').select('proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').neq('estado', 'cancelado').neq('estado', 'pagado'),
     admin.from('empleados').select('nombre, empleado_compensacion(sueldo_base, moneda, frecuencia_pago)').eq('activo', true),
     admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+    // Por cobrar manuales
+    admin.from('cuentas_por_cobrar').select('monto_total, monto_cobrado, moneda, fecha_vencimiento, estado').neq('estado', 'cancelado').neq('estado', 'cobrado'),
+    // Eventos del Rancho pendientes
+    admin.from('eventos').select('monto_total, moneda, fecha_evento, estado, eventos_pagos(monto)').in('estado', ['reservado', 'confirmado']),
   ])
 
   const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
@@ -76,6 +83,32 @@ export default async function CashFlowPage() {
 
   const disponibleProyectado = saldos.total_mxn - obligacionesTotalMxn
 
+  // POR COBRAR (manuales + eventos)
+  const porCobrarMxn = (porCobrar ?? []).reduce((s, c) => c.moneda === 'MXN' ? s + (Number(c.monto_total) - Number(c.monto_cobrado)) : s, 0)
+  let porCobrarUsd = (porCobrar ?? []).reduce((s, c) => c.moneda === 'USD' ? s + (Number(c.monto_total) - Number(c.monto_cobrado)) : s, 0)
+  let eventosPorCobrarMxn = 0
+  for (const e of eventosPend ?? []) {
+    const pagos = (e.eventos_pagos as Array<{ monto: number }>) ?? []
+    const cobrado = pagos.reduce((sum, p) => sum + Number(p.monto), 0)
+    const pend = Number(e.monto_total) - cobrado
+    if (pend <= 0.01) continue
+    if (e.moneda === 'USD') porCobrarUsd += pend
+    else eventosPorCobrarMxn += pend
+  }
+  const porCobrarTotalMxn = porCobrarMxn + eventosPorCobrarMxn + porCobrarUsd * (fxRate ?? 17)
+
+  // POR PAGAR equivalente total
+  const porPagarTotalMxn = totalPorPagarMXN + totalPorPagarUSD * (fxRate ?? 17)
+
+  // Neto si todo entra/sale (saldo + por cobrar - por pagar - gastos fijos - nómina)
+  const netoFinal = saldos.total_mxn + porCobrarTotalMxn - obligacionesTotalMxn
+
+  // Runway: cuántos días dura el saldo al ritmo de gasto mensual
+  const gastoMensualEstimado = obligacionesMXN + obligacionesUSD * (fxRate ?? 17)
+  const runwayDias = gastoMensualEstimado > 0
+    ? Math.floor((saldos.total_mxn / gastoMensualEstimado) * 30)
+    : null
+
   const sinCapturar = saldos.por_cuenta.filter((c) => !c.locked)
   const capturadas = saldos.por_cuenta.filter((c) => c.locked)
 
@@ -115,7 +148,50 @@ export default async function CashFlowPage() {
         </p>
       </section>
 
-      {/* Proyección */}
+      {/* Por Cobrar ↔ Por Pagar mini cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <Link
+          href="/por-cobrar"
+          className="card p-3 hover:bg-[var(--bg-card-hover)] transition-colors space-y-1 border-emerald-500/30"
+        >
+          <div className="flex items-center justify-between">
+            <span className="label-caps text-emerald-400 inline-flex items-center gap-1">
+              <TrendingUp className="h-3 w-3" />
+              Por cobrar
+            </span>
+            <ChevronRight className="h-3 w-3 text-zinc-500" />
+          </div>
+          <p className="text-lg font-black tabular-nums text-emerald-300">
+            {formatMoney(porCobrarTotalMxn, 'MXN')}
+          </p>
+          <div className="flex flex-wrap gap-1 text-[9px] text-zinc-500 tabular-nums">
+            {(porCobrarMxn + eventosPorCobrarMxn) > 0 && <span>{formatMoney(porCobrarMxn + eventosPorCobrarMxn, 'MXN')}</span>}
+            {porCobrarUsd > 0 && <span>+ {formatMoney(porCobrarUsd, 'USD')}</span>}
+          </div>
+        </Link>
+
+        <Link
+          href="/por-pagar"
+          className="card p-3 hover:bg-[var(--bg-card-hover)] transition-colors space-y-1 border-rose-500/30"
+        >
+          <div className="flex items-center justify-between">
+            <span className="label-caps text-rose-400 inline-flex items-center gap-1">
+              <TrendingDown className="h-3 w-3" />
+              Por pagar
+            </span>
+            <ChevronRight className="h-3 w-3 text-zinc-500" />
+          </div>
+          <p className="text-lg font-black tabular-nums text-rose-300">
+            {formatMoney(porPagarTotalMxn, 'MXN')}
+          </p>
+          <div className="flex flex-wrap gap-1 text-[9px] text-zinc-500 tabular-nums">
+            {totalPorPagarMXN > 0 && <span>{formatMoney(totalPorPagarMXN, 'MXN')}</span>}
+            {totalPorPagarUSD > 0 && <span>+ {formatMoney(totalPorPagarUSD, 'USD')}</span>}
+          </div>
+        </Link>
+      </div>
+
+      {/* Proyección — saldo - obligaciones */}
       <section className={cn(
         'card p-4 space-y-1',
         disponibleProyectado >= 0 ? 'border-emerald-500/40' : 'border-rose-500/40'
@@ -137,6 +213,35 @@ export default async function CashFlowPage() {
         <p className="text-[10px] text-zinc-500">
           Saldo total − obligaciones del mes ({formatMoney(obligacionesTotalMxn, 'MXN')})
         </p>
+      </section>
+
+      {/* Neto final: saldo + por cobrar - por pagar */}
+      <section className={cn(
+        'card-glow p-4 space-y-1',
+        netoFinal >= 0 ? 'border-cyan-500/40' : 'border-amber-500/40'
+      )}>
+        <div className="flex items-center gap-2">
+          <Wallet className="h-4 w-4 text-cyan-400" />
+          <span className="label-caps">Neto final (si cobras todo + pagas todo)</span>
+        </div>
+        <p className={cn(
+          'text-2xl font-black tabular-nums',
+          netoFinal >= 0 ? 'text-cyan-300' : 'text-amber-300'
+        )}>
+          {netoFinal >= 0 ? '+' : ''}{formatMoney(netoFinal, 'MXN')}
+        </p>
+        <p className="text-[10px] text-zinc-500">
+          {formatMoney(saldos.total_mxn, 'MXN')} saldo + {formatMoney(porCobrarTotalMxn, 'MXN')} cobros − {formatMoney(obligacionesTotalMxn, 'MXN')} obligaciones
+        </p>
+        {runwayDias !== null && runwayDias < 90 && (
+          <p className={cn(
+            'text-[10px] inline-flex items-center gap-1 mt-1',
+            runwayDias < 30 ? 'text-rose-400' : runwayDias < 60 ? 'text-amber-400' : 'text-zinc-500'
+          )}>
+            <Clock className="h-2.5 w-2.5" />
+            Runway: el saldo dura ~{runwayDias} días al ritmo actual ({formatMoney(gastoMensualEstimado, 'MXN')}/mes)
+          </p>
+        )}
       </section>
 
       {/* Pendientes de capturar saldo inicial */}
