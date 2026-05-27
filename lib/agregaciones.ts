@@ -22,18 +22,22 @@ export type Totales = {
   utilidad_total_mxn: number
 }
 
-function equivMxn(r: TxRow, monto: number): number {
+function equivMxn(r: TxRow, monto: number, fxFallback?: number | null): number {
   if (r.monto_mxn_equivalente != null) return Number(r.monto_mxn_equivalente)
   if (r.moneda === 'MXN') return monto
-  // Fallback si la tx vieja no tiene equivalente: 0 (no contamina los totales en MXN)
+  // Si es USD sin equivalente persistido, convertimos al vuelo con el rate fallback
+  if (r.moneda === 'USD' && fxFallback && fxFallback > 0) {
+    return Number((monto * fxFallback).toFixed(2))
+  }
+  // Último recurso: 0 para no contaminar los totales
   return 0
 }
 
-export function totalizar(rows: TxRow[]): Totales {
+export function totalizar(rows: TxRow[], fxFallback?: number | null): Totales {
   const t = rows.reduce(
     (acc, r) => {
       const monto = Number(r.monto) || 0
-      const equiv = equivMxn(r, monto)
+      const equiv = equivMxn(r, monto, fxFallback)
       const esUsd = r.moneda === 'USD'
       if (r.tipo === 'ingreso') {
         if (esUsd) acc.ingresos_usd += monto
@@ -60,12 +64,12 @@ export function totalizar(rows: TxRow[]): Totales {
   }
 }
 
-export function porDia(rows: TxRow[]): Array<{ fecha: string; ingresos: number; gastos: number; utilidad: number }> {
+export function porDia(rows: TxRow[], fxFallback?: number | null): Array<{ fecha: string; ingresos: number; gastos: number; utilidad: number }> {
   const m = new Map<string, { ingresos: number; gastos: number }>()
   for (const r of rows) {
     // Usamos equivalente MXN, así USD también entra a la gráfica
     const monto = Number(r.monto) || 0
-    const equiv = equivMxn(r, monto)
+    const equiv = equivMxn(r, monto, fxFallback)
     if (equiv === 0 && r.moneda === 'USD') continue
     const entry = m.get(r.fecha) ?? { ingresos: 0, gastos: 0 }
     if (r.tipo === 'ingreso') entry.ingresos += equiv
@@ -84,13 +88,14 @@ export function porDia(rows: TxRow[]): Array<{ fecha: string; ingresos: number; 
 
 export function porNegocio(
   rows: TxRow[],
-  negocios: Array<{ id: string; nombre: string }>
+  negocios: Array<{ id: string; nombre: string }>,
+  fxFallback?: number | null
 ): Array<{ nombre: string; ingresos: number; gastos: number }> {
   const m = new Map<string, { ingresos: number; gastos: number }>()
   for (const r of rows) {
     if (!r.negocio_id) continue
     const monto = Number(r.monto) || 0
-    const equiv = equivMxn(r, monto)
+    const equiv = equivMxn(r, monto, fxFallback)
     if (equiv === 0 && r.moneda === 'USD') continue
     const entry = m.get(r.negocio_id) ?? { ingresos: 0, gastos: 0 }
     if (r.tipo === 'ingreso') entry.ingresos += equiv
@@ -107,13 +112,13 @@ export function porNegocio(
     .sort((a, b) => b.ingresos + b.gastos - (a.ingresos + a.gastos))
 }
 
-export function porCategoria(rows: TxRow[], topN = 6) {
+export function porCategoria(rows: TxRow[], topN = 6, fxFallback?: number | null) {
   const m = new Map<string, number>()
   let total = 0
   for (const r of rows) {
     if (r.tipo !== 'gasto') continue
     const monto = Number(r.monto) || 0
-    const equiv = equivMxn(r, monto)
+    const equiv = equivMxn(r, monto, fxFallback)
     if (equiv === 0 && r.moneda === 'USD') continue
     const cat = (r.categoria ?? 'sin categoría').toLowerCase()
     m.set(cat, (m.get(cat) ?? 0) + equiv)

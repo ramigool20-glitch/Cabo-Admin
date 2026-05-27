@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowDownCircle, ArrowUpCircle, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, ChevronLeft, ChevronRight, Megaphone, ShoppingBag, TrendingUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney } from '@/lib/utils'
@@ -11,8 +11,6 @@ import { calcularMetricas } from '@/lib/roas'
 import { RangoSelector } from '@/components/dashboard/rango-selector'
 import { CategoriasList } from '@/components/dashboard/categorias-list'
 import { RoasCard } from '@/components/negocios/roas-card'
-import { VentaQuickForm } from '@/components/negocios/venta-quick-form'
-import { GastoAdQuickForm } from '@/components/negocios/gasto-ad-quick-form'
 
 export default async function DetalleNegocioPage(
   props: { params: Promise<{ id: string }>; searchParams: Promise<{ rango?: string; desde?: string; hasta?: string }> }
@@ -51,6 +49,8 @@ export default async function DetalleNegocioPage(
     { data: ultimas },
     { data: ventas },
     { data: gastos_ads },
+    { count: ventasCount },
+    { count: adsCount },
   ] = await Promise.all([
     supabase
       .from('transacciones')
@@ -80,10 +80,16 @@ export default async function DetalleNegocioPage(
           .gte('fecha', r.desde)
           .lte('fecha', r.hasta)
       : Promise.resolve({ data: [] }),
+    esPagina
+      ? supabase.from('ventas').select('id', { count: 'exact', head: true }).eq('negocio_id', id)
+      : Promise.resolve({ count: 0 }),
+    esPagina
+      ? supabase.from('gastos_ads').select('id', { count: 'exact', head: true }).eq('negocio_id', id)
+      : Promise.resolve({ count: 0 }),
   ])
 
-  const t = totalizar(transacciones ?? [])
-  const topCats = porCategoria(transacciones ?? [])
+  const t = totalizar(transacciones ?? [], fxRate)
+  const topCats = porCategoria(transacciones ?? [], 6, fxRate)
   const metricas = esPagina
     ? calcularMetricas({ ventas: ventas ?? [], gastos_ads: gastos_ads ?? [], fxRate })
     : null
@@ -163,11 +169,38 @@ export default async function DetalleNegocioPage(
       {/* Métricas página digital (ROAS) */}
       {metricas && <RoasCard m={metricas} moneda={monedaNeg} />}
 
-      {/* Forms rápidos solo para páginas digitales */}
+      {/* Botones de Ventas + Ads para páginas digitales — abren historial + alta */}
       {esPagina && (
-        <div className="space-y-2">
-          <VentaQuickForm negocioId={id} defaultMoneda={monedaNeg} />
-          <GastoAdQuickForm negocioId={id} />
+        <div className="grid grid-cols-2 gap-3">
+          <Link
+            href={`/negocios/${id}/ventas`}
+            className="rounded-2xl border border-purple-500/40 bg-gradient-to-br from-purple-500/10 to-purple-700/5 p-4 active:scale-[0.98] transition-transform"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="h-9 w-9 rounded-lg inline-flex items-center justify-center bg-purple-500/20 border border-purple-500/40">
+                <ShoppingBag className="h-4 w-4 text-purple-300" />
+              </span>
+              <ChevronRight className="h-4 w-4 text-purple-300/60" />
+            </div>
+            <p className="text-xs text-purple-300/80 font-medium uppercase tracking-wider">Ventas</p>
+            <p className="text-2xl font-bold text-white tabular-nums">{ventasCount ?? 0}</p>
+            <p className="text-[10px] text-zinc-500">Historial + agregar</p>
+          </Link>
+
+          <Link
+            href={`/negocios/${id}/ads`}
+            className="rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-500/10 to-amber-700/5 p-4 active:scale-[0.98] transition-transform"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="h-9 w-9 rounded-lg inline-flex items-center justify-center bg-amber-500/20 border border-amber-500/40">
+                <Megaphone className="h-4 w-4 text-amber-300" />
+              </span>
+              <ChevronRight className="h-4 w-4 text-amber-300/60" />
+            </div>
+            <p className="text-xs text-amber-300/80 font-medium uppercase tracking-wider">Ads</p>
+            <p className="text-2xl font-bold text-white tabular-nums">{adsCount ?? 0}</p>
+            <p className="text-[10px] text-zinc-500">Historial + agregar</p>
+          </Link>
         </div>
       )}
 
