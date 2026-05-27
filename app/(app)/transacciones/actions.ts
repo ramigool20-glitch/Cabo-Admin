@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { flashOk } from '@/lib/flash'
 import { aMxnEquivalente } from '@/lib/fx/server'
+import { registrarHistorial } from '@/lib/historial'
 
 const TransaccionSchema = z.object({
   tipo: z.enum(['ingreso', 'gasto']),
@@ -63,15 +64,26 @@ export async function createTransaccion(
   // Calcular equivalente en MXN según el tipo de cambio del día de la transacción
   const fx = await aMxnEquivalente(parsed.data.monto, parsed.data.moneda, parsed.data.fecha)
 
-  const { error } = await supabase.from('transacciones').insert({
+  const insertData = {
     ...parsed.data,
     monto_mxn_equivalente: fx.monto_mxn_equivalente,
     tipo_cambio_usado: fx.tipo_cambio_usado,
-    metodo_captura: 'manual',
+    metodo_captura: 'manual' as const,
     capturado_por: user.id,
-  })
+  }
+
+  const { data: nuevaTx, error } = await supabase
+    .from('transacciones')
+    .insert(insertData)
+    .select('id')
+    .single()
 
   if (error) return { error: error.message }
+
+  // Registrar en historial
+  if (nuevaTx?.id) {
+    await registrarHistorial(nuevaTx.id, 'creada', user.id, null, insertData)
+  }
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
@@ -89,25 +101,49 @@ export async function updateTransaccion(
   }
 
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' }
+
+  // Estado actual (para diff)
+  const { data: antes } = await supabase
+    .from('transacciones')
+    .select('tipo, monto, moneda, fecha, concepto, categoria, metodo_pago, notas, negocio_id, cuenta_id, atribuido_a, monto_mxn_equivalente, tipo_cambio_usado')
+    .eq('id', id)
+    .maybeSingle()
 
   // Recalcular equivalente MXN porque pudo haber cambiado monto/moneda/fecha
   const fx = await aMxnEquivalente(parsed.data.monto, parsed.data.moneda, parsed.data.fecha)
 
-  const { error } = await supabase.from('transacciones').update({
+  const updateData = {
     ...parsed.data,
     monto_mxn_equivalente: fx.monto_mxn_equivalente,
     tipo_cambio_usado: fx.tipo_cambio_usado,
-  }).eq('id', id)
+  }
+
+  const { error } = await supabase.from('transacciones').update(updateData).eq('id', id)
 
   if (error) return { error: error.message }
 
+  // Registrar en historial
+  await registrarHistorial(id, 'editada', user.id, antes ?? null, updateData)
+
   revalidatePath('/transacciones')
+  revalidatePath(`/transacciones/${id}`)
   revalidatePath('/dashboard')
-  flashOk('/transacciones', 'tx_actualizada')
+  flashOk(`/transacciones/${id}`, 'tx_actualizada')
 }
 
 export async function deleteTransaccion(id: string) {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' }
+
+  // Snapshot antes de borrar (para historial)
+  const { data: antes } = await supabase
+    .from('transacciones')
+    .select('tipo, monto, moneda, fecha, concepto, categoria, metodo_pago, notas, negocio_id, cuenta_id, atribuido_a, monto_mxn_equivalente, tipo_cambio_usado')
+    .eq('id', id)
+    .maybeSingle()
 
   // Limpiar todas las FKs antes de borrar la transacción
   await Promise.all([
@@ -118,6 +154,11 @@ export async function deleteTransaccion(id: string) {
     supabase.from('eventos_pagos').update({ transaccion_id: null }).eq('transaccion_id', id),
     supabase.from('multas').update({ transaccion_id: null }).eq('transaccion_id', id),
   ])
+
+  // Registrar en historial ANTES del delete (porque después la FK se rompe)
+  if (antes) {
+    await registrarHistorial(id, 'eliminada', user.id, antes, null)
+  }
 
   const { error } = await supabase.from('transacciones').delete().eq('id', id)
   if (error) return { error: error.message }

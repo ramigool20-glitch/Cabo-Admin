@@ -169,24 +169,34 @@ export function TransactionForm({
 
       {/* Negocio */}
       <div className="space-y-2">
-        <label className="text-sm font-medium">Negocio</label>
+        <label className="text-sm font-medium inline-flex items-center gap-2">
+          Negocio
+          {esCasa && <span className="chip chip-purple text-[9px] h-4 px-1.5">🏠 con atribución</span>}
+        </label>
         <input type="hidden" name="negocio_id" value={negocioId} />
         <div className="flex flex-wrap gap-1.5">
-          {negocios.map((n) => (
-            <button
-              key={n.id}
-              type="button"
-              onClick={() => setNegocioId(n.id)}
-              className={cn(
-                'h-9 px-3 rounded-full text-sm border transition-colors',
-                negocioId === n.id
-                  ? 'border-emerald-600 bg-emerald-600 text-white'
-                  : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-300'
-              )}
-            >
-              {n.nombre}
-            </button>
-          ))}
+          {negocios.map((n) => {
+            const isCasaBtn = n.tipo === 'casa'
+            const active = negocioId === n.id
+            return (
+              <button
+                key={n.id}
+                type="button"
+                onClick={() => setNegocioId(n.id)}
+                className={cn(
+                  'h-9 px-3 rounded-full text-sm border transition-colors inline-flex items-center gap-1',
+                  active
+                    ? isCasaBtn
+                      ? 'border-purple-500 bg-purple-500 text-white shadow-lg shadow-purple-500/30'
+                      : 'border-emerald-600 bg-emerald-600 text-white'
+                    : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-300'
+                )}
+              >
+                {isCasaBtn && '🏠'}
+                {n.nombre}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -215,10 +225,11 @@ export function TransactionForm({
 
       {/* Atribución (solo cuando es Casa) */}
       {esCasa && socios.length > 0 && (
-        <div className="space-y-2">
+        <div className="card-glow border-purple-500/40 bg-purple-500/5 p-3 space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">¿Para quién es este gasto?</label>
-            <span className="chip chip-purple text-[9px] h-4 px-1.5">🏠 Casa</span>
+            <label className="text-sm font-bold text-purple-200 inline-flex items-center gap-1.5">
+              🏠 ¿Para quién es este gasto?
+            </label>
           </div>
           <input type="hidden" name="atribuido_a" value={atribuidoA} />
           <div className="grid grid-cols-3 gap-2">
@@ -226,13 +237,13 @@ export function TransactionForm({
               type="button"
               onClick={() => setAtribuidoA('')}
               className={cn(
-                'h-12 rounded-xl border text-xs font-bold transition-colors',
+                'h-14 rounded-xl border-2 text-xs font-bold transition-all',
                 atribuidoA === ''
-                  ? 'border-cyan-500 bg-cyan-500 text-white'
-                  : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400'
+                  ? 'border-cyan-400 bg-cyan-500 text-white shadow-lg shadow-cyan-500/30 scale-105'
+                  : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400 hover:border-cyan-500/50'
               )}
             >
-              <span className="block text-base">⚖️</span>
+              <span className="block text-xl">⚖️</span>
               <span className="block text-[10px] mt-0.5">Compartido</span>
             </button>
             {socios.map((s) => (
@@ -241,21 +252,21 @@ export function TransactionForm({
                 type="button"
                 onClick={() => setAtribuidoA(s.id)}
                 className={cn(
-                  'h-12 rounded-xl border text-xs font-bold transition-colors',
+                  'h-14 rounded-xl border-2 text-xs font-bold transition-all',
                   atribuidoA === s.id
-                    ? 'border-emerald-500 bg-emerald-500 text-white'
-                    : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400'
+                    ? 'border-emerald-400 bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 scale-105'
+                    : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400 hover:border-emerald-500/50'
                 )}
               >
-                <span className="block text-base">👤</span>
+                <span className="block text-xl">👤</span>
                 <span className="block text-[10px] mt-0.5 truncate">{s.nombre}</span>
               </button>
             ))}
           </div>
-          <p className="text-[10px] text-zinc-500 px-1">
+          <p className="text-[11px] text-purple-200/70 px-1">
             {atribuidoA === ''
-              ? 'Se divide 50/50 entre roomates'
-              : `Cuenta como gasto personal de ${socios.find((s) => s.id === atribuidoA)?.nombre ?? '—'}`}
+              ? '⚖ Se divide 50/50 entre roomates. Cada uno paga la mitad.'
+              : `👤 Cuenta como gasto personal de ${socios.find((s) => s.id === atribuidoA)?.nombre ?? '—'} (debe reembolsar a la sociedad).`}
           </p>
         </div>
       )}

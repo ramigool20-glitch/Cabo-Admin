@@ -1,9 +1,12 @@
 import Link from 'next/link'
-import { ChevronLeft, Pencil, Building, CreditCard, Calendar, Tag, FileText, ArrowUpCircle, ArrowDownCircle, DollarSign } from 'lucide-react'
+import { ChevronLeft, Pencil, Building, CreditCard, Calendar, Tag, FileText, ArrowUpCircle, ArrowDownCircle, DollarSign, History, Plus, Edit3, Trash2 as TrashIcon } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha } from '@/lib/fechas'
+import { TZ } from '@/lib/fechas'
+import { formatInTimeZone } from 'date-fns-tz'
 
 export default async function DetalleTransaccionPage(
   props: { params: Promise<{ id: string }> }
@@ -50,6 +53,34 @@ export default async function DetalleTransaccionPage(
       .eq('id', t.atribuido_a)
       .maybeSingle()
     atribuidoNombre = prof?.nombre ?? null
+  }
+
+  // Historial (defensive: tabla puede no existir si mig 0013 no aplicada)
+  const admin = createAdminClient()
+  const historialRes = await admin
+    .from('transaccion_historial')
+    .select('id, accion, cambios, modificada_por, created_at')
+    .eq('transaccion_id', id)
+    .order('created_at', { ascending: false })
+    .limit(20)
+
+  type HistEntry = {
+    id: string
+    accion: 'creada' | 'editada' | 'eliminada'
+    cambios: Record<string, { antes: unknown; despues: unknown }> | null
+    modificada_por: string | null
+    created_at: string
+    nombre?: string
+  }
+  let historial: HistEntry[] = (historialRes.data as HistEntry[] | null) ?? []
+  // Cargar nombres de quienes modificaron
+  if (historial.length > 0) {
+    const ids = Array.from(new Set(historial.map((h) => h.modificada_por).filter(Boolean) as string[]))
+    if (ids.length > 0) {
+      const { data: profs } = await admin.from('profiles').select('id, nombre').in('id', ids)
+      const nombrePorId = new Map((profs ?? []).map((p) => [p.id, p.nombre]))
+      historial = historial.map((h) => ({ ...h, nombre: h.modificada_por ? nombrePorId.get(h.modificada_por) ?? '—' : '—' }))
+    }
   }
 
   const isGasto = t.tipo === 'gasto' || t.tipo === 'multa_interna'
@@ -151,8 +182,66 @@ export default async function DetalleTransaccionPage(
           />
         </div>
       )}
+
+      {/* Historial de cambios */}
+      {historial.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="label-caps inline-flex items-center gap-1.5">
+            <History className="h-3 w-3" /> Historial de cambios ({historial.length})
+          </h2>
+          <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
+            {historial.map((h) => {
+              const IconHist = h.accion === 'creada' ? Plus : h.accion === 'editada' ? Edit3 : TrashIcon
+              const iconColor =
+                h.accion === 'creada' ? 'text-emerald-400'
+                : h.accion === 'editada' ? 'text-cyan-400'
+                : 'text-rose-400'
+              const fechaLocal = formatInTimeZone(new Date(h.created_at), TZ, 'dd MMM yyyy HH:mm')
+              return (
+                <li key={h.id} className="p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <IconHist className={cn('h-4 w-4 shrink-0', iconColor)} />
+                      <div className="leading-tight">
+                        <p className="text-sm font-bold text-white">
+                          {h.accion === 'creada' ? 'Creada' : h.accion === 'editada' ? 'Editada' : 'Eliminada'}
+                          {' por '}
+                          <span className="text-cyan-300">{h.nombre ?? '—'}</span>
+                        </p>
+                        <p className="text-[10px] text-zinc-500">{fechaLocal}</p>
+                      </div>
+                    </div>
+                  </div>
+                  {h.accion === 'editada' && h.cambios && Object.keys(h.cambios).length > 0 && (
+                    <ul className="space-y-0.5 pl-6 text-[11px]">
+                      {Object.entries(h.cambios).map(([campo, { antes, despues }]) => (
+                        <li key={campo} className="text-zinc-400">
+                          <span className="text-zinc-500 uppercase tracking-wider text-[9px]">{campo.replace(/_/g, ' ')}</span>{' '}
+                          <span className="text-rose-400/80 line-through">{formatValor(antes)}</span>{' → '}
+                          <span className="text-emerald-300">{formatValor(despues)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
     </div>
   )
+}
+
+function formatValor(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—'
+  if (typeof v === 'number') return v.toString()
+  if (typeof v === 'string') {
+    // Si es UUID, truncar
+    if (/^[0-9a-f-]{36}$/.test(v)) return v.slice(0, 8) + '…'
+    return v
+  }
+  return String(v)
 }
 
 function DataRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
