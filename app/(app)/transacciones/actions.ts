@@ -101,9 +101,12 @@ export async function createTransaccion(
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
+  revalidatePath('/cashflow')
+  revalidatePath('/negocios')
   revalidatePath(`/negocios/${parsed.data.negocio_id}`)
   revalidatePath(`/negocios/${parsed.data.negocio_id}/ads`)
   revalidatePath(`/negocios/${parsed.data.negocio_id}/ventas`)
+  revalidatePath('/casa')
   flashOk('/transacciones', 'tx_creada')
 }
 
@@ -147,6 +150,14 @@ export async function updateTransaccion(
   revalidatePath('/transacciones')
   revalidatePath(`/transacciones/${id}`)
   revalidatePath('/dashboard')
+  revalidatePath('/cashflow')
+  revalidatePath('/negocios')
+  if (parsed.data.negocio_id) {
+    revalidatePath(`/negocios/${parsed.data.negocio_id}`)
+    revalidatePath(`/negocios/${parsed.data.negocio_id}/ads`)
+    revalidatePath(`/negocios/${parsed.data.negocio_id}/ventas`)
+  }
+  revalidatePath('/casa')
   flashOk('/transacciones', 'tx_actualizada')
 }
 
@@ -182,5 +193,13 @@ export async function deleteTransaccion(id: string) {
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
+  revalidatePath('/cashflow')
+  revalidatePath('/negocios')
+  if (antes?.negocio_id) {
+    revalidatePath(`/negocios/${antes.negocio_id}`)
+    revalidatePath(`/negocios/${antes.negocio_id}/ads`)
+    revalidatePath(`/negocios/${antes.negocio_id}/ventas`)
+  }
+  revalidatePath('/casa')
   flashOk('/transacciones', 'tx_eliminada')
 }

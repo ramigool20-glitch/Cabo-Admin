@@ -50,6 +50,9 @@ export async function saveAITransaccion(payload: SavePayload) {
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
+  revalidatePath('/cashflow')
+  revalidatePath('/negocios')
+  revalidatePath('/casa')
   revalidatePath('/chat')
   return { ok: true, id: data.id }
 }
