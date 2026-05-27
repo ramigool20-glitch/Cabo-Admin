@@ -1,6 +1,5 @@
 import { Radar as RadarIcon, AlertTriangle, TrendingUp, Newspaper, MapPin, Sparkles } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { cn } from '@/lib/utils'
 import { TZ } from '@/lib/fechas'
 import { formatInTimeZone } from 'date-fns-tz'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -15,53 +14,81 @@ const TIPO_META: Record<string, { icon: typeof Newspaper; color: string; label: 
   evento_local: { icon: MapPin,         color: 'text-purple-400',  label: 'Evento Local' },
 }
 
-export default async function RadarPage() {
-  const admin = createAdminClient()
+type InsightRow = {
+  id: string
+  tipo: string
+  titulo: string
+  resumen: string
+  fuente: string | null
+  fuente_url: string | null
+  impacto: 'alta' | 'media' | 'baja'
+  aplica_a: string[] | null
+  recomendacion: string | null
+  fecha_evento: string | null
+  visto: boolean
+  created_at: string
+}
 
-  let insights: Array<{
-    id: string
-    tipo: string
-    titulo: string
-    resumen: string
-    fuente: string | null
-    fuente_url: string | null
-    impacto: 'alta' | 'media' | 'baja'
-    aplica_a: string[] | null
-    recomendacion: string | null
-    fecha_evento: string | null
-    visto: boolean
-    created_at: string
-  }> = []
-  let ultimaCorrida: { created_at: string; insights_creados: number; error: string | null } | null = null
+type RunRow = { created_at: string; insights_creados: number; error: string | null }
+
+export default async function RadarPage() {
+  // Carga defensiva: cada query aislada con try/catch para que el page nunca crashee
+  let insights: InsightRow[] = []
+  let ultimaCorrida: RunRow | null = null
   let tableExists = true
+  let errorMsg: string | null = null
 
   try {
-    const [{ data: rows, error }, { data: runs }] = await Promise.all([
-      admin
+    const admin = createAdminClient()
+
+    try {
+      const { data, error } = await admin
         .from('radar_insights')
         .select('id, tipo, titulo, resumen, fuente, fuente_url, impacto, aplica_a, recomendacion, fecha_evento, visto, created_at')
         .order('created_at', { ascending: false })
-        .limit(50),
-      admin
+        .limit(50)
+      if (error) {
+        if (/relation.*does not exist|radar_insights/i.test(error.message)) {
+          tableExists = false
+        } else {
+          errorMsg = error.message
+        }
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        insights = (data as any[]) ?? []
+      }
+    } catch (e) {
+      errorMsg = e instanceof Error ? e.message : 'Error consultando radar_insights'
+    }
+
+    try {
+      const { data } = await admin
         .from('radar_runs')
         .select('created_at, insights_creados, error')
         .order('created_at', { ascending: false })
-        .limit(1),
-    ])
-    if (error) tableExists = false
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    insights = (rows as any[]) ?? []
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ultimaCorrida = (runs as any[])?.[0] ?? null
-  } catch {
-    tableExists = false
+        .limit(1)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ultimaCorrida = ((data as any[]) ?? [])[0] ?? null
+    } catch {
+      // silencioso
+    }
+  } catch (e) {
+    errorMsg = e instanceof Error ? e.message : 'Error inicializando admin client'
   }
 
-  // Agrupar por impacto
   const altas = insights.filter((i) => i.impacto === 'alta')
   const medias = insights.filter((i) => i.impacto === 'media')
   const bajas = insights.filter((i) => i.impacto === 'baja')
   const noVistos = insights.filter((i) => !i.visto).length
+
+  let ultimaCorridaTxt: string | null = null
+  if (ultimaCorrida?.created_at) {
+    try {
+      ultimaCorridaTxt = formatInTimeZone(new Date(ultimaCorrida.created_at), TZ, 'dd MMM HH:mm')
+    } catch {
+      ultimaCorridaTxt = String(ultimaCorrida.created_at).slice(0, 16)
+    }
+  }
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-5 max-w-3xl mx-auto">
@@ -76,17 +103,26 @@ export default async function RadarPage() {
           )}
         </div>
         <p className="text-sm text-zinc-400">
-          IA monitorea noticias y tendencias de Los Cabos que afectan tus negocios.
-          Se actualiza automático 2 veces al día.
+          IA analiza tu data y detecta tendencias, riesgos y oportunidades de tus negocios.
         </p>
-        {ultimaCorrida && (
+        {ultimaCorridaTxt && (
           <p className="text-[10px] text-zinc-500">
-            Última corrida: {formatInTimeZone(new Date(ultimaCorrida.created_at), TZ, 'dd MMM HH:mm')}
-            {ultimaCorrida.error && <span className="text-rose-400"> · error: {ultimaCorrida.error}</span>}
+            Última corrida: {ultimaCorridaTxt}
+            {ultimaCorrida?.error && <span className="text-rose-400"> · error: {ultimaCorrida.error}</span>}
           </p>
         )}
         <RadarRefreshButton />
       </header>
+
+      {errorMsg && (
+        <div className="card border-rose-500/40 bg-rose-500/5 p-4 text-sm space-y-2">
+          <p className="font-bold text-rose-300">Error al cargar Radar</p>
+          <p className="text-[11px] text-rose-200/80 font-mono break-all">{errorMsg}</p>
+          <p className="text-[10px] text-zinc-400">
+            Copia este mensaje y mándamelo si necesitas que lo arregle.
+          </p>
+        </div>
+      )}
 
       {!tableExists && (
         <div className="card border-amber-500/40 bg-amber-500/5 p-4 text-sm text-amber-300">
@@ -97,15 +133,14 @@ export default async function RadarPage() {
         </div>
       )}
 
-      {insights.length === 0 && tableExists && (
+      {insights.length === 0 && tableExists && !errorMsg && (
         <EmptyState
           emoji="🛰️"
           title="Sin insights todavía"
-          description="Toca 'Refrescar ahora' para que la IA busque noticias de Cabo relevantes para tus negocios."
+          description="Toca 'Refrescar ahora' para que la IA analice tu data y genere insights."
         />
       )}
 
-      {/* Alertas alta prioridad */}
       {altas.length > 0 && (
         <section className="space-y-2">
           <h2 className="label-caps inline-flex items-center gap-1.5 text-rose-300">
