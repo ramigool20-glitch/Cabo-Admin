@@ -242,7 +242,7 @@ export function TransactionForm({
         <div className="card-glow border-purple-500/40 bg-purple-500/5 p-3 space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-sm font-bold text-purple-200 inline-flex items-center gap-1.5">
-              🏠 ¿Para quién es este gasto?
+              🏠 ¿Es compartido o avance personal?
             </label>
           </div>
           <input type="hidden" name="atribuido_a" value={atribuidoA} />
@@ -268,19 +268,19 @@ export function TransactionForm({
                 className={cn(
                   'h-14 rounded-xl border-2 text-xs font-bold transition-all',
                   atribuidoA === s.id
-                    ? 'border-emerald-400 bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 scale-105'
-                    : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400 hover:border-emerald-500/50'
+                    ? 'border-purple-400 bg-purple-500 text-white shadow-lg shadow-purple-500/30 scale-105'
+                    : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400 hover:border-purple-500/50'
                 )}
               >
-                <span className="block text-xl">👤</span>
-                <span className="block text-[10px] mt-0.5 truncate">{s.nombre}</span>
+                <span className="block text-xl">💵</span>
+                <span className="block text-[10px] mt-0.5 truncate">Avance {s.nombre}</span>
               </button>
             ))}
           </div>
           <p className="text-[11px] text-purple-200/70 px-1">
             {atribuidoA === ''
-              ? '⚖ Se divide 50/50 entre roomates. Cada uno paga la mitad.'
-              : `👤 Cuenta como gasto personal de ${socios.find((s) => s.id === atribuidoA)?.nombre ?? '—'} (debe reembolsar a la sociedad).`}
+              ? '⚖ Compartido: gasto operativo de la sociedad. No se deduce a nadie.'
+              : `💵 Avance de ${socios.find((s) => s.id === atribuidoA)?.nombre ?? '—'}: se deducirá de su utilidad al corte.`}
           </p>
         </div>
       )}

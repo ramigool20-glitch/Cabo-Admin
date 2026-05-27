@@ -15,18 +15,16 @@ export type RangoId =
   | 'año_pasado'
   | 'custom'
 
+// Chips visibles (6 + Custom). Otros rangos (3 días, 14 días, 3 meses, mes
+// pasado, año pasado) siguen funcionando si llegan vía URL, pero no se muestran
+// como chip para mantener UI limpia. El usuario los accede via Custom + calendario.
 export const RANGOS: { id: RangoId; label: string; emoji?: string }[] = [
-  { id: 'hoy',         label: 'Hoy',         emoji: '📍' },
+  { id: 'hoy',         label: 'Hoy',       emoji: '📍' },
   { id: 'ayer',        label: 'Ayer' },
-  { id: 'ultimos_3',   label: 'Hace 3 días' },
   { id: 'ultimos_7',   label: '1 semana' },
-  { id: 'ultimos_14',  label: '2 semanas' },
   { id: 'ultimos_30',  label: '1 mes' },
-  { id: 'ultimos_90',  label: '3 meses' },
   { id: 'mes_actual',  label: 'Este mes' },
-  { id: 'mes_pasado',  label: 'Mes pasado' },
-  { id: 'año_actual',  label: 'Este año' },
-  { id: 'año_pasado',  label: 'Año pasado' },
+  { id: 'año_actual',  label: 'Año' },
   { id: 'custom',      label: '🗓️ Custom' },
 ]
 
