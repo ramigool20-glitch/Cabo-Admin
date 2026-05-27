@@ -4,7 +4,7 @@ import { useActionState, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { CATEGORIAS_GASTO, CATEGORIAS_INGRESO, METODOS_PAGO, metodoPagoDefault } from '@/lib/categorias'
+import { CATEGORIAS_GASTO, CATEGORIAS_INGRESO, CATEGORIAS_CASA, METODOS_PAGO, metodoPagoDefault } from '@/lib/categorias'
 import {
   createTransaccion,
   updateTransaccion,
@@ -74,10 +74,15 @@ export function TransactionForm({
     if (c.moneda === 'USD' || c.moneda === 'MXN') setMoneda(c.moneda as 'MXN' | 'USD')
   }
 
-  const categorias = useMemo(
-    () => (tipo === 'gasto' ? CATEGORIAS_GASTO : CATEGORIAS_INGRESO),
-    [tipo]
-  )
+  // Si el negocio es Casa, sugerimos solo categorías de casa
+  const negocioSel = negocios.find((n) => n.id === negocioId)
+  const esCasa = negocioSel?.tipo === 'casa'
+
+  const categorias = useMemo(() => {
+    if (tipo === 'ingreso') return CATEGORIAS_INGRESO
+    if (esCasa) return CATEGORIAS_CASA
+    return CATEGORIAS_GASTO
+  }, [tipo, esCasa])
 
   const handleDelete = async () => {
     if (!defaults.id) return

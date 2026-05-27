@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { aMxnEquivalente } from '@/lib/fx/server'
 import { hoyEnCabos } from '@/lib/fechas'
+import { enviarPushAProfiles } from '@/lib/push/server'
 
 export async function agregarShoppingItem(formData: FormData) {
   const supabase = await createClient()
@@ -26,6 +27,36 @@ export async function agregarShoppingItem(formData: FormData) {
     comprado: false,
   })
   if (error) return { ok: false, error: error.message }
+
+  // Push al otro roomate si es URGENTE
+  if (prioridad === 'alta') {
+    try {
+      const { data: socios } = await admin
+        .from('profiles')
+        .select('id, nombre, role_id, roles(nombre)')
+        .eq('activo', true)
+
+      const destinatarios = (socios ?? [])
+        .filter((p) => {
+          const r = p.roles as unknown as { nombre: string } | null
+          return (r?.nombre === 'admin' || r?.nombre === 'socio') && p.id !== user.id
+        })
+        .map((p) => p.id)
+
+      if (destinatarios.length > 0) {
+        const quien = (socios ?? []).find((p) => p.id === user.id)?.nombre ?? 'Roomate'
+        await enviarPushAProfiles(destinatarios, {
+          title: '🛒 URGENTE para Casa',
+          body: `${quien} necesita: ${item}${cantidad ? ` (${cantidad})` : ''}`,
+          url: '/casa',
+          tag: 'casa-shopping-alta',
+          data: { prioridad: 'alta' },
+        })
+      }
+    } catch {
+      // No bloqueamos por fallos de push
+    }
+  }
 
   revalidatePath('/casa')
   return { ok: true }
