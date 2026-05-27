@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { TrendingUp, AlertCircle, Clock, ChevronRight, PartyPopper } from 'lucide-react'
+import { TrendingUp, AlertCircle, Clock, ChevronRight, PartyPopper, Plus, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
@@ -121,12 +121,19 @@ export default async function PorCobrarPage() {
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-5 max-w-3xl mx-auto">
-      <header className="space-y-1">
+      <header className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-black heading-gradient">Por Cobrar</h1>
           <span className="chip">{lista.length + eventosPendientes.length} pendientes</span>
         </div>
         <p className="text-sm text-zinc-400">Dinero que te deben clientes y eventos del Rancho.</p>
+        <Link
+          href="/por-cobrar/nueva"
+          className="btn-primary h-10 text-sm w-full"
+        >
+          <Plus className="h-4 w-4" />
+          Agregar deuda de cliente
+        </Link>
       </header>
 
       <section className="card-glow p-5 space-y-2">
@@ -199,10 +206,10 @@ export default async function PorCobrarPage() {
                 : `en ${diasFalta} días`
               return (
                 <li key={e.id}>
-                  <Link href={`/eventos/${e.id}`} className="block p-3 hover:bg-[var(--bg-card-hover)] transition-colors">
+                  <div className="block p-3 hover:bg-[var(--bg-card-hover)] transition-colors">
                     <div className="flex items-start gap-3">
-                      <span className="text-lg">🎉</span>
-                      <div className="flex-1 min-w-0 leading-tight">
+                      <Link href={`/eventos/${e.id}`} className="text-lg">🎉</Link>
+                      <Link href={`/eventos/${e.id}`} className="flex-1 min-w-0 leading-tight">
                         <p className="text-sm font-bold text-white truncate">{e.cliente_nombre}</p>
                         <p className="text-[10px] text-zinc-500 truncate">
                           {e.paquete || 'Evento'}
@@ -221,7 +228,14 @@ export default async function PorCobrarPage() {
                             </span>
                           )}
                         </div>
-                      </div>
+                      </Link>
+                      <Link
+                        href={`/eventos/${e.id}/editar`}
+                        className="h-7 w-7 inline-flex items-center justify-center rounded text-cyan-400 hover:bg-cyan-500/10"
+                        title="Editar evento"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Link>
                       <div className="text-right shrink-0">
                         <p className="text-sm font-bold tabular-nums text-emerald-300">
                           {formatMoney(e.pendiente, e.moneda)}
@@ -245,7 +259,7 @@ export default async function PorCobrarPage() {
                         />
                       </div>
                     )}
-                  </Link>
+                  </div>
                 </li>
               )
             })}
