@@ -89,6 +89,20 @@ export function TransactionForm({
     return CATEGORIAS_GASTO
   }, [tipo, esCasa])
 
+  // Reset categoría si ya no es válida para el nuevo tipo/contexto
+  useEffect(() => {
+    if (categoria && !(categorias as readonly string[]).includes(categoria)) {
+      setCategoria('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipo, esCasa])
+
+  // Si cambias a Casa, default a "compartido" (NULL). Si sales de Casa, limpia atribución.
+  useEffect(() => {
+    if (!esCasa && atribuidoA) setAtribuidoA('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esCasa])
+
   const handleDelete = async () => {
     if (!defaults.id) return
     if (!confirm('¿Eliminar esta transacción?')) return

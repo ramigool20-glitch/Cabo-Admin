@@ -3,6 +3,10 @@ import type Stripe from 'stripe'
 import { stripe, STRIPE_WEBHOOK_SECRET } from '@/lib/stripe/client'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hoyEnCabos } from '@/lib/fechas'
+import { aMxnEquivalente } from '@/lib/fx/server'
+import { registrarHistorial } from '@/lib/historial'
+import { enviarPushAProfiles } from '@/lib/push/server'
+import { formatMoney } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -38,23 +42,28 @@ export async function POST(req: Request) {
       .single()
 
     if (cobro && cobro.estado !== 'cobrado') {
-      // Crear transacción ingreso
+      // Crear transacción ingreso (con FX MXN equivalente)
       const metadata = session.metadata || {}
+      const fechaHoy = hoyEnCabos()
+      const fx = await aMxnEquivalente(Number(cobro.monto), cobro.moneda as 'MXN' | 'USD', fechaHoy)
+      const txInsert = {
+        tipo: 'ingreso',
+        monto: cobro.monto,
+        moneda: cobro.moneda,
+        monto_mxn_equivalente: fx.monto_mxn_equivalente,
+        tipo_cambio_usado: fx.tipo_cambio_usado,
+        fecha: fechaHoy,
+        concepto: cobro.descripcion + (cobro.cliente_nombre ? ` - ${cobro.cliente_nombre}` : ''),
+        negocio_id: cobro.negocio_id || metadata.negocio_id || null,
+        categoria: 'stripe',
+        metodo_captura: 'api',
+        metodo_pago: 'stripe',
+        capturado_por: cobro.creado_por,
+        raw_ai_response: { stripe_session_id: session.id, stripe_payment_intent_id: session.payment_intent },
+      }
       const { data: tx } = await admin
         .from('transacciones')
-        .insert({
-          tipo: 'ingreso',
-          monto: cobro.monto,
-          moneda: cobro.moneda,
-          fecha: hoyEnCabos(),
-          concepto: cobro.descripcion + (cobro.cliente_nombre ? ` - ${cobro.cliente_nombre}` : ''),
-          negocio_id: cobro.negocio_id || metadata.negocio_id || null,
-          categoria: 'stripe',
-          metodo_captura: 'api',
-          metodo_pago: 'stripe',
-          capturado_por: cobro.creado_por,
-          raw_ai_response: { stripe_session_id: session.id, stripe_payment_intent_id: session.payment_intent },
-        })
+        .insert(txInsert)
         .select('id')
         .single()
 
@@ -68,6 +77,35 @@ export async function POST(req: Request) {
           transaccion_id: tx?.id ?? null,
         })
         .eq('id', cobro.id)
+
+      // Historial
+      if (tx?.id && cobro.creado_por) {
+        await registrarHistorial(tx.id, 'creada', cobro.creado_por, null, txInsert)
+      }
+
+      // Push a TODOS los socios — alguien acaba de pagar
+      try {
+        const { data: socios } = await admin
+          .from('profiles')
+          .select('id, role_id, roles(nombre)')
+          .eq('activo', true)
+        const destinatarios = (socios ?? [])
+          .filter((p) => {
+            const r = p.roles as unknown as { nombre: string } | null
+            return r?.nombre === 'admin' || r?.nombre === 'socio'
+          })
+          .map((p) => p.id)
+        if (destinatarios.length > 0) {
+          const clienteTxt = cobro.cliente_nombre ? ` de ${cobro.cliente_nombre}` : ''
+          await enviarPushAProfiles(destinatarios, {
+            title: '💰 ¡Pago recibido!',
+            body: `${formatMoney(Number(cobro.monto), cobro.moneda as 'MXN' | 'USD')} via Stripe${clienteTxt} · ${cobro.descripcion}`,
+            url: '/cobros',
+            tag: `stripe-paid-${cobro.id}`,
+            data: { prioridad: 'alta' },
+          })
+        }
+      } catch {}
     }
   }
 

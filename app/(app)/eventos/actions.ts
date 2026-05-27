@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { flashOk } from '@/lib/flash'
 import { aMxnEquivalente } from '@/lib/fx/server'
+import { registrarHistorial } from '@/lib/historial'
 
 const EventoSchema = z.object({
   negocio_id: z.string().uuid(),
@@ -94,25 +95,27 @@ export async function registrarPagoEvento(_prev: ActionState, formData: FormData
 
   // Crear transacción tipo ingreso (con conversión MXN si es USD)
   const fx = await aMxnEquivalente(parsed.data.monto, parsed.data.moneda, parsed.data.fecha_pago)
+  const txInsert = {
+    tipo: 'ingreso',
+    monto: parsed.data.monto,
+    moneda: parsed.data.moneda,
+    monto_mxn_equivalente: fx.monto_mxn_equivalente,
+    tipo_cambio_usado: fx.tipo_cambio_usado,
+    fecha: parsed.data.fecha_pago,
+    concepto: parsed.data.concepto || `${evento?.cliente_nombre ?? 'Cliente'} - Pago evento`,
+    negocio_id: evento?.negocio_id,
+    cuenta_id: parsed.data.cuenta_id,
+    metodo_pago: parsed.data.metodo_pago,
+    categoria: 'evento',
+    metodo_captura: 'manual',
+    capturado_por: user.id,
+  }
   const { data: tx } = await supabase
     .from('transacciones')
-    .insert({
-      tipo: 'ingreso',
-      monto: parsed.data.monto,
-      moneda: parsed.data.moneda,
-      monto_mxn_equivalente: fx.monto_mxn_equivalente,
-      tipo_cambio_usado: fx.tipo_cambio_usado,
-      fecha: parsed.data.fecha_pago,
-      concepto: parsed.data.concepto || `${evento?.cliente_nombre ?? 'Cliente'} - Pago evento`,
-      negocio_id: evento?.negocio_id,
-      cuenta_id: parsed.data.cuenta_id,
-      metodo_pago: parsed.data.metodo_pago,
-      categoria: 'evento',
-      metodo_captura: 'manual',
-      capturado_por: user.id,
-    })
+    .insert(txInsert)
     .select('id')
     .single()
+  if (tx?.id) await registrarHistorial(tx.id, 'creada', user.id, null, txInsert)
 
   // Registrar pago vinculado
   const { error } = await supabase.from('eventos_pagos').insert({
@@ -152,7 +155,7 @@ export async function pagarProveedor(eventoId: string, cuentaId: string | null):
 
   const fechaHoy = new Date().toISOString().slice(0, 10)
   const fxProv = await aMxnEquivalente(montoProveedor, evento.moneda as 'MXN' | 'USD', fechaHoy)
-  await supabase.from('transacciones').insert({
+  const txInsert = {
     tipo: 'gasto',
     monto: montoProveedor,
     moneda: evento.moneda,
@@ -165,7 +168,9 @@ export async function pagarProveedor(eventoId: string, cuentaId: string | null):
     categoria: 'pago_proveedor',
     metodo_captura: 'manual',
     capturado_por: user.id,
-  })
+  }
+  const { data: txProv } = await supabase.from('transacciones').insert(txInsert).select('id').single()
+  if (txProv?.id) await registrarHistorial(txProv.id, 'creada', user.id, null, txInsert)
 
   await supabase
     .from('eventos')

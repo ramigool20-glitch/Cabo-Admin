@@ -9,6 +9,7 @@ import { proximaFechaPagoEmpleado } from '@/lib/proximo-pago'
 import { hoyEnCabos } from '@/lib/fechas'
 import { flashOk } from '@/lib/flash'
 import { aMxnEquivalente } from '@/lib/fx/server'
+import { registrarHistorial } from '@/lib/historial'
 
 const EmpleadoSchema = z.object({
   nombre: z.string().min(1).max(120),
@@ -182,7 +183,7 @@ export async function registrarPagoNomina(empleadoId: string, _prev: ActionState
   const { data: emp } = await supabase.from('empleados').select('nombre').eq('id', empleadoId).single()
   const concepto = `Nómina ${emp?.nombre ?? ''} · ${parsed.data.fecha_pago}`
   const fx = await aMxnEquivalente(parsed.data.total, parsed.data.moneda, parsed.data.fecha_pago)
-  await supabase.from('transacciones').insert({
+  const txInsert = {
     tipo: 'gasto',
     monto: parsed.data.total,
     moneda: parsed.data.moneda,
@@ -195,7 +196,9 @@ export async function registrarPagoNomina(empleadoId: string, _prev: ActionState
     categoria: 'sueldo',
     metodo_captura: 'manual',
     capturado_por: user.id,
-  })
+  }
+  const { data: txNomina } = await supabase.from('transacciones').insert(txInsert).select('id').single()
+  if (txNomina?.id) await registrarHistorial(txNomina.id, 'creada', user.id, null, txInsert)
 
   revalidatePath(`/nomina/${empleadoId}`)
   revalidatePath('/dashboard')

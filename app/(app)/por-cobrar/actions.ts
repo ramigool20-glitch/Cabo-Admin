@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { hoyEnCabos } from '@/lib/fechas'
 import { flashOk } from '@/lib/flash'
 import { aMxnEquivalente } from '@/lib/fx/server'
+import { registrarHistorial } from '@/lib/historial'
 
 const Schema = z.object({
   cliente_nombre: z.string().min(1),
@@ -88,25 +89,27 @@ export async function registrarCobro(cuentaId: string, _prev: ActionState, formD
 
   // 1) Crear transacción de ingreso (con conversión MXN si es USD)
   const fx = await aMxnEquivalente(monto, cuenta.moneda as 'MXN' | 'USD', fecha_cobro)
+  const txInsert = {
+    tipo: 'ingreso',
+    monto,
+    moneda: cuenta.moneda,
+    monto_mxn_equivalente: fx.monto_mxn_equivalente,
+    tipo_cambio_usado: fx.tipo_cambio_usado,
+    fecha: fecha_cobro,
+    concepto: `Cobro a ${cuenta.cliente_nombre}: ${cuenta.concepto}`,
+    negocio_id: cuenta.negocio_id,
+    cuenta_id: cuenta_destino_id,
+    metodo_pago,
+    categoria: cuenta.categoria || 'cobro_cliente',
+    metodo_captura: 'manual',
+    capturado_por: user.id,
+  }
   const { data: tx } = await supabase
     .from('transacciones')
-    .insert({
-      tipo: 'ingreso',
-      monto,
-      moneda: cuenta.moneda,
-      monto_mxn_equivalente: fx.monto_mxn_equivalente,
-      tipo_cambio_usado: fx.tipo_cambio_usado,
-      fecha: fecha_cobro,
-      concepto: `Cobro a ${cuenta.cliente_nombre}: ${cuenta.concepto}`,
-      negocio_id: cuenta.negocio_id,
-      cuenta_id: cuenta_destino_id,
-      metodo_pago,
-      categoria: cuenta.categoria || 'cobro_cliente',
-      metodo_captura: 'manual',
-      capturado_por: user.id,
-    })
+    .insert(txInsert)
     .select('id')
     .single()
+  if (tx?.id) await registrarHistorial(tx.id, 'creada', user.id, null, txInsert)
 
   // 2) Registrar cobro
   await admin.from('cuentas_por_cobrar_cobros').insert({

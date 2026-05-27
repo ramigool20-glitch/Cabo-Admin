@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { aMxnEquivalente } from '@/lib/fx/server'
+import { registrarHistorial } from '@/lib/historial'
 
 export type SavePayload = {
   tipo: 'ingreso' | 'gasto'
@@ -28,18 +29,24 @@ export async function saveAITransaccion(payload: SavePayload) {
 
   const fx = await aMxnEquivalente(payload.monto, payload.moneda, payload.fecha)
 
+  const insertData = {
+    ...payload,
+    monto_mxn_equivalente: fx.monto_mxn_equivalente,
+    tipo_cambio_usado: fx.tipo_cambio_usado,
+    capturado_por: user.id,
+  }
+
   const { error, data } = await supabase
     .from('transacciones')
-    .insert({
-      ...payload,
-      monto_mxn_equivalente: fx.monto_mxn_equivalente,
-      tipo_cambio_usado: fx.tipo_cambio_usado,
-      capturado_por: user.id,
-    })
+    .insert(insertData)
     .select('id')
     .single()
 
   if (error) return { ok: false, error: error.message }
+
+  if (data?.id) {
+    await registrarHistorial(data.id, 'creada', user.id, null, insertData)
+  }
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')

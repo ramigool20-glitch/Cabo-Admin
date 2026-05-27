@@ -8,6 +8,7 @@ import { hoyEnCabos } from '@/lib/fechas'
 import { proximoConDiaDelMes, siguientePago, type Frecuencia } from '@/lib/proximo-pago'
 import { flashOk } from '@/lib/flash'
 import { aMxnEquivalente } from '@/lib/fx/server'
+import { registrarHistorial } from '@/lib/historial'
 
 const RecurrenteSchema = z.object({
   nombre: z.string().min(1).max(120),
@@ -152,27 +153,29 @@ export async function marcarPagado(
 
   // 1) Crear transacción tipo gasto (con conversión MXN si es USD)
   const fx = await aMxnEquivalente(monto, rec.moneda as 'MXN' | 'USD', fechaPago)
+  const txInsert = {
+    tipo: 'gasto',
+    monto,
+    moneda: rec.moneda,
+    monto_mxn_equivalente: fx.monto_mxn_equivalente,
+    tipo_cambio_usado: fx.tipo_cambio_usado,
+    fecha: fechaPago,
+    concepto: rec.nombre,
+    negocio_id: rec.negocio_id,
+    cuenta_id: rec.cuenta_id,
+    metodo_pago: rec.metodo_pago,
+    categoria: rec.categoria,
+    metodo_captura: 'recurrente',
+    foto_url: comprobanteUrl,
+    capturado_por: user.id,
+  }
   const { data: tx, error: txErr } = await supabase
     .from('transacciones')
-    .insert({
-      tipo: 'gasto',
-      monto,
-      moneda: rec.moneda,
-      monto_mxn_equivalente: fx.monto_mxn_equivalente,
-      tipo_cambio_usado: fx.tipo_cambio_usado,
-      fecha: fechaPago,
-      concepto: rec.nombre,
-      negocio_id: rec.negocio_id,
-      cuenta_id: rec.cuenta_id,
-      metodo_pago: rec.metodo_pago,
-      categoria: rec.categoria,
-      metodo_captura: 'recurrente',
-      foto_url: comprobanteUrl,
-      capturado_por: user.id,
-    })
+    .insert(txInsert)
     .select('id')
     .single()
   if (txErr) return { error: `Transacción: ${txErr.message}` }
+  if (tx?.id) await registrarHistorial(tx.id, 'creada', user.id, null, txInsert)
 
   // 2) Registrar en recurrentes_pagados
   const { error: pagErr } = await supabase.from('recurrentes_pagados').insert({
