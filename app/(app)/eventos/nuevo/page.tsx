@@ -3,7 +3,10 @@ import { ChevronLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { EventoForm } from '@/components/eventos/evento-form'
 
-export default async function NuevoEventoPage() {
+export default async function NuevoEventoPage(
+  { searchParams }: { searchParams: Promise<{ fecha?: string }> }
+) {
+  const sp = await searchParams
   const supabase = await createClient()
   const { data: negocios } = await supabase
     .from('negocios')
@@ -17,7 +20,7 @@ export default async function NuevoEventoPage() {
         <ChevronLeft className="h-4 w-4" /> Eventos
       </Link>
       <header><h1 className="text-2xl font-black heading-gradient">Nuevo evento</h1></header>
-      <EventoForm negocios={negocios ?? []} />
+      <EventoForm negocios={negocios ?? []} fechaInicial={sp.fecha} />
     </div>
   )
 }

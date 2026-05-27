@@ -1,8 +1,9 @@
 import Link from 'next/link'
-import { Calendar, ChevronRight, PartyPopper } from 'lucide-react'
+import { Calendar, ChevronRight, PartyPopper, List, Calendar as CalIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
+import { EmptyState } from '@/components/ui/empty-state'
 
 const ESTADO_CHIP = {
   reservado:        { l: 'Reservado',     c: 'chip-yellow' },
@@ -26,10 +27,25 @@ export default async function EventosPage() {
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-5 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-black heading-gradient">Eventos</h1>
-        <span className="chip">{futuros.length} próximos</span>
-      </div>
+      <header className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-2xl font-black heading-gradient">🎉 Eventos Rancho</h1>
+          <span className="chip">{futuros.length} próximos</span>
+        </div>
+
+        {/* Tabs Lista / Calendario */}
+        <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+          <span className="h-9 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow">
+            <List className="h-3.5 w-3.5" /> Lista
+          </span>
+          <Link
+            href="/eventos/calendario"
+            className="h-9 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white"
+          >
+            <CalIcon className="h-3.5 w-3.5" /> Calendario
+          </Link>
+        </div>
+      </header>
 
       {/* Próximos */}
       {futuros.length > 0 ? (
@@ -69,12 +85,12 @@ export default async function EventosPage() {
           </ul>
         </section>
       ) : (
-        <div className="card border-dashed p-10 text-center space-y-3">
-          <PartyPopper className="h-8 w-8 mx-auto text-purple-400" />
-          <p className="text-sm text-zinc-400">
-            Sin eventos próximos. Toca <strong>+</strong> para agregar una reserva.
-          </p>
-        </div>
+        <EmptyState
+          emoji="🎉"
+          title="Sin eventos próximos"
+          description="Captura una reserva del Rancho McCoy con los datos del cliente, fecha y monto."
+          cta={{ label: 'Nuevo evento', href: '/eventos/nuevo' }}
+        />
       )}
 
       {/* Pasados */}

@@ -93,6 +93,9 @@ html, body {
   .chip-red {
     @apply border-rose-500/40 bg-rose-500/10 text-rose-300;
   }
+  .chip-purple {
+    @apply border-purple-500/40 bg-purple-500/10 text-purple-300;
+  }
   .label-caps {
     @apply text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)];
   }

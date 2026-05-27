@@ -8,7 +8,7 @@ import { createEvento, type ActionState } from '@/app/(app)/eventos/actions'
 
 type Negocio = { id: string; nombre: string }
 
-export function EventoForm({ negocios }: { negocios: Negocio[] }) {
+export function EventoForm({ negocios, fechaInicial }: { negocios: Negocio[]; fechaInicial?: string }) {
   const router = useRouter()
   const [state, formAction, pending] = useActionState<ActionState, FormData>(createEvento, {})
   const [moneda, setMoneda] = useState<'MXN' | 'USD'>('MXN')
@@ -50,7 +50,7 @@ export function EventoForm({ negocios }: { negocios: Negocio[] }) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <label htmlFor="fecha_evento" className="label-caps">Fecha</label>
-          <input id="fecha_evento" name="fecha_evento" type="date" required className="input-base w-full" />
+          <input id="fecha_evento" name="fecha_evento" type="date" required defaultValue={fechaInicial} className="input-base w-full" />
         </div>
         <div className="space-y-2">
           <label htmlFor="hora_evento" className="label-caps">Hora</label>
