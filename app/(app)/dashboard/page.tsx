@@ -144,7 +144,7 @@ export default async function DashboardPage(
     admin.from('cuentas')
       .select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas')
       .eq('activo', true),
-    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id'),
+    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
   ])
   const fxFallbackTemp = fxRateHoy ? Number(fxRateHoy.rate_compra) : (fxHistorial?.[0] ? Number(fxHistorial[0].rate_compra) : null)
   const saldos = calcularSaldos(

@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { formatMoney } from '@/lib/utils'
 import { hoyEnCabos, formatearFecha } from '@/lib/fechas'
 import { toast } from '@/components/ui/toast'
-import { capturarSaldoInicial, crearAjusteSaldo, type ActionState } from '@/app/(app)/cashflow/actions'
+import { capturarSaldoInicial, crearAjusteSaldo, editarSaldoInicial, type ActionState } from '@/app/(app)/cashflow/actions'
 
 const TIPO_EMOJI: Record<string, string> = {
   mercado_pago: '🛒',
@@ -196,6 +196,7 @@ function CuentaActivaCard({
 }) {
   const [showDetalle, setShowDetalle] = useState(false)
   const [showAjuste, setShowAjuste] = useState(false)
+  const [showEditarInicial, setShowEditarInicial] = useState(false)
   const tieneMxn = saldoMxn !== 0 || Number(cuenta.saldo_inicial_mxn) !== 0
   const tieneUsd = saldoUsd !== 0 || Number(cuenta.saldo_inicial_usd) !== 0
 
@@ -268,7 +269,7 @@ function CuentaActivaCard({
           {(movs.ingresos_mxn > 0 || movs.ingresos_usd > 0) && (
             <p className="text-emerald-400 inline-flex items-center gap-1">
               <ArrowUpRight className="h-3 w-3" />
-              Ingresos:
+              Ingresos posteriores:
               {movs.ingresos_mxn > 0 && <span className="tabular-nums">{formatMoney(movs.ingresos_mxn, 'MXN')}</span>}
               {movs.ingresos_usd > 0 && <span className="tabular-nums">{formatMoney(movs.ingresos_usd, 'USD')}</span>}
             </p>
@@ -276,7 +277,7 @@ function CuentaActivaCard({
           {(movs.gastos_mxn > 0 || movs.gastos_usd > 0) && (
             <p className="text-rose-400 inline-flex items-center gap-1">
               <ArrowDownRight className="h-3 w-3" />
-              Gastos:
+              Gastos posteriores:
               {movs.gastos_mxn > 0 && <span className="tabular-nums">{formatMoney(movs.gastos_mxn, 'MXN')}</span>}
               {movs.gastos_usd > 0 && <span className="tabular-nums">{formatMoney(movs.gastos_usd, 'USD')}</span>}
             </p>
@@ -284,7 +285,24 @@ function CuentaActivaCard({
           {cuenta.saldo_inicial_notas && (
             <p className="text-zinc-500 italic mt-1">📝 {cuenta.saldo_inicial_notas}</p>
           )}
+          {/* Corregir saldo inicial (última edición) */}
+          <button
+            type="button"
+            onClick={() => setShowEditarInicial(true)}
+            className="mt-2 inline-flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300"
+          >
+            <Pencil className="h-2.5 w-2.5" />
+            Editar saldo inicial (corregir)
+          </button>
         </div>
+      )}
+
+      {/* Form de editar inicial */}
+      {showEditarInicial && (
+        <EditarInicialForm
+          cuenta={cuenta}
+          onClose={() => setShowEditarInicial(false)}
+        />
       )}
 
       {/* Form de ajuste */}
@@ -295,6 +313,88 @@ function CuentaActivaCard({
         />
       )}
     </div>
+  )
+}
+
+function EditarInicialForm({ cuenta, onClose }: { cuenta: Cuenta; onClose: () => void }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(editarSaldoInicial, {})
+
+  useEffect(() => {
+    if (state.ok) {
+      toast.success('Saldo inicial corregido', 'Las tx después de la fecha se contarán')
+      onClose()
+    } else if (state.error) {
+      toast.error('No se pudo', state.error)
+    }
+  }, [state, onClose])
+
+  return (
+    <form action={formAction} className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
+      <input type="hidden" name="cuenta_id" value={cuenta.id} />
+
+      <p className="text-xs font-bold text-amber-300 inline-flex items-center gap-1">
+        <Pencil className="h-3 w-3" />
+        Corregir saldo inicial
+      </p>
+      <p className="text-[10px] text-amber-200/80 leading-snug">
+        Esto sobreescribe el saldo capturado. Las transacciones <strong>posteriores</strong> a la fecha contarán; las anteriores ya están en el saldo.
+      </p>
+
+      <div className="space-y-1">
+        <label className="label-caps">Fecha del saldo</label>
+        <input
+          name="fecha"
+          type="date"
+          required
+          defaultValue={cuenta.saldo_inicial_fecha ?? hoyEnCabos()}
+          className="input-base w-full h-9 text-xs"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <label className="label-caps">Saldo MXN</label>
+          <input
+            name="saldo_inicial_mxn"
+            type="text"
+            inputMode="decimal"
+            defaultValue={Number(cuenta.saldo_inicial_mxn ?? 0)}
+            className="input-base w-full h-9 text-xs font-bold tabular-nums"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="label-caps">Saldo USD</label>
+          <input
+            name="saldo_inicial_usd"
+            type="text"
+            inputMode="decimal"
+            defaultValue={Number(cuenta.saldo_inicial_usd ?? 0)}
+            className="input-base w-full h-9 text-xs font-bold tabular-nums"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className="label-caps">Notas</label>
+        <input
+          name="notas"
+          type="text"
+          defaultValue={cuenta.saldo_inicial_notas ?? ''}
+          placeholder="ej: corregido contra app del banco"
+          className="input-base w-full h-9 text-xs"
+        />
+      </div>
+
+      {state.error && <p className="text-xs text-rose-400">{state.error}</p>}
+
+      <div className="flex gap-2">
+        <button type="button" onClick={onClose} className="btn-ghost flex-1 h-9 text-xs">Cancelar</button>
+        <button type="submit" disabled={pending} className="btn-primary flex-[2] h-9 text-xs">
+          {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+          Guardar corrección
+        </button>
+      </div>
+    </form>
   )
 }
 

@@ -24,6 +24,7 @@ export type TxParaSaldo = {
   monto: number | string
   moneda: string
   cuenta_id: string | null
+  fecha: string  // YYYY-MM-DD — necesario para filtrar tx posteriores al saldo inicial
 }
 
 export type SaldosCuenta = {
@@ -55,7 +56,11 @@ export type SaldosResumen = {
 
 /**
  * Calcula saldos por cuenta y total agregado.
- * Las cuentas SIN saldo inicial capturado NO suman al total (saldo = 0).
+ *
+ * Reglas:
+ * - El saldo_inicial representa el saldo AL CIERRE del día `saldo_inicial_fecha`
+ * - Solo cuentan tx con fecha ESTRICTAMENTE POSTERIOR a saldo_inicial_fecha
+ * - Cuentas SIN saldo inicial capturado NO suman al total (saldo = 0)
  */
 export function calcularSaldos(
   cuentas: CuentaConSaldoInicial[],
@@ -64,10 +69,20 @@ export function calcularSaldos(
 ): SaldosResumen {
   const fx = fxRate ?? 17
 
-  // Agregar movimientos por cuenta_id
+  // Mapa de fecha de inicial por cuenta — para filtrar tx posteriores
+  const fechaInicialPorCuenta = new Map<string, string | null>()
+  for (const c of cuentas) {
+    fechaInicialPorCuenta.set(c.id, c.saldo_inicial_fecha)
+  }
+
+  // Agregar movimientos por cuenta_id, SOLO los posteriores al saldo inicial
   const movs = new Map<string, { im: number; iu: number; gm: number; gu: number }>()
   for (const t of txs) {
     if (!t.cuenta_id) continue
+    const fechaInicial = fechaInicialPorCuenta.get(t.cuenta_id)
+    // Si la cuenta tiene saldo inicial, ignorar tx <= fecha del inicial
+    if (fechaInicial && t.fecha <= fechaInicial) continue
+
     const monto = Number(t.monto) || 0
     if (!movs.has(t.cuenta_id)) movs.set(t.cuenta_id, { im: 0, iu: 0, gm: 0, gu: 0 })
     const m = movs.get(t.cuenta_id)!

@@ -153,7 +153,7 @@ export async function crearAjusteSaldo(_prev: ActionState, formData: FormData): 
 }
 
 // ============================================================
-// DESBLOQUEAR (solo admin, opcional)
+// DESBLOQUEAR (para corregir saldo inicial mal capturado)
 // ============================================================
 export async function desbloquearSaldoInicial(cuentaId: string): Promise<ActionState> {
   const supabase = await createClient()
@@ -167,6 +167,38 @@ export async function desbloquearSaldoInicial(cuentaId: string): Promise<ActionS
     .eq('id', cuentaId)
   if (error) return { error: error.message }
   revalidatePath('/cashflow')
+  revalidatePath('/dashboard')
+  return { ok: true }
+}
+
+// ============================================================
+// EDITAR SALDO INICIAL (corrige sin necesidad de desbloquear primero)
+// ============================================================
+export async function editarSaldoInicial(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' }
+
+  const raw = Object.fromEntries(formData.entries())
+  const parsed = SaldoInicialSchema.safeParse({ ...raw, notas: raw.notas || null })
+  if (!parsed.success) return { error: 'Datos inválidos' }
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('cuentas')
+    .update({
+      saldo_inicial_mxn: parsed.data.saldo_inicial_mxn,
+      saldo_inicial_usd: parsed.data.saldo_inicial_usd,
+      saldo_inicial_fecha: parsed.data.fecha,
+      saldo_inicial_notas: parsed.data.notas,
+      saldo_inicial_capturado_por: user.id,
+      saldo_inicial_locked: true,
+    })
+    .eq('id', parsed.data.cuenta_id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/cashflow')
+  revalidatePath('/dashboard')
   return { ok: true }
 }
 

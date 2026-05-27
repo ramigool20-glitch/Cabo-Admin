@@ -28,8 +28,8 @@ export default async function CashFlowPage() {
       .select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas')
       .eq('activo', true)
       .order('nombre'),
-    // TODAS las transacciones (para calcular saldo desde saldo_inicial)
-    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id'),
+    // TODAS las transacciones (para calcular saldo desde saldo_inicial; necesita fecha para filtrar)
+    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
     // Tx solo del mes (para movimiento neto)
     supabase.from('transacciones').select('tipo, monto, moneda, fecha, cuenta_id').gte('fecha', inicioMes),
     admin.from('gastos_recurrentes').select('nombre, monto, moneda, frecuencia, proximo_pago').eq('activo', true),
