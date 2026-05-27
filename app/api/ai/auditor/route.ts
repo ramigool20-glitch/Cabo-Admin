@@ -243,6 +243,37 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'consultar_competidores',
+      description: 'Devuelve competidores registrados en el Radar, opcionalmente filtrados por dominio (farmacia/consultorio/rancho_mccoy/pagina_X). Úsala cuando preguntan sobre competencia o quieres sugerir análisis.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dominio: { type: 'string', description: 'Opcional. farmacia, consultorio, rancho_mccoy, pagina_1-8' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'agregar_competidor',
+      description: 'Registra un competidor en el Radar. Úsala cuando el usuario diga "el competidor X de farmacia es Y".',
+      parameters: {
+        type: 'object',
+        properties: {
+          dominio_propio: { type: 'string', description: 'farmacia, consultorio, rancho_mccoy, pagina_1-8' },
+          competidor_nombre: { type: 'string' },
+          competidor_url: { type: 'string' },
+          tipo: { type: 'string', enum: ['directo', 'indirecto', 'referencia'] },
+          descripcion: { type: 'string', description: 'qué venden, precios, notas relevantes' },
+        },
+        required: ['dominio_propio', 'competidor_nombre'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'cerrar_pendiente',
       description: 'Marca una pregunta pendiente como resuelta o descartada. Úsala cuando el usuario haya respondido la info o cuando ya no aplique. Identifica el pendiente por substring de la pregunta.',
       parameters: {
@@ -892,6 +923,74 @@ async function ejecutarTool(
       avances_por_socio: reporte,
       nota: 'Compartido = gasto operativo de la sociedad (no se deduce a nadie). Avance = la empresa adelantó esa lana al socio, se deduce de su utilidad al corte.',
     })
+  }
+
+  if (name === 'consultar_competidores') {
+    const dominio = (input.dominio as string) || ''
+    let q = admin.from('radar_competidores')
+      .select('id, dominio_propio, competidor_nombre, competidor_url, descripcion, tipo, notas, created_at')
+      .eq('activo', true)
+      .order('dominio_propio')
+    if (dominio) q = q.eq('dominio_propio', dominio.toLowerCase().trim())
+
+    const { data, error } = await q
+    if (error) {
+      if (/relation.*does not exist/i.test(error.message)) {
+        return JSON.stringify({
+          error: 'Tabla radar_competidores no existe',
+          sugerencia: 'Pega la migración 0015_radar_competidores.sql en Supabase',
+        })
+      }
+      return JSON.stringify({ error: error.message })
+    }
+
+    const total = (data ?? []).length
+    if (total === 0) {
+      return JSON.stringify({
+        total: 0,
+        dominio_filtrado: dominio || null,
+        sugerencia: 'No hay competidores registrados. Sugiere al usuario agregar en /radar tab Competidores. Recomienda registrar al menos 3 competidores principales por cada dominio activo.',
+      })
+    }
+
+    // Agrupar por dominio
+    const porDominio = new Map<string, typeof data>()
+    for (const c of data ?? []) {
+      if (!porDominio.has(c.dominio_propio)) porDominio.set(c.dominio_propio, [])
+      porDominio.get(c.dominio_propio)!.push(c)
+    }
+
+    return JSON.stringify({
+      total,
+      por_dominio: Object.fromEntries(
+        Array.from(porDominio.entries()).map(([dom, comps]) => [dom, comps.length])
+      ),
+      competidores: (data ?? []).map((c) => ({
+        dominio: c.dominio_propio,
+        nombre: c.competidor_nombre,
+        tipo: c.tipo,
+        url: c.competidor_url,
+        descripcion: c.descripcion,
+      })),
+    })
+  }
+
+  if (name === 'agregar_competidor') {
+    const { error } = await admin.from('radar_competidores').insert({
+      dominio_propio: String(input.dominio_propio || '').toLowerCase().trim(),
+      competidor_nombre: String(input.competidor_nombre),
+      competidor_url: (input.competidor_url as string) || null,
+      tipo: (input.tipo as string) || 'directo',
+      descripcion: (input.descripcion as string) || null,
+      activo: true,
+    })
+    if (error) {
+      if (/relation.*does not exist/i.test(error.message)) {
+        return 'Error: Tabla radar_competidores no existe. Pega migración 0015 primero.'
+      }
+      return `Error: ${error.message}`
+    }
+    return `✓ Competidor "${input.competidor_nombre}" agregado al dominio "${input.dominio_propio}"`
   }
 
   if (name === 'cerrar_pendiente') {

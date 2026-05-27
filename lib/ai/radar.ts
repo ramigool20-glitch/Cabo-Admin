@@ -304,7 +304,79 @@ export async function ejecutarRadar(): Promise<{ insights: RadarInsight[]; error
     }
 
     // ============================================================
-    // 9. UTILIDAD GLOBAL
+    // 9. COMPETIDORES — sugerencias de análisis
+    // ============================================================
+    try {
+      const { data: competidores, error: compError } = await admin
+        .from('radar_competidores')
+        .select('dominio_propio, competidor_nombre, descripcion, competidor_url, created_at')
+        .eq('activo', true)
+      // Solo procesa si la tabla existe
+      if (!compError && competidores) {
+        const conteoPorDominio = new Map<string, number>()
+        for (const c of competidores) {
+          conteoPorDominio.set(c.dominio_propio, (conteoPorDominio.get(c.dominio_propio) ?? 0) + 1)
+        }
+
+        // Dominios activos en negocios
+        const dominiosActivos = new Set<string>()
+        for (const n of negocios ?? []) {
+          if (n.tipo && !['general', 'casa'].includes(n.tipo)) {
+            dominiosActivos.add(n.tipo === 'pagina_digital' ? n.nombre.toLowerCase().replace(/\s+/g, '_') : n.tipo)
+          }
+        }
+
+        // Sugerir registrar para dominios sin competidores (max 1 insight)
+        for (const dom of dominiosActivos) {
+          if (!conteoPorDominio.has(dom)) {
+            insights.push({
+              tipo: 'oportunidad',
+              titulo: `Registra competidores de "${dom}"`,
+              resumen: `No tienes competidores registrados para este negocio. Conocer la competencia te ayuda a posicionar precios y estrategia.`,
+              fuente: 'Radar de competidores',
+              fuente_url: '/radar',
+              impacto: 'baja',
+              aplica_a: [dom],
+              recomendacion: 'Ve a /radar → tab Competidores → agrega 3-5 principales.',
+              fecha_evento: null,
+            })
+            break
+          }
+        }
+
+        // Sugerir revisión periódica si tienen varios
+        for (const [dom, count] of conteoPorDominio.entries()) {
+          if (count >= 3) {
+            // Verificar si los registros tienen más de 14 días sin actualizar
+            const recientes = competidores.filter((c) => c.dominio_propio === dom)
+            const masViejos = recientes.reduce((min, c) => {
+              const d = new Date(c.created_at).getTime()
+              return d < min ? d : min
+            }, Date.now())
+            const diasDesde = Math.floor((Date.now() - masViejos) / (24 * 60 * 60 * 1000))
+            if (diasDesde >= 14) {
+              insights.push({
+                tipo: 'tendencia',
+                titulo: `Revisa competidores de "${dom}"`,
+                resumen: `Tienes ${count} competidores registrados pero no se han actualizado en ${diasDesde} días. Sus precios o estrategia pudieron cambiar.`,
+                fuente: 'Radar de competidores',
+                fuente_url: '/radar',
+                impacto: 'baja',
+                aplica_a: [dom],
+                recomendacion: 'Revisa sus URLs y actualiza descripciones con precios actuales.',
+                fecha_evento: null,
+              })
+              break
+            }
+          }
+        }
+      }
+    } catch {
+      // Si la tabla de competidores no existe, simplemente skip
+    }
+
+    // ============================================================
+    // 10. UTILIDAD GLOBAL
     // ============================================================
     const totalIngresoActual = (txActual ?? []).reduce((s, t) => s + (t.tipo === 'ingreso' ? equivOf(t as TxRow) : 0), 0)
     const totalGastoActual = (txActual ?? []).reduce((s, t) => s + ((t.tipo === 'gasto' || t.tipo === 'multa_interna') ? equivOf(t as TxRow) : 0), 0)
