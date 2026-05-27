@@ -78,24 +78,55 @@ export default async function DetalleEventoPage(
         </div>
       </header>
 
-      {/* Resumen financiero */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="card p-4 space-y-1">
-          <p className="label-caps">Monto total</p>
-          <p className="text-xl font-black tabular-nums text-white">
-            {formatMoney(Number(evento.monto_total), evento.moneda)}
+      {/* Resumen financiero con progress bar */}
+      <section className="card-glow p-4 space-y-3">
+        <div className="flex items-baseline justify-between">
+          <p className="label-caps">Cobrado</p>
+          <p className="text-[10px] text-zinc-500 tabular-nums">
+            {Math.round((totalPagado / Math.max(1, Number(evento.monto_total))) * 100)}% de {formatMoney(Number(evento.monto_total), evento.moneda)}
           </p>
         </div>
-        <div className="card p-4 space-y-1">
-          <p className="label-caps">Cobrado</p>
-          <p className="text-xl font-black tabular-nums text-emerald-400">
+        <div className="flex items-baseline justify-between">
+          <p className="text-3xl font-black tabular-nums text-emerald-400">
             {formatMoney(totalPagado, evento.moneda)}
           </p>
           {pendiente > 0 && (
-            <p className="text-[10px] text-amber-400">Falta {formatMoney(pendiente, evento.moneda)}</p>
+            <p className="text-sm font-bold tabular-nums text-amber-400">
+              faltan {formatMoney(pendiente, evento.moneda)}
+            </p>
           )}
         </div>
-      </div>
+        {Number(evento.monto_total) > 0 && (
+          <div className="h-2 rounded-full bg-[var(--bg-input)] overflow-hidden">
+            <div
+              className={cn(
+                'h-full transition-all',
+                pendiente <= 0.01 ? 'bg-emerald-500'
+                : totalPagado > 0 ? 'bg-gradient-to-r from-amber-500 to-emerald-500'
+                : 'bg-rose-500/50'
+              )}
+              style={{ width: `${Math.max(2, Math.min(100, (totalPagado / Number(evento.monto_total)) * 100))}%` }}
+            />
+          </div>
+        )}
+      </section>
+
+      {/* CTA Cobrar restante */}
+      {pendiente > 0 && evento.estado !== 'cancelado' && evento.estado !== 'pagado_proveedor' && (
+        <a
+          href="#registrar-pago"
+          className="card border-emerald-500/40 bg-emerald-500/5 p-3 flex items-center gap-3 hover:bg-emerald-500/10 transition-colors"
+        >
+          <span className="text-2xl">💰</span>
+          <div className="flex-1 leading-tight">
+            <p className="text-sm font-bold text-emerald-300">Cobrar restante</p>
+            <p className="text-[11px] text-emerald-300/70 tabular-nums">
+              {formatMoney(pendiente, evento.moneda)} pendiente
+            </p>
+          </div>
+          <Plus className="h-5 w-5 text-emerald-400" />
+        </a>
+      )}
 
       {/* Split de comisión */}
       <div className="card-glow p-4 space-y-2">
@@ -157,19 +188,15 @@ export default async function DetalleEventoPage(
 
       {/* Form para nuevo pago */}
       {pendiente > 0 && evento.estado !== 'cancelado' && evento.estado !== 'pagado_proveedor' && (
-        <details className="card p-4">
-          <summary className="text-sm font-bold cursor-pointer inline-flex items-center gap-2">
-            <Plus className="h-4 w-4" /> Registrar pago
-          </summary>
-          <div className="pt-4">
-            <PagoEventoForm
-              eventoId={id}
-              moneda={evento.moneda as 'MXN' | 'USD'}
-              pendiente={pendiente}
-              cuentas={cuentas ?? []}
-            />
-          </div>
-        </details>
+        <section id="registrar-pago" className="card-glow p-4 space-y-3 scroll-mt-20">
+          <p className="label-caps inline-flex items-center gap-1.5"><Plus className="h-3 w-3" /> Registrar pago</p>
+          <PagoEventoForm
+            eventoId={id}
+            moneda={evento.moneda as 'MXN' | 'USD'}
+            pendiente={pendiente}
+            cuentas={cuentas ?? []}
+          />
+        </section>
       )}
 
       {/* Notas */}

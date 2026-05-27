@@ -1,9 +1,11 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useEffect } from 'react'
 import { Loader2, Check } from 'lucide-react'
 import { registrarPagoEvento, type ActionState } from '@/app/(app)/eventos/actions'
 import { hoyEnCabos } from '@/lib/fechas'
+import { toast } from '@/components/ui/toast'
+import { useRouter } from 'next/navigation'
 
 type Cuenta = { id: string; nombre: string; moneda: string }
 
@@ -19,6 +21,16 @@ export function PagoEventoForm({
   cuentas: Cuenta[]
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(registrarPagoEvento, {})
+  const router = useRouter()
+
+  useEffect(() => {
+    if (state.ok) {
+      toast.success('Pago registrado', 'Ingreso creado y aplicado al evento')
+      router.refresh()
+    } else if (state.error) {
+      toast.error('No se pudo registrar', state.error)
+    }
+  }, [state, router])
 
   return (
     <form action={formAction} className="space-y-3">
@@ -45,6 +57,7 @@ export function PagoEventoForm({
             type="text"
             inputMode="decimal"
             required
+            defaultValue={pendiente > 0 ? pendiente.toFixed(2) : ''}
             placeholder={pendiente.toFixed(2)}
             className="input-base w-full h-10 text-sm font-bold tabular-nums"
           />
@@ -57,6 +70,7 @@ export function PagoEventoForm({
           id="concepto"
           name="concepto"
           type="text"
+          defaultValue={pendiente > 0 ? 'Pago final' : ''}
           placeholder="Anticipo, segundo pago, pago final…"
           className="input-base w-full h-10 text-sm"
         />

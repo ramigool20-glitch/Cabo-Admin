@@ -31,6 +31,13 @@ export default async function DashboardPage(
     .toISOString()
     .slice(0, 10)
 
+  // Mes anterior para comparativo (mismo número de días que el rango actual)
+  const desdeDate = new Date(r.desde + 'T00:00:00')
+  const hastaDate = new Date(r.hasta + 'T00:00:00')
+  const duracionMs = hastaDate.getTime() - desdeDate.getTime()
+  const previoHasta = new Date(desdeDate.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const previoDesde = new Date(desdeDate.getTime() - 24 * 60 * 60 * 1000 - duracionMs).toISOString().slice(0, 10)
+
   const [
     { data: transacciones },
     { data: negocios },
@@ -41,10 +48,12 @@ export default async function DashboardPage(
     { data: eventosProx },
     { data: porPagarRows },
     { data: porCobrarRows },
+    { data: eventosPendRows },
     { data: fxRateHoy },
     { data: fxHistorial },
     { data: gastosFijosProx },
     { data: porPagarProx },
+    { data: txPrevio },
   ] = await Promise.all([
     supabase
       .from('transacciones')
@@ -86,6 +95,11 @@ export default async function DashboardPage(
       .select('monto_total, monto_cobrado, moneda, fecha_vencimiento, estado')
       .neq('estado', 'cancelado')
       .neq('estado', 'cobrado'),
+    // Eventos con pendiente (para Por Cobrar)
+    supabase
+      .from('eventos')
+      .select('id, monto_total, moneda, fecha_evento, estado, eventos_pagos(monto)')
+      .in('estado', ['reservado', 'confirmado']),
     // Rate de hoy
     admin
       .from('fx_rates')
@@ -116,7 +130,21 @@ export default async function DashboardPage(
       .lte('fecha_vencimiento', en7Dias)
       .order('fecha_vencimiento', { ascending: true })
       .limit(5),
+    // Transacciones del periodo anterior para comparativo
+    supabase
+      .from('transacciones')
+      .select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente')
+      .gte('fecha', previoDesde)
+      .lte('fecha', previoHasta),
   ])
+
+  // Totales del periodo anterior (en MXN equivalente)
+  const tPrev = totalizar(txPrevio ?? [])
+
+  function pctChange(actual: number, prev: number): number | null {
+    if (prev === 0) return null
+    return ((actual - prev) / Math.abs(prev)) * 100
+  }
 
   const rows = transacciones ?? []
   const t = totalizar(rows)
@@ -140,7 +168,7 @@ export default async function DashboardPage(
     }
   }
 
-  // Resumen Por Cobrar
+  // Resumen Por Cobrar (cuentas + eventos pendientes Rancho)
   const pc = { totalMxn: 0, totalUsd: 0, vencidoMxn: 0, vencidoUsd: 0, count: 0, vencidoCount: 0 }
   for (const c of porCobrarRows ?? []) {
     const restante = Number(c.monto_total) - Number(c.monto_cobrado)
@@ -153,6 +181,22 @@ export default async function DashboardPage(
     } else {
       pc.totalMxn += restante
       if (vencido) { pc.vencidoMxn += restante; pc.vencidoCount++ }
+    }
+  }
+  // Sumar eventos pendientes (Rancho) al total de por cobrar
+  for (const e of eventosPendRows ?? []) {
+    const pagos = (e.eventos_pagos as Array<{ monto: number }>) ?? []
+    const cobrado = pagos.reduce((sum, p) => sum + Number(p.monto), 0)
+    const pendiente = Number(e.monto_total) - cobrado
+    if (pendiente <= 0.01) continue
+    const vencido = !!e.fecha_evento && e.fecha_evento < hoy
+    pc.count++
+    if (e.moneda === 'USD') {
+      pc.totalUsd += pendiente
+      if (vencido) { pc.vencidoUsd += pendiente; pc.vencidoCount++ }
+    } else {
+      pc.totalMxn += pendiente
+      if (vencido) { pc.vencidoMxn += pendiente; pc.vencidoCount++ }
     }
   }
 
@@ -262,12 +306,17 @@ export default async function DashboardPage(
         <section className="card-glow p-5 space-y-3">
           <div className="flex items-center justify-between">
             <span className="label-caps">Utilidad · {r.label}</span>
-            <TrendingUp className="h-4 w-4 text-cyan-400/60" />
+            <DeltaBadge actual={t.utilidad_total_mxn} prev={tPrev.utilidad_total_mxn} />
           </div>
           <div className="space-y-1">
             <p className={`text-4xl font-black tabular-nums ${t.utilidad_total_mxn >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
               {t.utilidad_total_mxn >= 0 ? '+' : ''}{formatMoney(t.utilidad_total_mxn, 'MXN')}
             </p>
+            {tPrev.utilidad_total_mxn !== 0 && (
+              <p className="text-[11px] text-zinc-500">
+                Periodo anterior: {formatMoney(tPrev.utilidad_total_mxn, 'MXN')}
+              </p>
+            )}
             {(t.ingresos_usd > 0 || t.gastos_usd > 0) && (
               <p className="text-[11px] text-zinc-500">
                 Incluye {t.ingresos_usd > 0 && `${formatMoney(t.ingresos_usd, 'USD')} ingresos`}
@@ -284,6 +333,7 @@ export default async function DashboardPage(
             <div className="flex items-center gap-1.5 text-emerald-400">
               <ArrowUpRight className="h-4 w-4" />
               <span className="label-caps text-emerald-400">Ingresos</span>
+              <span className="ml-auto"><DeltaBadge actual={t.ingresos_total_mxn} prev={tPrev.ingresos_total_mxn} compact /></span>
             </div>
             <p className="text-2xl font-black tabular-nums text-emerald-300">
               {formatMoney(t.ingresos_total_mxn, 'MXN')}
@@ -296,6 +346,7 @@ export default async function DashboardPage(
             <div className="flex items-center gap-1.5 text-rose-400">
               <ArrowDownRight className="h-4 w-4" />
               <span className="label-caps text-rose-400">Gastos</span>
+              <span className="ml-auto"><DeltaBadge actual={t.gastos_total_mxn} prev={tPrev.gastos_total_mxn} compact invertColor /></span>
             </div>
             <p className="text-2xl font-black tabular-nums text-rose-300">
               {formatMoney(t.gastos_total_mxn, 'MXN')}
@@ -514,5 +565,49 @@ export default async function DashboardPage(
         <CategoriasList data={topCats} />
       </CollapsibleSection>
     </div>
+  )
+}
+
+/**
+ * Badge que muestra el % de cambio vs periodo anterior.
+ * - invertColor: para gastos (subir es malo, bajar es bueno)
+ * - compact: versión chiquita para cards
+ */
+function DeltaBadge({
+  actual,
+  prev,
+  compact = false,
+  invertColor = false,
+}: {
+  actual: number
+  prev: number
+  compact?: boolean
+  invertColor?: boolean
+}) {
+  if (prev === 0) return null
+  const change = ((actual - prev) / Math.abs(prev)) * 100
+  if (Math.abs(change) < 0.5) {
+    return (
+      <span className={cn(
+        'inline-flex items-center gap-0.5 rounded-full bg-zinc-500/10 text-zinc-400 font-bold tabular-nums',
+        compact ? 'h-4 px-1.5 text-[9px]' : 'h-5 px-2 text-[10px]'
+      )}>
+        = igual
+      </span>
+    )
+  }
+  const positivo = change > 0
+  const esBueno = invertColor ? !positivo : positivo
+  const color = esBueno ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'
+  const Icon = positivo ? ArrowUpRight : ArrowDownRight
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-0.5 rounded-full font-bold tabular-nums',
+      color,
+      compact ? 'h-4 px-1.5 text-[9px]' : 'h-5 px-2 text-[10px]'
+    )}>
+      <Icon className={compact ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
+      {positivo ? '+' : ''}{Math.abs(change) >= 100 ? Math.round(change) : change.toFixed(1)}%
+    </span>
   )
 }

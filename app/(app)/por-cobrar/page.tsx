@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { TrendingUp, AlertCircle, Clock, ChevronRight } from 'lucide-react'
+import { TrendingUp, AlertCircle, Clock, ChevronRight, PartyPopper } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
@@ -17,12 +17,54 @@ export default async function PorCobrarPage() {
   const supabase = await createClient()
   const hoy = hoyEnCabos()
 
-  const { data: cuentas } = await supabase
-    .from('cuentas_por_cobrar')
-    .select('id, cliente_nombre, concepto, monto_total, monto_cobrado, moneda, fecha_vencimiento, estado, negocios(nombre)')
-    .neq('estado', 'cancelado')
-    .order('fecha_vencimiento', { ascending: true })
-    .limit(200)
+  const [{ data: cuentas }, { data: eventosActivos }] = await Promise.all([
+    supabase
+      .from('cuentas_por_cobrar')
+      .select('id, cliente_nombre, concepto, monto_total, monto_cobrado, moneda, fecha_vencimiento, estado, negocios(nombre)')
+      .neq('estado', 'cancelado')
+      .order('fecha_vencimiento', { ascending: true })
+      .limit(200),
+    // Eventos con potencial pago pendiente
+    supabase
+      .from('eventos')
+      .select('id, cliente_nombre, fecha_evento, monto_total, moneda, estado, paquete, num_personas, eventos_pagos(monto)')
+      .in('estado', ['reservado', 'confirmado'])
+      .order('fecha_evento', { ascending: true })
+      .limit(100),
+  ])
+
+  // Procesar eventos pendientes
+  type EventoPendiente = {
+    id: string
+    cliente_nombre: string
+    fecha_evento: string
+    monto_total: number
+    monto_cobrado: number
+    moneda: 'MXN' | 'USD'
+    pendiente: number
+    paquete: string | null
+    num_personas: number | null
+    estado: string
+    vencido: boolean
+  }
+  const eventosPendientes: EventoPendiente[] = (eventosActivos ?? []).map((e) => {
+    const pagos = (e.eventos_pagos as Array<{ monto: number }>) ?? []
+    const cobrado = pagos.reduce((sum, p) => sum + Number(p.monto), 0)
+    const pendiente = Number(e.monto_total) - cobrado
+    return {
+      id: e.id,
+      cliente_nombre: e.cliente_nombre,
+      fecha_evento: e.fecha_evento,
+      monto_total: Number(e.monto_total),
+      monto_cobrado: cobrado,
+      moneda: e.moneda as 'MXN' | 'USD',
+      pendiente,
+      paquete: e.paquete,
+      num_personas: e.num_personas,
+      estado: e.estado,
+      vencido: e.fecha_evento < hoy, // si el evento ya pasó y aún no cobraste todo
+    }
+  }).filter((e) => e.pendiente > 0.01)
 
   const lista = (cuentas ?? []).map((c) => {
     const restante = Number(c.monto_total) - Number(c.monto_cobrado)
@@ -40,6 +82,24 @@ export default async function PorCobrarPage() {
     } else {
       totales.por_cobrar_mxn += r
       if (c.vencido) totales.vencido_mxn += r
+    }
+  }
+  // Suma eventos pendientes a los totales
+  let eventosTotalMxn = 0
+  let eventosTotalUsd = 0
+  let eventosVencidoMxn = 0
+  for (const e of eventosPendientes) {
+    if (e.moneda === 'USD') {
+      eventosTotalUsd += e.pendiente
+      totales.por_cobrar_usd += e.pendiente
+      if (e.vencido) totales.vencido_usd += e.pendiente
+    } else {
+      eventosTotalMxn += e.pendiente
+      totales.por_cobrar_mxn += e.pendiente
+      if (e.vencido) {
+        totales.vencido_mxn += e.pendiente
+        eventosVencidoMxn += e.pendiente
+      }
     }
   }
 
@@ -64,9 +124,9 @@ export default async function PorCobrarPage() {
       <header className="space-y-1">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-black heading-gradient">Por Cobrar</h1>
-          <span className="chip">{lista.length} cuentas</span>
+          <span className="chip">{lista.length + eventosPendientes.length} pendientes</span>
         </div>
-        <p className="text-sm text-zinc-400">Dinero que te deben tus clientes. La IA detecta vencidos y te avisa.</p>
+        <p className="text-sm text-zinc-400">Dinero que te deben clientes y eventos del Rancho.</p>
       </header>
 
       <section className="card-glow p-5 space-y-2">
@@ -113,10 +173,95 @@ export default async function PorCobrarPage() {
         </section>
       )}
 
+      {/* Eventos pendientes de cobro (Rancho McCoy) */}
+      {eventosPendientes.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="label-caps inline-flex items-center gap-1">
+            <PartyPopper className="h-3 w-3 text-purple-400" />
+            Eventos pendientes de cobro ({eventosPendientes.length})
+            {eventosTotalMxn > 0 && (
+              <span className="ml-1 text-purple-300 tabular-nums">
+                {formatMoney(eventosTotalMxn, 'MXN')}
+              </span>
+            )}
+          </h2>
+          <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
+            {eventosPendientes.map((e) => {
+              const pct = e.monto_total > 0 ? (e.monto_cobrado / e.monto_total) * 100 : 0
+              const diasFalta = Math.ceil(
+                (new Date(e.fecha_evento + 'T00:00:00').getTime() - new Date(hoy + 'T00:00:00').getTime())
+                / (24 * 60 * 60 * 1000)
+              )
+              const fechaLabel = diasFalta < 0
+                ? `vencido hace ${Math.abs(diasFalta)}d`
+                : diasFalta === 0 ? 'HOY'
+                : diasFalta === 1 ? 'mañana'
+                : `en ${diasFalta} días`
+              return (
+                <li key={e.id}>
+                  <Link href={`/eventos/${e.id}`} className="block p-3 hover:bg-[var(--bg-card-hover)] transition-colors">
+                    <div className="flex items-start gap-3">
+                      <span className="text-lg">🎉</span>
+                      <div className="flex-1 min-w-0 leading-tight">
+                        <p className="text-sm font-bold text-white truncate">{e.cliente_nombre}</p>
+                        <p className="text-[10px] text-zinc-500 truncate">
+                          {e.paquete || 'Evento'}
+                          {e.num_personas != null && ` · 👥 ${e.num_personas}`}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <span className={cn(
+                            'chip text-[9px] h-4 px-1.5',
+                            e.vencido ? 'chip-red' : diasFalta <= 7 ? 'chip-yellow' : 'chip-cyan'
+                          )}>
+                            {formatearFecha(e.fecha_evento, 'dd MMM')} · {fechaLabel}
+                          </span>
+                          {e.monto_cobrado > 0 && (
+                            <span className="text-[10px] text-zinc-400">
+                              {Math.round(pct)}% cobrado
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold tabular-nums text-emerald-300">
+                          {formatMoney(e.pendiente, e.moneda)}
+                        </p>
+                        <p className="text-[10px] text-zinc-500 tabular-nums">
+                          de {formatMoney(e.monto_total, e.moneda)}
+                        </p>
+                      </div>
+                    </div>
+                    {/* Progress bar */}
+                    {e.monto_total > 0 && (
+                      <div className="mt-2 ml-7 h-1 rounded-full bg-[var(--bg-input)] overflow-hidden">
+                        <div
+                          className={cn(
+                            'h-full transition-all',
+                            e.pendiente <= 0.01 ? 'bg-emerald-500'
+                            : e.monto_cobrado > 0 ? 'bg-gradient-to-r from-amber-500 to-emerald-500'
+                            : 'bg-rose-500/50'
+                          )}
+                          style={{ width: `${Math.max(2, pct)}%` }}
+                        />
+                      </div>
+                    )}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+          {eventosVencidoMxn > 0 && (
+            <p className="text-[11px] text-rose-400 px-1">
+              ⚠ {formatMoney(eventosVencidoMxn, 'MXN')} en eventos que ya pasaron sin cobrar el total
+            </p>
+          )}
+        </section>
+      )}
+
       {vencidas.length > 0 && (
         <section className="space-y-2">
           <h2 className="label-caps text-rose-400">
-            <AlertCircle className="h-3 w-3 inline mr-1" /> Vencidas ({vencidas.length})
+            <AlertCircle className="h-3 w-3 inline mr-1" /> Cuentas vencidas ({vencidas.length})
           </h2>
           <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
             {vencidas.map((c) => <CuentaRow key={c.id} c={c} />)}
@@ -144,11 +289,11 @@ export default async function PorCobrarPage() {
         </section>
       )}
 
-      {lista.length === 0 && (
+      {lista.length === 0 && eventosPendientes.length === 0 && (
         <EmptyState
           emoji="💰"
-          title="Sin cuentas por cobrar"
-          description="Aquí van los dineros que te deben tus clientes. Captura una en lenguaje natural desde el chat IA."
+          title="Sin nada por cobrar"
+          description="Aquí van los dineros que te deben tus clientes y eventos del Rancho con pendiente."
           hint={<>Ej: <em>&ldquo;María me debe $3,000 del evento, paga el 15&rdquo;</em></>}
           cta={{ label: 'Nueva cuenta', href: '/por-cobrar/nueva' }}
         />
