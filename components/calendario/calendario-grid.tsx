@@ -37,8 +37,13 @@ export function CalendarioGrid({
             const evs = porDia[c.fecha!] ?? []
             const esHoy = c.fecha === hoy
             const haEv = evs.length > 0
-            // Compute color stripes
-            const colors = Array.from(new Set(evs.map((e) => e.color))).slice(0, 4)
+            // ¿Tiene evento tipo "evento" (Rancho McCoy) activo? → día BLOQUEADO
+            const eventosRancho = evs.filter((e) => e.tipo === 'evento' && e.estado !== 'cancelado')
+            const bloqueado = eventosRancho.length > 0
+            const eventoRealizado = eventosRancho.some((e) => e.estado === 'realizado' || e.estado === 'pagado_proveedor')
+            // Colores no-evento
+            const otrosEvs = evs.filter((e) => e.tipo !== 'evento')
+            const colors = Array.from(new Set(otrosEvs.map((e) => e.color))).slice(0, 3)
 
             return (
               <button
@@ -46,18 +51,39 @@ export function CalendarioGrid({
                 key={i}
                 onClick={() => haEv && setDiaSeleccionado(c.fecha)}
                 className={cn(
-                  'aspect-square p-1 rounded-md flex flex-col items-stretch text-[10px] border transition-all',
-                  esHoy
-                    ? 'border-cyan-500 bg-cyan-500/10 shadow-lg shadow-cyan-500/10'
-                    : haEv
-                      ? 'border-[var(--border-subtle)] bg-[var(--bg-input)] hover:border-cyan-500/50 hover:bg-cyan-500/5 active:scale-95'
-                      : 'border-transparent cursor-default'
+                  'aspect-square p-1 rounded-md flex flex-col items-stretch text-[10px] border transition-all relative overflow-hidden',
+                  esHoy && bloqueado
+                    ? 'border-pink-400 bg-gradient-to-br from-pink-500/30 to-rose-600/20 shadow-lg shadow-pink-500/20 ring-2 ring-cyan-400/60'
+                    : esHoy
+                      ? 'border-cyan-500 bg-cyan-500/10 shadow-lg shadow-cyan-500/10'
+                      : bloqueado
+                        ? eventoRealizado
+                          ? 'border-emerald-500/50 bg-gradient-to-br from-emerald-500/20 to-emerald-700/10'
+                          : 'border-pink-500/60 bg-gradient-to-br from-pink-500/25 to-rose-600/15 shadow-md shadow-pink-500/10'
+                        : haEv
+                          ? 'border-[var(--border-subtle)] bg-[var(--bg-input)] hover:border-cyan-500/50 hover:bg-cyan-500/5 active:scale-95'
+                          : 'border-transparent cursor-default'
                 )}
               >
-                <span className={cn('text-center font-bold', esHoy ? 'text-cyan-300' : haEv ? 'text-zinc-200' : 'text-zinc-500')}>
+                <span className={cn(
+                  'text-center font-bold leading-none',
+                  bloqueado ? 'text-pink-200' : esHoy ? 'text-cyan-300' : haEv ? 'text-zinc-200' : 'text-zinc-500'
+                )}>
                   {c.dia}
                 </span>
-                {haEv && (
+                {bloqueado ? (
+                  <>
+                    <div className="flex-1 flex flex-col items-center justify-center gap-0">
+                      <span className="text-[9px]">🎉</span>
+                      {eventosRancho.length > 1 && (
+                        <span className="text-[8px] text-pink-200 font-bold">×{eventosRancho.length}</span>
+                      )}
+                    </div>
+                    <span className="text-[7px] font-black uppercase tracking-tight text-center text-pink-100 leading-none">
+                      {eventoRealizado ? '✓ HECHO' : 'OCUPADO'}
+                    </span>
+                  </>
+                ) : haEv ? (
                   <>
                     <div className="flex-1 flex flex-wrap gap-0.5 items-center justify-center mt-0.5">
                       {evs.slice(0, 3).map((e, idx) => (
@@ -65,17 +91,32 @@ export function CalendarioGrid({
                       ))}
                       {evs.length > 3 && <span className="text-[8px] text-zinc-500 font-bold">+{evs.length - 3}</span>}
                     </div>
-                    {/* Stripes de colores */}
                     <div className="flex gap-0.5 mt-auto">
                       {colors.map((color, ci) => (
                         <div key={ci} className={cn('h-0.5 flex-1 rounded-full', color.replace('text-', 'bg-'))} />
                       ))}
                     </div>
                   </>
-                )}
+                ) : null}
               </button>
             )
           })}
+        </div>
+
+        {/* Leyenda */}
+        <div className="flex items-center justify-center gap-3 pt-2 border-t border-[var(--border-subtle)] mt-1">
+          <div className="inline-flex items-center gap-1 text-[9px] text-pink-300">
+            <span className="h-2 w-2 rounded-sm bg-pink-500/60 border border-pink-400" />
+            Ocupado
+          </div>
+          <div className="inline-flex items-center gap-1 text-[9px] text-emerald-300">
+            <span className="h-2 w-2 rounded-sm bg-emerald-500/40 border border-emerald-500" />
+            Realizado
+          </div>
+          <div className="inline-flex items-center gap-1 text-[9px] text-cyan-300">
+            <span className="h-2 w-2 rounded-sm bg-cyan-500/30 border border-cyan-400" />
+            Hoy
+          </div>
         </div>
       </div>
 
@@ -111,6 +152,10 @@ function DiaSheet({
   }
   const totalMxn = eventos.filter((e) => e.moneda !== 'USD').reduce((s, e) => s + (e.monto ?? 0), 0)
   const totalUsd = eventos.filter((e) => e.moneda === 'USD').reduce((s, e) => s + (e.monto ?? 0), 0)
+  // Detectar bloqueo
+  const eventosRancho = eventos.filter((e) => e.tipo === 'evento' && e.estado !== 'cancelado')
+  const bloqueado = eventosRancho.length > 0
+  const eventoRealizado = eventosRancho.some((e) => e.estado === 'realizado' || e.estado === 'pagado_proveedor')
 
   return (
     <>
@@ -126,6 +171,8 @@ function DiaSheet({
             <p className="text-base font-black text-white capitalize">
               {formatearFecha(fecha, 'EEEE, dd MMMM')}
               {esHoy && <span className="ml-2 chip chip-cyan text-[9px]">HOY</span>}
+              {bloqueado && !eventoRealizado && <span className="ml-2 chip text-[9px] bg-pink-500/20 border border-pink-500/40 text-pink-300">🚫 BLOQUEADO</span>}
+              {bloqueado && eventoRealizado && <span className="ml-2 chip text-[9px] bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">✓ REALIZADO</span>}
             </p>
             <p className="text-[11px] text-zinc-500">
               {eventos.length} evento{eventos.length !== 1 ? 's' : ''}
@@ -141,6 +188,33 @@ function DiaSheet({
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {bloqueado && (
+          <div className={cn(
+            'mx-4 mt-3 rounded-xl border p-3 space-y-1',
+            eventoRealizado
+              ? 'border-emerald-500/40 bg-emerald-500/5'
+              : 'border-pink-500/40 bg-pink-500/5'
+          )}>
+            <p className={cn('text-xs font-black uppercase tracking-wider',
+              eventoRealizado ? 'text-emerald-300' : 'text-pink-300'
+            )}>
+              {eventoRealizado ? '✓ Día con evento realizado' : '🚫 Día reservado/ocupado'}
+            </p>
+            <p className="text-[11px] text-zinc-300 leading-snug">
+              {eventoRealizado
+                ? 'Ya tuvo lugar. Revisa pagos pendientes con el proveedor.'
+                : 'No agendar más eventos en esta fecha sin confirmar disponibilidad.'}
+            </p>
+            {eventosRancho.map((e, i) => (
+              <p key={i} className={cn('text-[10px] tabular-nums',
+                eventoRealizado ? 'text-emerald-200/80' : 'text-pink-200/80'
+              )}>
+                · {e.titulo} {e.estado ? `(${e.estado})` : ''} {e.monto ? `– ${formatMoney(e.monto, e.moneda || 'MXN')}` : ''}
+              </p>
+            ))}
+          </div>
+        )}
 
         <div className="p-4 space-y-4">
           {Array.from(porTipo.entries()).map(([tipo, evs]) => (
