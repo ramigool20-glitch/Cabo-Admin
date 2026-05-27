@@ -76,7 +76,8 @@ export async function crearVenta(_prev: VentaState, formData: FormData): Promise
     negocio_id: parsed.data.negocio_id,
     categoria: 'ventas',
     concepto: parsed.data.producto || 'Venta',
-    metodo_pago: 'sistema',
+    metodo_pago: 'otro',
+    metodo_captura: 'api',
     capturado_por: user.id,
     notas: `Sincronizado desde ventas (id: ${venta?.id ?? '?'})`,
   })
@@ -204,7 +205,8 @@ export async function crearGastoAd(_prev: VentaState, formData: FormData): Promi
     negocio_id: parsed.data.negocio_id,
     categoria,
     concepto: platLabel,
-    metodo_pago: 'sistema',
+    metodo_pago: 'otro',
+    metodo_captura: 'api',
     capturado_por: user.id,
     notas: `Sincronizado desde gastos_ads (id: ${gastoAd?.id ?? '?'})`,
   })
