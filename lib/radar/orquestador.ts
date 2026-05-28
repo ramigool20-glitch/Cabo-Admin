@@ -466,7 +466,17 @@ export async function ejecutarRadarCompleto(): Promise<RadarMonitorResultado> {
     sugerencias_nuevas = r3.nuevas
     errores.push(...r3.errores)
   } catch (e) {
-    errores.push(`Sugerencias: ${e instanceof Error ? e.message : String(e)}`)
+    errores.push(`Sugerencias Meta: ${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  // Descubrimiento con IA (Claude/GPT) — no requiere Meta token, excluye propios
+  try {
+    const { descubrirCompetidoresIA } = await import('./descubrir-ia')
+    const r3b = await descubrirCompetidoresIA()
+    sugerencias_nuevas += r3b.nuevas
+    errores.push(...r3b.errores)
+  } catch (e) {
+    errores.push(`Sugerencias IA: ${e instanceof Error ? e.message : String(e)}`)
   }
 
   try {
