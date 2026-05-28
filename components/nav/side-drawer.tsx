@@ -35,6 +35,7 @@ const HERRAMIENTAS = [
   { href: '/tareas',        label: 'Tareas',      icon: CheckSquare,     emoji: '✅' },
   { href: '/multas',        label: 'Multas',      icon: AlertTriangle,   emoji: '⚠️' },
   { href: '/eventos',       label: 'Eventos',     icon: Calendar,        emoji: '🎉' },
+  { href: '/clinica',       label: 'Clínica',     icon: Building2,       emoji: '🏥', badge: 'NEW' },
   { href: '/recurrentes',   label: 'Gastos Fijos', icon: Calendar,       emoji: '📅' },
   { href: '/por-pagar',     label: 'Por Pagar',   icon: AlertTriangle,   emoji: '💸' },
   { href: '/por-cobrar',    label: 'Por Cobrar',  icon: AlertTriangle,   emoji: '💰', badge: 'NEW' },
