@@ -16,6 +16,7 @@ export type Servicio = {
   precio_cliente: number | null
   moneda_precio: string
   comision_enfermera: number | null
+  comision_fuera_horario: number | null
   ingredientes: string | null
   para_que_sirve: string | null
 }
@@ -153,7 +154,17 @@ function Linea({ label, monto, sub, color }: { label: string; monto: number; sub
 function RegistrarView({ servicios }: { servicios: Servicio[] }) {
   const [state, formAction, pending] = useActionState<ClinicaState, FormData>(registrarServicioClinica, {})
   const [servicioId, setServicioId] = useState('')
+  const [fueraHorario, setFueraHorario] = useState(false)
+  const [comisionStr, setComisionStr] = useState('')
   const sel = servicios.find((s) => s.id === servicioId)
+
+  // Al cambiar servicio o toggle de horario, autocompleta la comisión correcta
+  function aplicarServicio(id: string, fuera: boolean) {
+    const s = servicios.find((x) => x.id === id)
+    if (!s) { setComisionStr(''); return }
+    const c = fuera ? (s.comision_fuera_horario ?? s.comision_enfermera) : s.comision_enfermera
+    setComisionStr(c != null ? String(c) : '')
+  }
 
   useEffect(() => {
     if (state.ok) toast.success('Servicio registrado')
@@ -171,7 +182,7 @@ function RegistrarView({ servicios }: { servicios: Servicio[] }) {
         <select
           name="servicio_id"
           value={servicioId}
-          onChange={(e) => setServicioId(e.target.value)}
+          onChange={(e) => { setServicioId(e.target.value); aplicarServicio(e.target.value, fueraHorario) }}
           className="input-base w-full h-10 text-sm"
         >
           <option value="">— Elige o escribe abajo —</option>
@@ -180,6 +191,25 @@ function RegistrarView({ servicios }: { servicios: Servicio[] }) {
           ))}
         </select>
       </div>
+
+      {/* Toggle horario */}
+      <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+        <button
+          type="button"
+          onClick={() => { setFueraHorario(false); aplicarServicio(servicioId, false) }}
+          className={cn('h-8 rounded text-[11px] font-bold', !fueraHorario ? 'bg-cyan-500 text-white' : 'text-zinc-400')}
+        >
+          ☀️ Horario normal
+        </button>
+        <button
+          type="button"
+          onClick={() => { setFueraHorario(true); aplicarServicio(servicioId, true) }}
+          className={cn('h-8 rounded text-[11px] font-bold', fueraHorario ? 'bg-indigo-500 text-white' : 'text-zinc-400')}
+        >
+          🌙 Fuera de horario
+        </button>
+      </div>
+      <input type="hidden" name="fuera_horario" value={fueraHorario ? '1' : '0'} />
 
       <input
         type="hidden" name="servicio_nombre"
@@ -208,7 +238,8 @@ function RegistrarView({ servicios }: { servicios: Servicio[] }) {
           <label className="label-caps">Mi comisión (MXN)</label>
           <input
             name="pago_comision" type="text" inputMode="decimal" required
-            defaultValue={sel?.comision_enfermera ?? ''}
+            value={comisionStr}
+            onChange={(e) => setComisionStr(e.target.value)}
             placeholder="250" className="input-base w-full h-10 text-sm font-bold tabular-nums"
           />
         </div>
