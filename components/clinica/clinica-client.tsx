@@ -91,17 +91,65 @@ function TabBtn({ active, onClick, icon: Icon, label }: { active: boolean; onCli
 
 function TabuladorView({ tabulador, realizados }: { tabulador: Tabulador; realizados: Realizado[] }) {
   const [, start] = useTransition()
+
+  // Gamificación: progreso de reviews hacia el siguiente paquete de 10
+  const reviews = tabulador.reviews
+  const siguienteHito = Math.ceil((reviews + 1) / 10) * 10
+  const progresoReviews = ((reviews % 10) / 10) * 100
+  // Mensaje motivador
+  const ganadoExtra = tabulador.comisiones + tabulador.propinas + tabulador.bono
+  const mensaje =
+    ganadoExtra >= 3000 ? '🔥 ¡Vas increíble este periodo!'
+    : ganadoExtra >= 1500 ? '💪 ¡Buen ritmo, sigue así!'
+    : ganadoExtra > 0 ? '🌱 ¡Vamos sumando!'
+    : '👋 Registra tu primer servicio del periodo'
+
   return (
     <div className="space-y-3">
-      <section className="card-glow p-5 space-y-2">
-        <p className="label-caps">Total a pagar · {tabulador.periodo}</p>
-        <p className="text-4xl font-black tabular-nums text-emerald-300">{formatMoney(tabulador.total, 'MXN')}</p>
-        <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
-          <Linea label="Comisiones" monto={tabulador.comisiones} sub={`${tabulador.numServicios} servicios`} />
-          <Linea label="Propinas" monto={tabulador.propinas} color="text-emerald-400" />
-          <Linea label="Bono reviews" monto={tabulador.bono} sub={`${tabulador.reviews} reviews`} color="text-amber-400" />
-          {tabulador.sueldoBase > 0 && <Linea label="Sueldo base" monto={tabulador.sueldoBase} />}
+      {/* HERO gamificado */}
+      <section className="rounded-2xl p-5 space-y-3 bg-gradient-to-br from-emerald-500/20 via-cyan-500/10 to-purple-500/15 border border-emerald-500/30">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">💰 Llevas ganado · {tabulador.periodo}</p>
+          <span className="text-[10px] text-zinc-400">{mensaje}</span>
         </div>
+        <p className="text-5xl font-black tabular-nums bg-gradient-to-r from-emerald-300 to-cyan-300 bg-clip-text text-transparent">
+          {formatMoney(tabulador.total, 'MXN')}
+        </p>
+
+        {/* Servicios = puntos */}
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-xs font-bold">
+            🎯 {tabulador.numServicios} servicios
+          </span>
+          {tabulador.propinas > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 text-xs font-bold">
+              💵 {formatMoney(tabulador.propinas, 'MXN')} propinas
+            </span>
+          )}
+        </div>
+      </section>
+
+      {/* Desglose en cards */}
+      <div className="grid grid-cols-2 gap-2">
+        <Linea label="💼 Sueldo base" monto={tabulador.sueldoBase} />
+        <Linea label="🩺 Comisiones" monto={tabulador.comisiones} sub={`${tabulador.numServicios} servicios`} color="text-cyan-300" />
+        <Linea label="💵 Propinas" monto={tabulador.propinas} color="text-emerald-400" />
+        <Linea label="⭐ Bono reviews" monto={tabulador.bono} sub={`${reviews} reviews`} color="text-amber-400" />
+      </div>
+
+      {/* Progreso de reviews (gamificado) */}
+      <section className="card p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold text-amber-300">⭐ Reviews: {reviews}</p>
+          <p className="text-[10px] text-zinc-500">Meta: {siguienteHito} (faltan {siguienteHito - reviews})</p>
+        </div>
+        <div className="h-2.5 rounded-full bg-zinc-800 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-amber-400 to-amber-300 transition-all"
+            style={{ width: `${Math.max(4, progresoReviews)}%` }}
+          />
+        </div>
+        <p className="text-[10px] text-zinc-500">Cada review suma $50. ¡Junta 10 para el siguiente bono!</p>
       </section>
 
       <section className="space-y-2">
