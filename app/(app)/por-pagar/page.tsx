@@ -17,12 +17,17 @@ export default async function PorPagarPage() {
   const supabase = await createClient()
   const hoy = hoyEnCabos()
 
-  const { data: cuentas } = await supabase
-    .from('cuentas_por_pagar')
-    .select('id, proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, estado, negocios(nombre)')
-    .neq('estado', 'cancelado')
-    .order('fecha_vencimiento', { ascending: true })
-    .limit(200)
+  const [{ data: cuentas }, { data: fxLatest }] = await Promise.all([
+    supabase
+      .from('cuentas_por_pagar')
+      .select('id, proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, estado, negocios(nombre)')
+      .neq('estado', 'cancelado')
+      .order('fecha_vencimiento', { ascending: true })
+      .limit(200),
+    supabase.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+  ])
+
+  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : 17
 
   // Marcar vencidos automáticamente en la vista
   const lista = (cuentas ?? []).map((c) => {
@@ -45,17 +50,18 @@ export default async function PorPagarPage() {
     }
   }
 
-  // Aging buckets
+  // Aging buckets — fix: incluye USD convertido a MXN, fix TZ usando T00:00:00
   const aging = { d0_30: 0, d30_60: 0, d60_90: 0, d90mas: 0 }
-  const ahora = new Date()
+  const ahora = new Date(hoy + 'T00:00:00')
   for (const c of lista) {
-    if (c.estado === 'pagado' || c.estado === 'cancelado' || !c.fecha_vencimiento || c.moneda !== 'MXN') continue
-    const venc = new Date(c.fecha_vencimiento)
+    if (c.estado === 'pagado' || c.estado === 'cancelado' || !c.fecha_vencimiento) continue
+    const venc = new Date(c.fecha_vencimiento + 'T00:00:00')
     const diff = Math.floor((ahora.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24))
-    if (diff < 30) aging.d0_30 += c.restante
-    else if (diff < 60) aging.d30_60 += c.restante
-    else if (diff < 90) aging.d60_90 += c.restante
-    else aging.d90mas += c.restante
+    const equivMxn = c.moneda === 'USD' ? c.restante * fxRate : c.restante
+    if (diff < 30) aging.d0_30 += equivMxn
+    else if (diff < 60) aging.d30_60 += equivMxn
+    else if (diff < 90) aging.d60_90 += equivMxn
+    else aging.d90mas += equivMxn
   }
 
   const vencidas = lista.filter((c) => c.vencido || c.estado === 'vencido')
@@ -81,23 +87,26 @@ export default async function PorPagarPage() {
         </Link>
       </header>
 
-      {/* Total adeudado */}
+      {/* Total adeudado — fix: equivalente combinado como en /por-cobrar */}
       <section className="card-glow p-5 space-y-2">
         <div className="flex items-center gap-2 text-rose-400">
           <TrendingDown className="h-4 w-4" />
           <span className="label-caps text-rose-400">Total adeudado</span>
         </div>
         <p className="text-3xl font-black tabular-nums text-rose-300">
-          {formatMoney(totales.adeudado_mxn, 'MXN')}
+          {formatMoney(totales.adeudado_mxn + totales.adeudado_usd * fxRate, 'MXN')}
         </p>
+        <p className="text-[10px] text-zinc-500">equivalente total con rate ${fxRate.toFixed(2)}</p>
         {totales.adeudado_usd > 0 && (
-          <p className="text-base font-bold tabular-nums text-rose-300/80">
-            + {formatMoney(totales.adeudado_usd, 'USD')}
-          </p>
+          <div className="flex items-baseline gap-2 text-xs text-zinc-400 tabular-nums">
+            <span>{formatMoney(totales.adeudado_mxn, 'MXN')}</span>
+            <span>+ {formatMoney(totales.adeudado_usd, 'USD')}</span>
+            <span className="text-zinc-600">(≈ {formatMoney(totales.adeudado_usd * fxRate, 'MXN')})</span>
+          </div>
         )}
         {(totales.vencido_mxn > 0 || totales.vencido_usd > 0) && (
           <p className="text-xs text-amber-400">
-            ⚠ {formatMoney(totales.vencido_mxn, 'MXN')} vencido{totales.vencido_usd > 0 ? ` + ${formatMoney(totales.vencido_usd, 'USD')}` : ''}
+            ⚠ Vencido: {formatMoney(totales.vencido_mxn + totales.vencido_usd * fxRate, 'MXN')} equivalente
           </p>
         )}
       </section>

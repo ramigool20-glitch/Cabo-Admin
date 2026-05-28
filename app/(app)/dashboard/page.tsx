@@ -21,7 +21,7 @@ export default async function DashboardPage(
   { searchParams }: { searchParams: Promise<SearchParams> }
 ) {
   const sp = await searchParams
-  const rangoId: RangoId = isRangoId(sp.rango) ? sp.rango : 'mes_actual'
+  const rangoId: RangoId = isRangoId(sp.rango) ? sp.rango : 'hoy'
   const r = rangoFechas(rangoId, sp.desde, sp.hasta)
   const hoy = hoyEnCabos()
 

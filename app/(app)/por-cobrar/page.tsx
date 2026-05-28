@@ -107,16 +107,18 @@ export default async function PorCobrarPage() {
     }
   }
 
+  // Aging — fix: incluye USD convertido + TZ correcto
   const aging = { d0_30: 0, d30_60: 0, d60_90: 0, d90mas: 0 }
-  const ahora = new Date()
+  const ahora = new Date(hoy + 'T00:00:00')
   for (const c of lista) {
-    if (c.estado === 'cobrado' || c.estado === 'cancelado' || !c.fecha_vencimiento || c.moneda !== 'MXN') continue
-    const venc = new Date(c.fecha_vencimiento)
+    if (c.estado === 'cobrado' || c.estado === 'cancelado' || !c.fecha_vencimiento) continue
+    const venc = new Date(c.fecha_vencimiento + 'T00:00:00')
     const diff = Math.floor((ahora.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24))
-    if (diff < 30) aging.d0_30 += c.restante
-    else if (diff < 60) aging.d30_60 += c.restante
-    else if (diff < 90) aging.d60_90 += c.restante
-    else aging.d90mas += c.restante
+    const equivMxn = c.moneda === 'USD' ? c.restante * fxRate : c.restante
+    if (diff < 30) aging.d0_30 += equivMxn
+    else if (diff < 60) aging.d30_60 += equivMxn
+    else if (diff < 90) aging.d60_90 += equivMxn
+    else aging.d90mas += equivMxn
   }
 
   const vencidas = lista.filter((c) => c.vencido || c.estado === 'vencido')

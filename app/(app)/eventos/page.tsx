@@ -22,8 +22,17 @@ export default async function EventosPage() {
     .order('fecha_evento', { ascending: true })
 
   const hoy = hoyEnCabos()
-  const futuros = (eventos ?? []).filter((e) => e.fecha_evento >= hoy && e.estado !== 'cancelado')
-  const pasados = (eventos ?? []).filter((e) => e.fecha_evento < hoy || e.estado === 'realizado' || e.estado === 'pagado_proveedor')
+  // Fix: condiciones MUTUAMENTE EXCLUYENTES — un evento realizado del futuro no debe aparecer en ambos
+  const futuros = (eventos ?? []).filter((e) =>
+    e.fecha_evento >= hoy
+    && e.estado !== 'cancelado'
+    && e.estado !== 'realizado'
+    && e.estado !== 'pagado_proveedor'
+  )
+  const pasados = (eventos ?? []).filter((e) =>
+    e.estado !== 'cancelado'
+    && (e.fecha_evento < hoy || e.estado === 'realizado' || e.estado === 'pagado_proveedor')
+  )
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-5 max-w-3xl mx-auto">

@@ -1,5 +1,6 @@
 {
   "crons": [
+    { "path": "/api/cron/push-scheduler",           "schedule": "* * * * *" },
     { "path": "/api/cron/saludo-manana",            "schedule": "0 15 * * *" },
     { "path": "/api/cron/recurrentes",              "schedule": "0 13 * * *" },
     { "path": "/api/cron/tareas-vencimiento",       "schedule": "15 13 * * *" },

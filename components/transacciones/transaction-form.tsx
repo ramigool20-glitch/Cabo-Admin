@@ -12,6 +12,7 @@ import {
   type ActionState,
 } from '@/app/(app)/transacciones/actions'
 import { toast } from '@/components/ui/toast'
+import { AvisoDuplicado } from '@/components/transacciones/aviso-duplicado'
 
 export type NegocioOpt = { id: string; nombre: string; tipo: string; moneda_principal: string }
 export type CuentaOpt  = { id: string; nombre: string; tipo: string | null; moneda: string }
@@ -56,6 +57,9 @@ export function TransactionForm({
   const [categoria, setCategoria] = useState<string>(defaults.categoria ?? '')
   const [atribuidoA, setAtribuidoA] = useState<string>(defaults.atribuido_a ?? '')
   const [mostrarMas, setMostrarMas] = useState(false)
+  // Para detector de duplicados
+  const [montoStr, setMontoStr] = useState<string>(defaults.monto ?? '')
+  const [fecha, setFecha] = useState<string>(defaults.fecha)
 
   const action = isEdit
     ? updateTransaccion.bind(null, defaults.id!)
@@ -150,7 +154,8 @@ export function TransactionForm({
             type="text"
             inputMode="decimal"
             required
-            defaultValue={defaults.monto ?? ''}
+            value={montoStr}
+            onChange={(e) => setMontoStr(e.target.value)}
             placeholder="0.00"
             className="flex-1 h-14 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-2xl font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
@@ -306,10 +311,21 @@ export function TransactionForm({
           name="fecha"
           type="date"
           required
-          defaultValue={defaults.fecha}
+          value={fecha}
+          onChange={(e) => setFecha(e.target.value)}
           className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
+
+      {/* Detector de duplicados */}
+      <AvisoDuplicado
+        tipo={tipo}
+        monto={parseFloat(montoStr) || null}
+        moneda={moneda}
+        fecha={fecha || null}
+        cuenta_id={cuentaId || null}
+        ignorarTxId={defaults.id ?? null}
+      />
 
       {/* Categoría VISIBLE directo */}
       <div className="space-y-2">

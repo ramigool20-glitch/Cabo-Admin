@@ -96,21 +96,30 @@ export default async function CalendarioPage(
         </Link>
       </div>
 
-      {/* Totales del mes */}
+      {/* Totales del mes — fix: mostrar USD si existe */}
       <div className="grid grid-cols-3 gap-2">
         <div className="card p-3">
           <p className="text-[10px] text-zinc-500">📅 Gastos fijos</p>
           <p className="text-sm font-bold tabular-nums text-blue-400">{formatMoney(totales.gasto_fijo.mxn, 'MXN')}</p>
+          {totales.gasto_fijo.usd > 0 && (
+            <p className="text-[10px] text-blue-300/70 tabular-nums">+ {formatMoney(totales.gasto_fijo.usd, 'USD')}</p>
+          )}
           <p className="text-[10px] text-zinc-500">{totales.gasto_fijo.count} pagos</p>
         </div>
         <div className="card p-3">
           <p className="text-[10px] text-zinc-500">💸 Por pagar</p>
           <p className="text-sm font-bold tabular-nums text-rose-400">{formatMoney(totales.cuenta_por_pagar.mxn, 'MXN')}</p>
+          {totales.cuenta_por_pagar.usd > 0 && (
+            <p className="text-[10px] text-rose-300/70 tabular-nums">+ {formatMoney(totales.cuenta_por_pagar.usd, 'USD')}</p>
+          )}
           <p className="text-[10px] text-zinc-500">{totales.cuenta_por_pagar.count} deudas</p>
         </div>
         <div className="card p-3">
           <p className="text-[10px] text-zinc-500">🎉 Eventos</p>
           <p className="text-sm font-bold tabular-nums text-pink-400">{formatMoney(totales.evento.mxn, 'MXN')}</p>
+          {totales.evento.usd > 0 && (
+            <p className="text-[10px] text-pink-300/70 tabular-nums">+ {formatMoney(totales.evento.usd, 'USD')}</p>
+          )}
           <p className="text-[10px] text-zinc-500">{totales.evento.count} bookings</p>
         </div>
       </div>
