@@ -1,7 +1,6 @@
-import { Bell, Users, Building2, Send, History, Stethoscope, Wand2 } from 'lucide-react'
+import { Bell, Users, Building2, History, Wand2 } from 'lucide-react'
 import Link from 'next/link'
 import { PushSection } from '@/components/config/push-section'
-import { NotificacionesPanel } from '@/components/config/notificaciones-panel'
 import { HistorialNotificaciones } from '@/components/config/historial-notificaciones'
 import { DiagnosticoPush } from '@/components/config/diagnostico-push'
 import { BackfillFxButton } from '@/components/config/backfill-fx-button'
@@ -19,31 +18,16 @@ export default function ConfigPage() {
       <section className="space-y-2">
         <div className="flex items-center gap-2 px-1">
           <Bell className="h-4 w-4 text-cyan-400" />
-          <h2 className="text-sm font-semibold text-white">Notificaciones push</h2>
+          <h2 className="text-sm font-semibold text-white">Notificaciones</h2>
         </div>
         <PushSection />
-      </section>
-
-      <section className="space-y-2">
-        <div className="flex items-center gap-2 px-1">
-          <Stethoscope className="h-4 w-4 text-cyan-400" />
-          <h2 className="text-sm font-semibold text-white">Diagnóstico push</h2>
-        </div>
         <DiagnosticoPush />
       </section>
 
       <section className="space-y-2">
         <div className="flex items-center gap-2 px-1">
-          <Send className="h-4 w-4 text-cyan-400" />
-          <h2 className="text-sm font-semibold text-white">Disparar manualmente</h2>
-        </div>
-        <NotificacionesPanel />
-      </section>
-
-      <section className="space-y-2">
-        <div className="flex items-center gap-2 px-1">
           <History className="h-4 w-4 text-cyan-400" />
-          <h2 className="text-sm font-semibold text-white">Historial reciente</h2>
+          <h2 className="text-sm font-semibold text-white">Historial de notificaciones</h2>
         </div>
         <HistorialNotificaciones />
       </section>
