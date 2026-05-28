@@ -8,6 +8,8 @@ import { totalizar, porCategoria } from '@/lib/agregaciones'
 import { siguientePago, proximoConDiaDelMes } from '@/lib/proximo-pago'
 import { formatMoney } from '@/lib/utils'
 import { enviarPushAProfiles } from '@/lib/push/server'
+import { getAIProvider } from '@/lib/ai/provider'
+import { runAnthropicLoop } from '@/lib/ai/anthropic-loop'
 import type OpenAIType from 'openai'
 
 export const runtime = 'nodejs'
@@ -1597,49 +1599,65 @@ export async function POST(req: Request) {
       })
     }
 
-    const oaiMessages: OpenAIType.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemText },
-      ...body.messages.map((m) => ({ role: m.role, content: m.content })),
-    ]
-
     let finalReply = ''
-    const accionesEjecutadas: string[] = []
+    let accionesEjecutadas: string[] = []
     const MAX_ITERS = 4
 
-    for (let i = 0; i < MAX_ITERS; i++) {
-      const completion = await openai.chat.completions.create({
-        model: OPENAI_MODEL,
-        messages: oaiMessages,
-        tools: TOOLS,
-        tool_choice: 'auto',
-        temperature: 0.4,
-        max_tokens: 1024,
+    if (getAIProvider() === 'anthropic') {
+      // ===== Claude (Anthropic) =====
+      const res = await runAnthropicLoop({
+        system: systemText,
+        mensajes: body.messages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tools: TOOLS as any,
+        ejecutarTool: (name, input) => ejecutarTool(admin, name, input),
+        maxIters: MAX_ITERS,
+        maxTokens: 1024,
       })
+      finalReply = res.finalReply
+      accionesEjecutadas = res.accionesEjecutadas
+    } else {
+      // ===== OpenAI (GPT) =====
+      const oaiMessages: OpenAIType.Chat.ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemText },
+        ...body.messages.map((m) => ({ role: m.role, content: m.content })),
+      ]
 
-      const msg = completion.choices[0]?.message
-      if (!msg) break
-      if (msg.content) finalReply = msg.content
-
-      if (!msg.tool_calls || msg.tool_calls.length === 0) break
-
-      oaiMessages.push({
-        role: 'assistant',
-        content: msg.content ?? '',
-        tool_calls: msg.tool_calls,
-      })
-
-      for (const tc of msg.tool_calls) {
-        if (tc.type !== 'function') continue
-        let input: Record<string, unknown> = {}
-        try { input = JSON.parse(tc.function.arguments || '{}') } catch {}
-
-        const resultado = await ejecutarTool(admin, tc.function.name, input)
-        accionesEjecutadas.push(resultado)
-        oaiMessages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: resultado,
+      for (let i = 0; i < MAX_ITERS; i++) {
+        const completion = await openai.chat.completions.create({
+          model: OPENAI_MODEL,
+          messages: oaiMessages,
+          tools: TOOLS,
+          tool_choice: 'auto',
+          temperature: 0.4,
+          max_tokens: 1024,
         })
+
+        const msg = completion.choices[0]?.message
+        if (!msg) break
+        if (msg.content) finalReply = msg.content
+
+        if (!msg.tool_calls || msg.tool_calls.length === 0) break
+
+        oaiMessages.push({
+          role: 'assistant',
+          content: msg.content ?? '',
+          tool_calls: msg.tool_calls,
+        })
+
+        for (const tc of msg.tool_calls) {
+          if (tc.type !== 'function') continue
+          let input: Record<string, unknown> = {}
+          try { input = JSON.parse(tc.function.arguments || '{}') } catch {}
+
+          const resultado = await ejecutarTool(admin, tc.function.name, input)
+          accionesEjecutadas.push(resultado)
+          oaiMessages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: resultado,
+          })
+        }
       }
     }
 
