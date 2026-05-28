@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ejecutarRadar } from '@/lib/ai/radar'
+import { detectarIrregularidades } from '@/lib/ai/irregularidades'
 import { enviarPushAProfiles } from '@/lib/push/server'
 import { getAIProvider } from '@/lib/ai/provider'
 import { openai, OPENAI_MODEL } from '@/lib/ai/openai'
@@ -55,31 +56,38 @@ export async function GET(req: Request) {
 
   const admin = createAdminClient()
 
-  // 1) Insights determinísticos (gratis)
-  const { insights, error } = await ejecutarRadar()
-  if (error) return NextResponse.json({ ok: false, error })
-  if (insights.length === 0) {
-    return NextResponse.json({ ok: true, skip: 'sin insights' })
+  // 1) Insights determinísticos + irregularidades (gratis, en paralelo)
+  const [radarRes, irregularidades] = await Promise.all([
+    ejecutarRadar(),
+    detectarIrregularidades(),
+  ])
+  const { insights, error } = radarRes
+  if (error && irregularidades.length === 0) return NextResponse.json({ ok: false, error })
+
+  // 2) Combinar: irregularidades (alta prioridad) + top insights
+  const irregAltas = irregularidades.filter((i) => i.severidad === 'alta' || i.severidad === 'media')
+  const top = (insights ?? [])
+    .filter((i) => i.impacto === 'alta' || i.impacto === 'media')
+    .slice(0, 3)
+
+  if (irregAltas.length === 0 && top.length === 0) {
+    return NextResponse.json({ ok: true, skip: 'sin insights ni irregularidades relevantes' })
   }
 
-  // 2) Top insights (alta + media impacto) → texto para la IA
-  const top = insights
-    .filter((i) => i.impacto === 'alta' || i.impacto === 'media')
-    .slice(0, 4)
-  if (top.length === 0) {
-    return NextResponse.json({ ok: true, skip: 'sin insights relevantes' })
-  }
-  const insightsTexto = top.map((i) => `- [${i.impacto}] ${i.titulo}: ${i.resumen}`).join('\n')
+  const insightsTexto = [
+    ...irregAltas.map((i) => `- [IRREGULARIDAD ${i.severidad}] ${i.titulo}: ${i.detalle}`),
+    ...top.map((i) => `- [${i.impacto}] ${i.titulo}: ${i.resumen}`),
+  ].join('\n')
 
   // 3) IA redacta el push
+  const fallbackTitulo = irregAltas[0]?.titulo ?? top[0]?.titulo ?? 'Revisa tu dashboard'
   let mensaje = ''
   try {
     mensaje = await redactarPush(insightsTexto)
-  } catch (e) {
-    // Fallback: usa el título del insight más importante
-    mensaje = `💡 ${top[0].titulo}`
+  } catch {
+    mensaje = `💡 ${fallbackTitulo}`
   }
-  if (!mensaje) mensaje = `💡 ${top[0].titulo}`
+  if (!mensaje) mensaje = `💡 ${fallbackTitulo}`
 
   // 4) Enviar push a socios
   const { data: socios } = await admin
