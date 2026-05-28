@@ -1,12 +1,28 @@
 import { Stethoscope } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { hoyEnCabos } from '@/lib/fechas'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ClinicaClient, type Servicio, type Realizado, type Tabulador } from '@/components/clinica/clinica-client'
 
-export default async function ClinicaPage() {
+type SearchParams = { tab?: string }
+
+export default async function ClinicaPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  await searchParams // la pestaña activa la lee el cliente desde la URL
   const admin = createAdminClient()
   const hoy = hoyEnCabos()
+
+  // ¿Quién entra? Si es enfermera, ocultamos las pestañas superiores (usa su menú inferior)
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  let esEnfermera = false
+  if (user) {
+    const { data: prof } = await admin.from('profiles').select('role_id').eq('id', user.id).single()
+    if (prof?.role_id) {
+      const { data: roleRow } = await admin.from('roles').select('nombre').eq('id', prof.role_id).single()
+      esEnfermera = roleRow?.nombre === 'enfermera'
+    }
+  }
 
   // Quincena actual: 1-15 o 16-fin de mes
   const dia = Number(hoy.slice(8, 10))
@@ -57,17 +73,19 @@ export default async function ClinicaPage() {
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-4 max-w-3xl mx-auto">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-black heading-gradient inline-flex items-center gap-2">
-          <Stethoscope className="h-6 w-6 text-cyan-400" />
-          Cabo Walk-in Clinic
-        </h1>
-        <p className="text-sm text-zinc-400">
-          Catálogo bilingüe, registro de servicios y tabulador de comisiones de la enfermera.
-        </p>
-      </header>
+      {!esEnfermera && (
+        <header className="space-y-1">
+          <h1 className="text-2xl font-black heading-gradient inline-flex items-center gap-2">
+            <Stethoscope className="h-6 w-6 text-cyan-400" />
+            Cabo Walk-in Clinic
+          </h1>
+          <p className="text-sm text-zinc-400">
+            Catálogo bilingüe, registro de servicios y tabulador de comisiones de la enfermera.
+          </p>
+        </header>
+      )}
 
-      <ClinicaClient servicios={servicios} realizados={realizados} tabulador={tabulador} fxRate={fxRate} />
+      <ClinicaClient servicios={servicios} realizados={realizados} tabulador={tabulador} fxRate={fxRate} esEnfermera={esEnfermera} />
     </div>
   )
 }

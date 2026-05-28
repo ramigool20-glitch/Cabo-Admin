@@ -1,12 +1,20 @@
 'use client'
 
 import { useActionState, useEffect, useState } from 'react'
-import { Loader2, Plus, Stethoscope, DollarSign, ClipboardList, Trash2, Star } from 'lucide-react'
+import { Loader2, Plus, Stethoscope, DollarSign, ClipboardList, Trash2, PlusCircle } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { cn, formatMoney } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { toast } from '@/components/ui/toast'
 import { registrarServicioClinica, eliminarServicioClinica, type ClinicaState } from '@/app/(app)/clinica/actions'
 import { useTransition } from 'react'
+
+type TabKey = 'inicio' | 'registrar' | 'catalogo'
+function normalizeTab(t: string | null): TabKey {
+  if (t === 'registrar') return 'registrar'
+  if (t === 'catalogo') return 'catalogo'
+  return 'inicio'
+}
 
 export type Servicio = {
   id: string
@@ -52,25 +60,31 @@ const CAT_LABEL: Record<string, string> = {
 }
 
 export function ClinicaClient({
-  servicios, realizados, tabulador, fxRate,
+  servicios, realizados, tabulador, fxRate, esEnfermera = false,
 }: {
   servicios: Servicio[]
   realizados: Realizado[]
   tabulador: Tabulador
   fxRate: number
+  esEnfermera?: boolean
 }) {
-  const [tab, setTab] = useState<'tabulador' | 'registrar' | 'catalogo'>('tabulador')
+  const router = useRouter()
+  const sp = useSearchParams()
+  const tab = normalizeTab(sp.get('tab'))
+  const goTab = (t: TabKey) => router.replace(`/clinica?tab=${t}`, { scroll: false })
 
   return (
     <div className="space-y-4">
-      {/* Tabs */}
-      <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
-        <TabBtn active={tab === 'tabulador'} onClick={() => setTab('tabulador')} icon={DollarSign} label="Tabulador" />
-        <TabBtn active={tab === 'registrar'} onClick={() => setTab('registrar')} icon={Plus} label="Registrar" />
-        <TabBtn active={tab === 'catalogo'} onClick={() => setTab('catalogo')} icon={ClipboardList} label="Catálogo" />
-      </div>
+      {/* Pestañas superiores: solo para socios/admin. La enfermera usa su menú inferior. */}
+      {!esEnfermera && (
+        <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+          <TabBtn active={tab === 'inicio'} onClick={() => goTab('inicio')} icon={DollarSign} label="Tabulador" />
+          <TabBtn active={tab === 'registrar'} onClick={() => goTab('registrar')} icon={Plus} label="Registrar" />
+          <TabBtn active={tab === 'catalogo'} onClick={() => goTab('catalogo')} icon={ClipboardList} label="Catálogo" />
+        </div>
+      )}
 
-      {tab === 'tabulador' && <TabuladorView tabulador={tabulador} realizados={realizados} />}
+      {tab === 'inicio' && <TabuladorView tabulador={tabulador} realizados={realizados} esEnfermera={esEnfermera} onGoTab={goTab} />}
       {tab === 'registrar' && <RegistrarView servicios={servicios} />}
       {tab === 'catalogo' && <CatalogoView servicios={servicios} fxRate={fxRate} />}
     </div>
@@ -89,7 +103,7 @@ function TabBtn({ active, onClick, icon: Icon, label }: { active: boolean; onCli
   )
 }
 
-function TabuladorView({ tabulador, realizados }: { tabulador: Tabulador; realizados: Realizado[] }) {
+function TabuladorView({ tabulador, realizados, esEnfermera, onGoTab }: { tabulador: Tabulador; realizados: Realizado[]; esEnfermera?: boolean; onGoTab?: (t: TabKey) => void }) {
   const [, start] = useTransition()
 
   // Gamificación: progreso de reviews hacia el siguiente paquete de 10
@@ -128,6 +142,26 @@ function TabuladorView({ tabulador, realizados }: { tabulador: Tabulador; realiz
           )}
         </div>
       </section>
+
+      {/* Accesos rápidos (solo enfermera) */}
+      {esEnfermera && onGoTab && (
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onGoTab('registrar')}
+            className="rounded-xl p-3 flex items-center gap-2 bg-cyan-500/15 border border-cyan-500/40 text-cyan-200 font-bold text-sm active:scale-[0.98] transition-transform"
+          >
+            <PlusCircle className="h-5 w-5" /> Registrar servicio
+          </button>
+          <button
+            type="button"
+            onClick={() => onGoTab('catalogo')}
+            className="rounded-xl p-3 flex items-center gap-2 bg-purple-500/15 border border-purple-500/40 text-purple-200 font-bold text-sm active:scale-[0.98] transition-transform"
+          >
+            <ClipboardList className="h-5 w-5" /> Ver catálogo
+          </button>
+        </div>
+      )}
 
       {/* Desglose en cards */}
       <div className="grid grid-cols-2 gap-2">

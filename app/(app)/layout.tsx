@@ -9,6 +9,7 @@ import { Toaster } from '@/components/ui/toast'
 import { ToastFlash } from '@/components/ui/toast-flash'
 import { PullToRefresh } from '@/components/ui/pull-to-refresh'
 import { EnfermeraGuard } from '@/components/nav/enfermera-guard'
+import { NurseBottomNav } from '@/components/clinica/nurse-bottom-nav'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -39,23 +40,29 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
   const esEnfermera = rol === 'enfermera'
 
-  // ENFERMERA: vista limitada — solo Clínica, sin menú completo ni FAB
+  // ENFERMERA: experiencia propia — dashboard, menú inferior, sin acceso al resto
   if (esEnfermera) {
+    const primerNombre = nombre.split(' ')[0]
     return (
       <div className="min-h-screen flex flex-col bg-[var(--bg-base)]">
-        <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]/90 backdrop-blur">
-          <div className="px-4 h-14 flex items-center justify-between max-w-3xl mx-auto">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">🏥</span>
-              <span className="font-black heading-gradient">Cabo Walk-in Clinic</span>
+        <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-gradient-to-r from-emerald-500/10 via-cyan-500/5 to-transparent backdrop-blur-lg">
+          <div className="px-4 py-3 flex items-center justify-between max-w-3xl mx-auto">
+            <div className="leading-tight">
+              <p className="text-base font-black heading-gradient">Hola, {primerNombre} 👋</p>
+              <p className="text-[11px] text-zinc-400 flex items-center gap-1">🏥 Cabo Walk-in Clinic</p>
             </div>
-            <span className="text-xs text-zinc-400">{nombre}</span>
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-cyan-500/20 border border-cyan-500/40 text-sm font-black text-cyan-300">
+              {primerNombre.slice(0, 1).toUpperCase()}
+            </span>
           </div>
         </header>
         <EnfermeraGuard />
         <PullToRefresh>
-          <main className="flex-1">{children}</main>
+          <main className="flex-1 pb-20">{children}</main>
         </PullToRefresh>
+        <Suspense fallback={null}>
+          <NurseBottomNav />
+        </Suspense>
         <Toaster />
         <Suspense fallback={null}>
           <ToastFlash />
