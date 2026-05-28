@@ -18,7 +18,7 @@ const CATEGORIAS = [
   { v: 'otra',           l: '📌 Otra' },
 ] as const
 
-export function TareaForm({ perfiles, negocios }: { perfiles: Profile[]; negocios: Negocio[] }) {
+export function TareaForm({ perfiles, negocios, esEnfermera = false }: { perfiles: Profile[]; negocios: Negocio[]; esEnfermera?: boolean }) {
   const router = useRouter()
   const [state, formAction, pending] = useActionState<ActionState, FormData>(createTarea, {})
 
@@ -69,7 +69,7 @@ export function TareaForm({ perfiles, negocios }: { perfiles: Profile[]; negocio
 
       {/* Asignar a */}
       <div className="space-y-2">
-        <p className="label-caps">Asignar a (uno o ambos)</p>
+        <p className="label-caps">{esEnfermera ? 'Enviar a' : 'Asignar a (uno o ambos)'}</p>
         <div className="flex flex-wrap gap-1.5">
           {perfiles.map((p) => (
             <label key={p.id} className="cursor-pointer">
@@ -140,82 +140,84 @@ export function TareaForm({ perfiles, negocios }: { perfiles: Profile[]; negocio
         </div>
       </div>
 
-      {/* Categoría */}
-      <div className="space-y-2">
-        <p className="label-caps">Categoría</p>
-        <input type="hidden" name="categoria" value={categoria} />
-        <div className="flex flex-wrap gap-1.5">
-          {CATEGORIAS.map((c) => (
-            <button
-              key={c.v}
-              type="button"
-              onClick={() => setCategoria(c.v)}
-              className={cn(
-                'h-8 px-3 rounded-full text-xs border transition-colors',
-                categoria === c.v
-                  ? 'border-cyan-500 bg-cyan-500 text-white'
-                  : 'border-zinc-700 text-zinc-400'
-              )}
-            >
-              {c.l}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Negocio (opcional) */}
-      <div className="space-y-2">
-        <label htmlFor="negocio_id" className="label-caps">Negocio (opcional)</label>
-        <select id="negocio_id" name="negocio_id" className="input-base w-full">
-          <option value="">— Sin negocio</option>
-          {negocios.map((n) => <option key={n.id} value={n.id}>{n.nombre}</option>)}
-        </select>
-      </div>
-
-      {/* Multa */}
-      <label className="flex items-center gap-3 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={tieneMulta}
-          onChange={(e) => setTieneMulta(e.target.checked)}
-          className="h-5 w-5 rounded border-cyan-500/40 bg-[var(--bg-input)] text-cyan-500"
-        />
-        <span className="text-sm text-zinc-300">Aplicar multa si no se completa a tiempo</span>
-      </label>
-
-      {tieneMulta && (
-        <div className="grid grid-cols-2 gap-3">
+      {/* Categoría / Negocio / Multa: solo para socios-admin, no para la enfermera */}
+      {!esEnfermera && (
+        <>
           <div className="space-y-2">
-            <label htmlFor="multa_monto" className="label-caps">Monto multa</label>
-            <input
-              id="multa_monto"
-              name="multa_monto"
-              type="text"
-              inputMode="decimal"
-              placeholder="500"
-              className="input-base w-full"
-            />
-          </div>
-          <div className="space-y-2">
-            <p className="label-caps">Moneda</p>
-            <input type="hidden" name="moneda_multa" value={moneda} />
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--bg-input)] h-12">
-              {(['MXN', 'USD'] as const).map((m) => (
+            <p className="label-caps">Categoría</p>
+            <input type="hidden" name="categoria" value={categoria} />
+            <div className="flex flex-wrap gap-1.5">
+              {CATEGORIAS.map((c) => (
                 <button
-                  key={m}
+                  key={c.v}
                   type="button"
-                  onClick={() => setMoneda(m)}
+                  onClick={() => setCategoria(c.v)}
                   className={cn(
-                    'rounded-lg text-sm font-bold transition-colors',
-                    moneda === m ? 'bg-[var(--bg-card)] text-white shadow' : 'text-zinc-500'
+                    'h-8 px-3 rounded-full text-xs border transition-colors',
+                    categoria === c.v
+                      ? 'border-cyan-500 bg-cyan-500 text-white'
+                      : 'border-zinc-700 text-zinc-400'
                   )}
                 >
-                  {m}
+                  {c.l}
                 </button>
               ))}
             </div>
           </div>
-        </div>
+
+          <div className="space-y-2">
+            <label htmlFor="negocio_id" className="label-caps">Negocio (opcional)</label>
+            <select id="negocio_id" name="negocio_id" className="input-base w-full">
+              <option value="">— Sin negocio</option>
+              {negocios.map((n) => <option key={n.id} value={n.id}>{n.nombre}</option>)}
+            </select>
+          </div>
+
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={tieneMulta}
+              onChange={(e) => setTieneMulta(e.target.checked)}
+              className="h-5 w-5 rounded border-cyan-500/40 bg-[var(--bg-input)] text-cyan-500"
+            />
+            <span className="text-sm text-zinc-300">Aplicar multa si no se completa a tiempo</span>
+          </label>
+
+          {tieneMulta && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label htmlFor="multa_monto" className="label-caps">Monto multa</label>
+                <input
+                  id="multa_monto"
+                  name="multa_monto"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="500"
+                  className="input-base w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="label-caps">Moneda</p>
+                <input type="hidden" name="moneda_multa" value={moneda} />
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--bg-input)] h-12">
+                  {(['MXN', 'USD'] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMoneda(m)}
+                      className={cn(
+                        'rounded-lg text-sm font-bold transition-colors',
+                        moneda === m ? 'bg-[var(--bg-card)] text-white shadow' : 'text-zinc-500'
+                      )}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {state.error && <p className="text-sm text-rose-400">{state.error}</p>}

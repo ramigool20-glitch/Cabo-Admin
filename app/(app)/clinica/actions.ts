@@ -4,7 +4,6 @@ import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { hoyEnCabos } from '@/lib/fechas'
 
 export type ClinicaState = { ok?: boolean; error?: string }
 
@@ -46,6 +45,60 @@ export async function registrarServicioClinica(_prev: ClinicaState, formData: Fo
   if (error) {
     if (/relation.*does not exist/i.test(error.message)) {
       return { error: 'Falta pegar migración 0025_clinica.sql' }
+    }
+    return { error: error.message }
+  }
+
+  revalidatePath('/clinica')
+  return { ok: true }
+}
+
+// ============================================================
+// Registrar reseña (review) — suma al bono de la enfermera
+// ============================================================
+const ResenaSchema = z.object({
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  monto: z.coerce.number().min(0).default(50),
+  cliente: z.string().optional().nullable(),
+  nota: z.string().optional().nullable(),
+})
+
+export async function registrarResenaClinica(_prev: ClinicaState, formData: FormData): Promise<ClinicaState> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' }
+
+  const raw = Object.fromEntries(formData.entries())
+  const parsed = ResenaSchema.safeParse({
+    ...raw,
+    cliente: raw.cliente || null,
+    nota: raw.nota || null,
+  })
+  if (!parsed.success) return { error: 'Datos inválidos' }
+
+  const admin = createAdminClient()
+  // Atribuir a la enfermera configurada (no a quien registra)
+  const { data: cfg } = await admin
+    .from('clinica_config_enfermera')
+    .select('enfermera_id')
+    .eq('activa', true)
+    .limit(1)
+    .maybeSingle()
+  const enfermeraId = cfg?.enfermera_id ?? user.id
+
+  const { error } = await admin.from('clinica_realizados').insert({
+    tipo: 'review',
+    servicio_nombre: '⭐ Reseña' + (parsed.data.cliente ? ` · ${parsed.data.cliente}` : ''),
+    enfermera_id: enfermeraId,
+    fecha: parsed.data.fecha,
+    pago_comision: parsed.data.monto,
+    propina: 0,
+    moneda: 'MXN',
+    notas: parsed.data.nota,
+  })
+  if (error) {
+    if (/column .*tipo.* does not exist/i.test(error.message) || /tipo/i.test(error.message)) {
+      return { error: 'Falta la columna "tipo". Pega el ALTER que te di en Supabase.' }
     }
     return { error: error.message }
   }

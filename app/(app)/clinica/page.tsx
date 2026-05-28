@@ -57,18 +57,21 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
   const realizados = (realRes.data ?? []) as unknown as Realizado[]
   const cfg = cfgRes.data
 
+  // Separar servicios vs reseñas (tipo puede no existir aún → cuenta como servicio)
+  const reviewsRealizados = realizados.filter((r) => r.tipo === 'review')
+  const serviciosRealizados = realizados.filter((r) => r.tipo !== 'review')
+
   // Tabulador
-  const comisiones = realizados.reduce((s, r) => s + Number(r.pago_comision), 0)
+  const comisiones = serviciosRealizados.reduce((s, r) => s + Number(r.pago_comision), 0)
   const propinas = realizados.reduce((s, r) => s + Number(r.propina), 0)
-  const reviews = cfg?.reviews_acumuladas ?? 0
-  const bonoPorReview = cfg?.bono_por_review ?? 50
-  const bono = reviews * bonoPorReview
+  const bono = reviewsRealizados.reduce((s, r) => s + Number(r.pago_comision), 0)
+  const reviews = reviewsRealizados.length
   const sueldoBase = cfg?.sueldo_base_quincenal ?? 0
   const total = comisiones + propinas + bono + sueldoBase
 
   const tabulador: Tabulador = {
     periodo, comisiones, propinas, bono, sueldoBase, total,
-    numServicios: realizados.length, reviews,
+    numServicios: serviciosRealizados.length, reviews,
   }
 
   return (

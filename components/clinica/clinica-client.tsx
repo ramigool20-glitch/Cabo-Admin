@@ -1,12 +1,12 @@
 'use client'
 
 import { useActionState, useEffect, useState } from 'react'
-import { Loader2, Plus, Stethoscope, DollarSign, ClipboardList, Trash2, PlusCircle } from 'lucide-react'
+import { Loader2, Plus, Stethoscope, DollarSign, ClipboardList, Trash2, PlusCircle, Star } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn, formatMoney } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { toast } from '@/components/ui/toast'
-import { registrarServicioClinica, eliminarServicioClinica, type ClinicaState } from '@/app/(app)/clinica/actions'
+import { registrarServicioClinica, registrarResenaClinica, eliminarServicioClinica, type ClinicaState } from '@/app/(app)/clinica/actions'
 import { useTransition } from 'react'
 
 type TabKey = 'inicio' | 'registrar' | 'catalogo'
@@ -31,12 +31,14 @@ export type Servicio = {
 
 export type Realizado = {
   id: string
+  tipo?: string | null
   servicio_nombre: string | null
   fecha: string
   ubicacion: string | null
   pago_comision: number
   propina: number
   cobrado_cliente: number | null
+  notas?: string | null
 }
 
 export type Tabulador = {
@@ -106,6 +108,10 @@ function TabBtn({ active, onClick, icon: Icon, label }: { active: boolean; onCli
 function TabuladorView({ tabulador, realizados, esEnfermera, onGoTab }: { tabulador: Tabulador; realizados: Realizado[]; esEnfermera?: boolean; onGoTab?: (t: TabKey) => void }) {
   const [, start] = useTransition()
 
+  // Separar servicios de reseñas para los historiales
+  const servicios = realizados.filter((r) => r.tipo !== 'review')
+  const reviewsList = realizados.filter((r) => r.tipo === 'review')
+
   // Gamificación: progreso de reviews hacia el siguiente paquete de 10
   const reviews = tabulador.reviews
   const siguienteHito = Math.ceil((reviews + 1) / 10) * 10
@@ -172,27 +178,62 @@ function TabuladorView({ tabulador, realizados, esEnfermera, onGoTab }: { tabula
       </div>
 
       {/* Progreso de reviews (gamificado) */}
-      <section className="card p-4 space-y-2">
+      <section className="rounded-2xl p-4 space-y-2.5 bg-gradient-to-br from-amber-500/15 to-orange-500/10 border border-amber-500/30">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-bold text-amber-300">⭐ Reviews: {reviews}</p>
-          <p className="text-[10px] text-zinc-500">Meta: {siguienteHito} (faltan {siguienteHito - reviews})</p>
+          <p className="text-sm font-black text-amber-300 inline-flex items-center gap-1.5">
+            <Star className="h-4 w-4 fill-amber-300" /> {reviews} reseñas
+          </p>
+          <p className="text-sm font-black tabular-nums text-amber-200">+{formatMoney(tabulador.bono, 'MXN')}</p>
         </div>
-        <div className="h-2.5 rounded-full bg-zinc-800 overflow-hidden">
+        <div className="h-2.5 rounded-full bg-black/40 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-amber-400 to-amber-300 transition-all"
+            className="h-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all"
             style={{ width: `${Math.max(4, progresoReviews)}%` }}
           />
         </div>
-        <p className="text-[10px] text-zinc-500">Cada review suma $50. ¡Junta 10 para el siguiente bono!</p>
+        <p className="text-[10px] text-amber-200/70">
+          {siguienteHito - reviews === 10
+            ? '⭐ ¡Suma tu primera reseña del periodo!'
+            : `Faltan ${siguienteHito - reviews} para llegar a ${siguienteHito} 🎉 · cada reseña suma $50`}
+        </p>
       </section>
 
+      {/* Historial de reseñas */}
+      {reviewsList.length > 0 && (
+        <section className="space-y-2">
+          <h3 className="label-caps inline-flex items-center gap-1.5"><Star className="h-3.5 w-3.5 text-amber-400" /> Reseñas del periodo ({reviewsList.length})</h3>
+          <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
+            {reviewsList.map((r) => (
+              <li key={r.id} className="p-3 flex items-center gap-3">
+                <span className="text-lg">⭐</span>
+                <div className="flex-1 min-w-0 leading-tight">
+                  <p className="text-sm font-medium text-white truncate">{r.servicio_nombre?.replace(/^⭐ /, '') || 'Reseña'}</p>
+                  <p className="text-[10px] text-zinc-500">{formatearFecha(r.fecha, 'dd MMM')}{r.notas ? ` · ${r.notas}` : ''}</p>
+                </div>
+                <p className="text-sm font-bold tabular-nums text-amber-300">+{formatMoney(r.pago_comision, 'MXN')}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!confirm('¿Eliminar esta reseña?')) return
+                    start(async () => { await eliminarServicioClinica(r.id); toast.info('Eliminada') })
+                  }}
+                  className="h-7 w-7 rounded text-zinc-500 hover:text-rose-400 inline-flex items-center justify-center"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="space-y-2">
-        <h3 className="label-caps">Servicios de la quincena ({realizados.length})</h3>
-        {realizados.length === 0 ? (
-          <div className="card border-dashed p-6 text-center text-sm text-zinc-500">Sin servicios registrados en esta quincena.</div>
+        <h3 className="label-caps">🩺 Servicios del periodo ({servicios.length})</h3>
+        {servicios.length === 0 ? (
+          <div className="card border-dashed p-6 text-center text-sm text-zinc-500">Sin servicios registrados en este periodo.</div>
         ) : (
           <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
-            {realizados.map((r) => (
+            {servicios.map((r) => (
               <li key={r.id} className="p-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0 leading-tight">
                   <p className="text-sm font-medium text-white truncate">{r.servicio_nombre}</p>
@@ -234,6 +275,76 @@ function Linea({ label, monto, sub, color }: { label: string; monto: number; sub
 }
 
 function RegistrarView({ servicios }: { servicios: Servicio[] }) {
+  const [modo, setModo] = useState<'servicio' | 'resena'>('servicio')
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+        <button
+          type="button"
+          onClick={() => setModo('servicio')}
+          className={cn('h-9 rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5', modo === 'servicio' ? 'bg-cyan-500 text-white shadow' : 'text-zinc-400')}
+        >
+          <Stethoscope className="h-3.5 w-3.5" /> Servicio
+        </button>
+        <button
+          type="button"
+          onClick={() => setModo('resena')}
+          className={cn('h-9 rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5', modo === 'resena' ? 'bg-amber-500 text-zinc-950 shadow' : 'text-zinc-400')}
+        >
+          <Star className="h-3.5 w-3.5" /> Reseña
+        </button>
+      </div>
+      {modo === 'servicio' ? <ServicioForm servicios={servicios} /> : <ResenaForm />}
+    </div>
+  )
+}
+
+function ResenaForm() {
+  const [state, formAction, pending] = useActionState<ClinicaState, FormData>(registrarResenaClinica, {})
+  useEffect(() => {
+    if (state.ok) toast.success('Reseña registrada', 'Sumada al bono de la enfermera ⭐')
+    else if (state.error) toast.error('Error', state.error)
+  }, [state])
+
+  return (
+    <form action={formAction} key={state.ok ? Math.random() : 'resena'} className="rounded-2xl p-4 space-y-3 bg-gradient-to-br from-amber-500/10 to-orange-500/5 border border-amber-500/30">
+      <p className="text-sm font-bold text-amber-300 inline-flex items-center gap-1.5">
+        <Star className="h-4 w-4 fill-amber-300" /> Registrar reseña ⭐
+      </p>
+      <p className="text-[11px] text-amber-200/70">Cada reseña suma al bono de Patricia en su tabulador.</p>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1.5">
+          <label className="label-caps">Fecha</label>
+          <input name="fecha" type="date" required defaultValue={hoyEnCabos()} className="input-base w-full h-10 text-sm" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="label-caps">Bono (MXN)</label>
+          <input name="monto" type="text" inputMode="decimal" defaultValue="50" className="input-base w-full h-10 text-sm font-bold tabular-nums" />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="label-caps">Cliente (opcional)</label>
+        <input name="cliente" placeholder="Nombre del cliente que dejó la reseña" className="input-base w-full h-10 text-sm" />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="label-caps">Nota (opcional)</label>
+        <input name="nota" placeholder="Ej: 5 estrellas en Google" className="input-base w-full h-10 text-sm" />
+      </div>
+
+      {state.error && <p className="text-xs text-rose-400">{state.error}</p>}
+
+      <button type="submit" disabled={pending} className="w-full h-10 text-sm rounded-xl font-bold bg-amber-500 text-zinc-950 inline-flex items-center justify-center gap-1.5 disabled:opacity-50">
+        {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Star className="h-4 w-4 fill-zinc-950" />}
+        Registrar reseña
+      </button>
+    </form>
+  )
+}
+
+function ServicioForm({ servicios }: { servicios: Servicio[] }) {
   const [state, formAction, pending] = useActionState<ClinicaState, FormData>(registrarServicioClinica, {})
   const [servicioId, setServicioId] = useState('')
   const [fueraHorario, setFueraHorario] = useState(false)

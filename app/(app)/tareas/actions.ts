@@ -62,16 +62,14 @@ export async function createTarea(_prev: ActionState, formData: FormData): Promi
   // Push a TODOS los socios + asignados (sin duplicar y sin notificar al creador)
   try {
     const admin = createAdminClient()
-    const { data: socios } = await admin
-      .from('profiles')
-      .select('id, nombre, role_id, roles(nombre)')
-      .eq('activo', true)
+    const [{ data: roles }, { data: perfilesActivos }] = await Promise.all([
+      admin.from('roles').select('id, nombre'),
+      admin.from('profiles').select('id, nombre, role_id').eq('activo', true),
+    ])
+    const rolesById = new Map((roles ?? []).map((r) => [r.id, r.nombre]))
 
-    const idsSocios = (socios ?? [])
-      .filter((p) => {
-        const r = p.roles as unknown as { nombre: string } | null
-        return r?.nombre === 'admin' || r?.nombre === 'socio'
-      })
+    const idsSocios = (perfilesActivos ?? [])
+      .filter((p) => ['admin', 'socio'].includes(rolesById.get(p.role_id ?? '') ?? ''))
       .map((p) => p.id)
 
     const asignados = (parsed.data.asignada_a ?? []) as string[]
@@ -79,7 +77,7 @@ export async function createTarea(_prev: ActionState, formData: FormData): Promi
       .filter((id) => id !== user.id)
 
     if (destinatarios.length > 0 && tareaCreada) {
-      const creadorNombre = (socios ?? []).find((p) => p.id === user.id)?.nombre ?? 'Alguien'
+      const creadorNombre = (perfilesActivos ?? []).find((p) => p.id === user.id)?.nombre ?? 'Alguien'
       const prioridadEmoji = parsed.data.prioridad === 'alta' ? '🔥' : parsed.data.prioridad === 'media' ? '⚡' : '📝'
       const venceTxt = parsed.data.fecha_limite
         ? ` · vence ${parsed.data.fecha_limite.slice(0, 10)}`

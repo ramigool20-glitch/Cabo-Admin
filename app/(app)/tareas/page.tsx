@@ -1,4 +1,5 @@
-import { CheckSquare } from 'lucide-react'
+import Link from 'next/link'
+import { CheckSquare, Plus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { TareaRow, type TareaListItem } from '@/components/tareas/tarea-row'
@@ -7,12 +8,28 @@ export default async function TareasPage() {
   const supabase = await createClient()
   const admin = createAdminClient()
 
+  // ¿Quién entra? La enfermera solo ve tareas asignadas a ella o creadas por ella.
+  const { data: { user } } = await supabase.auth.getUser()
+  let esEnfermera = false
+  if (user) {
+    const { data: prof } = await admin.from('profiles').select('role_id').eq('id', user.id).single()
+    if (prof?.role_id) {
+      const { data: roleRow } = await admin.from('roles').select('nombre').eq('id', prof.role_id).single()
+      esEnfermera = roleRow?.nombre === 'enfermera'
+    }
+  }
+
+  let tareasQuery = supabase
+    .from('tareas')
+    .select('id, titulo, descripcion, fecha_limite, prioridad, estado, asignada_a, multa_monto, moneda_multa, categoria, negocio_id')
+    .order('fecha_limite', { ascending: true })
+    .limit(100)
+  if (esEnfermera && user) {
+    tareasQuery = tareasQuery.or(`asignada_a.cs.{${user.id}},creada_por.eq.${user.id}`)
+  }
+
   const [{ data: tareas }, { data: perfiles }, { data: negocios }] = await Promise.all([
-    supabase
-      .from('tareas')
-      .select('id, titulo, descripcion, fecha_limite, prioridad, estado, asignada_a, multa_monto, moneda_multa, categoria, negocio_id')
-      .order('fecha_limite', { ascending: true })
-      .limit(100),
+    tareasQuery,
     admin.from('profiles').select('id, nombre'),
     supabase.from('negocios').select('id, nombre').eq('activo', true),
   ])
@@ -43,7 +60,12 @@ export default async function TareasPage() {
     <div className="px-4 pt-5 pb-24 space-y-5 max-w-3xl mx-auto">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-black heading-gradient">Tareas</h1>
-        <span className="chip">{activas.length + vencidas.length} activas</span>
+        <div className="flex items-center gap-2">
+          <span className="chip">{activas.length + vencidas.length} activas</span>
+          <Link href="/tareas/nueva" className="btn-primary h-9 px-3 text-sm">
+            <Plus className="h-4 w-4" /> Nueva
+          </Link>
+        </div>
       </div>
 
       {activas.length === 0 && vencidas.length === 0 && completadas.length === 0 ? (
