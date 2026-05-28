@@ -16,11 +16,13 @@ export default async function ClinicaPage() {
   const hasta = dia <= 15 ? `${ym}-15` : `${ym}-${String(finMes).padStart(2, '0')}`
   const periodo = dia <= 15 ? `1-15 ${ym}` : `16-${finMes} ${ym}`
 
-  const [servRes, realRes, cfgRes] = await Promise.all([
+  const [servRes, realRes, cfgRes, fxRes] = await Promise.all([
     admin.from('clinica_servicios').select('*').eq('activo', true).order('orden'),
     admin.from('clinica_realizados').select('*').gte('fecha', desde).lte('fecha', hasta).order('fecha', { ascending: false }),
     admin.from('clinica_config_enfermera').select('*').eq('activa', true).limit(1).maybeSingle(),
+    admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
   ])
+  const fxRate = fxRes.data ? Number(fxRes.data.rate_compra) : 17
 
   // Si las tablas no existen aún
   if (servRes.error && /relation.*does not exist/i.test(servRes.error.message)) {
@@ -65,7 +67,7 @@ export default async function ClinicaPage() {
         </p>
       </header>
 
-      <ClinicaClient servicios={servicios} realizados={realizados} tabulador={tabulador} />
+      <ClinicaClient servicios={servicios} realizados={realizados} tabulador={tabulador} fxRate={fxRate} />
     </div>
   )
 }

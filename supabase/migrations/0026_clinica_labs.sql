@@ -1,0 +1,56 @@
+-- =============================================================
+-- Migración 0026: Catálogo completo de laboratorios (PDF interno LSG)
+-- =============================================================
+-- Precios all-in (lab + fee móvil $65) en USD. Comisión enfermera $80 MXN.
+-- protocolo = turnaround + preparación.
+-- =============================================================
+
+insert into clinica_servicios (categoria, nombre_es, nombre_en, precio_cliente, moneda_precio, comision_enfermera, para_que_sirve, protocolo, orden) values
+  ('lab', 'BHC (Biometría Hemática Completa)', 'Complete Blood Count', 75, 'USD', 80, 'Conteo de células sanguíneas: glóbulos rojos, blancos, plaquetas.', 'Mismo día · Ayuno 8-12 hrs', 100),
+  ('lab', 'Química Sanguínea 3 elementos (QS3)', 'Blood Chemistry 3', 74, 'USD', 80, 'Glucosa, urea, creatinina.', 'Mismo día · Ayuno 8-12 hrs', 101),
+  ('lab', 'Química Sanguínea 6 elementos (QS6)', 'Blood Chemistry 6', 75, 'USD', 80, 'Química básica ampliada.', 'Mismo día · Ayuno 8-12 hrs', 102),
+  ('lab', 'Química Sanguínea 12 elementos (QS12)', 'Blood Chemistry 12', 84, 'USD', 80, 'Perfil metabólico medio.', 'Mismo día · Ayuno 8-12 hrs', 103),
+  ('lab', 'Química Sanguínea 25 elementos (QS25)', 'Blood Chemistry 25', 87, 'USD', 80, 'Perfil metabólico amplio.', 'Mismo día · Ayuno 8-12 hrs', 104),
+  ('lab', 'Química Sanguínea 30 elementos (QS30)', 'Blood Chemistry 30', 98, 'USD', 80, 'Perfil metabólico completo.', 'Mismo día · Ayuno 8-12 hrs', 105),
+  ('lab', 'Química Sanguínea 36 elementos (QS36)', 'Blood Chemistry 36', 115, 'USD', 80, 'Perfil metabólico extendido.', 'Mismo día · Ayuno 8-12 hrs', 106),
+  ('lab', 'Hemoglobina Glucosilada (HbA1c)', 'HbA1c', 87, 'USD', 80, 'Control de diabetes (promedio glucosa 3 meses).', 'Mismo día · Sin ayuno', 107),
+  ('lab', 'Perfil Hepático', 'Liver Panel', 83, 'USD', 80, 'Función del hígado: ALT, AST, GGT, bilirrubina.', 'Mismo día · Ayuno 8-12 hrs', 108),
+  ('lab', 'Perfil de Lípidos', 'Lipid Panel', 86, 'USD', 80, 'Colesterol y triglicéridos.', 'Mismo día · Ayuno 8-12 hrs', 109),
+  ('lab', 'Electrolitos Séricos 3 (ES3)', 'Serum Electrolytes 3', 87, 'USD', 80, 'Sodio, potasio, cloro.', 'Mismo día · Ayuno 8-12 hrs', 110),
+  ('lab', 'Electrolitos Séricos 6 (ES6)', 'Serum Electrolytes 6', 96, 'USD', 80, 'Electrolitos ampliados.', 'Mismo día · Ayuno 8-12 hrs', 111),
+  ('lab', 'Perfil Tiroideo', 'Thyroid Panel', 94, 'USD', 80, 'Función tiroidea: TSH, T3, T4.', 'Mismo día · Ayuno 8-12 hrs', 112),
+  ('lab', 'Perfil Ginecológico', 'Gynecological Panel', 96, 'USD', 80, 'Hormonas femeninas.', 'Mismo día · Ayuno 8-12 hrs', 113),
+  ('lab', 'Vitamina D 25', 'Vitamin D 25-OH', 114, 'USD', 80, 'Nivel de vitamina D.', 'Mismo día · Ayuno 8-12 hrs', 114),
+  ('lab', 'Insulina', 'Insulin', 86, 'USD', 80, 'Nivel de insulina (resistencia/diabetes).', 'Mismo día · Ayuno 8-12 hrs', 115),
+  ('lab', 'Cortisol', 'Cortisol', 86, 'USD', 80, 'Hormona del estrés.', 'Mismo día · Ayuno 8-12 hrs', 116),
+  ('lab', 'Fracción Beta hCG', 'hCG', 95, 'USD', 80, 'Embarazo / marcador tumoral.', 'Mismo día · Ayuno 8-12 hrs', 117),
+  ('lab', 'PSA Total', 'PSA Total', 86, 'USD', 80, 'Tamizaje de próstata.', 'Mismo día · Ayuno 8-12 hrs', 118),
+  ('lab', 'Testosterona Total', 'Total Testosterone', 80, 'USD', 80, 'Nivel de testosterona total.', 'Mismo día · Ayuno 8-12 hrs', 119),
+  ('lab', 'Tipo Sanguíneo', 'Blood Type', 74, 'USD', 80, 'Grupo y factor Rh.', 'Mismo día · Sin ayuno', 120),
+  ('lab', 'PCR Látex (Proteína C Reactiva)', 'C-Reactive Protein', 74, 'USD', 80, 'Marcador de inflamación.', 'Mismo día · Ayuno 8-12 hrs', 121),
+  ('lab', 'Factor Reumatoide', 'Rheumatoid Factor', 73, 'USD', 80, 'Diagnóstico de artritis reumatoide.', 'Mismo día · Ayuno 8-12 hrs', 122),
+  ('lab', 'Reacciones Febriles', 'Febrile Reactions', 76, 'USD', 80, 'Detección de tifoidea/brucelosis.', 'Mismo día · Ayuno 8-12 hrs', 123),
+  ('lab', 'Doping 5 elementos', 'Drug Test 5-panel', 81, 'USD', 80, 'Detección de 5 drogas en orina.', 'Mismo día · Orina (medio frasco)', 124),
+  ('lab', 'Doping 10 elementos', 'Drug Test 10-panel', 94, 'USD', 80, 'Detección de 10 drogas en orina.', 'Mismo día · Orina (medio frasco)', 125),
+  ('lab', 'VIH', 'HIV', 78, 'USD', 80, 'Detección de VIH.', 'Mismo día · Ayuno 8-12 hrs', 126),
+  ('lab', 'VDRL (Sífilis)', 'VDRL (Syphilis)', 72, 'USD', 80, 'Tamizaje de sífilis.', 'Mismo día · Ayuno 8-12 hrs', 127),
+  ('lab', 'Perfil de Hepatitis A, B, C', 'Hepatitis A,B,C Panel', 116, 'USD', 80, 'Detección de hepatitis virales.', 'Mismo día · Ayuno 8-12 hrs', 128),
+  ('lab', 'EGO (Examen General de Orina)', 'Urinalysis', 72, 'USD', 80, 'Análisis general de orina.', 'Mismo día · Primera orina de la mañana, chorro medio', 129),
+  ('lab', 'Coprológico', 'Stool Analysis', 83, 'USD', 80, 'Análisis de heces.', 'Mismo día · Muestra de heces (tamaño nuez)', 130),
+  ('lab', 'Coproparasitoscópico', 'Stool Parasites', 72, 'USD', 80, 'Detección de parásitos en heces.', 'Mismo día · Muestra de heces (tamaño nuez)', 131),
+  ('lab', 'TP (Tiempo de Protrombina)', 'Prothrombin Time', 72, 'USD', 80, 'Coagulación.', 'Mismo día · Ayuno 8-12 hrs', 132),
+  ('lab', 'TPT (Tiempo de Tromboplastina)', 'Partial Thromboplastin Time', 72, 'USD', 80, 'Coagulación.', 'Mismo día · Ayuno 8-12 hrs', 133),
+  ('lab', 'AELO (Antiestreptolisinas)', 'ASO Titer', 73, 'USD', 80, 'Infección por estreptococo.', 'Mismo día · Ayuno 8-12 hrs', 134),
+  ('lab', 'VSG (Velocidad de Sedimentación)', 'ESR', 72, 'USD', 80, 'Marcador de inflamación.', 'Mismo día · Ayuno 8-12 hrs', 135),
+  ('lab', 'Frotis Sanguíneo', 'Blood Smear', 71, 'USD', 80, 'Análisis morfológico de sangre.', 'Mismo día · Sin ayuno', 136),
+  ('lab', 'Urocultivo', 'Urine Culture', 100, 'USD', 80, 'Cultivo de infección urinaria.', '5 días hábiles · Primera orina, sin antibióticos', 137),
+  ('lab', 'Exudado Faríngeo', 'Throat Swab Culture', 100, 'USD', 80, 'Cultivo de garganta.', '5 días hábiles · Sin enjuague, sin antibióticos', 138),
+  ('lab', 'AG de Helicobacter Pylori', 'H. Pylori Antigen', 96, 'USD', 80, 'Bacteria estomacal (úlceras).', 'Mismo día · Muestra de heces', 139),
+  ('lab', 'Testosterona Libre', 'Free Testosterone', 99, 'USD', 80, 'Testosterona biodisponible.', '2 días hábiles · Ayuno 8-12 hrs', 140),
+  ('lab', 'PSA Libre', 'Free PSA', 93, 'USD', 80, 'Próstata (fracción libre).', '2 días hábiles · Ayuno 8-12 hrs', 141),
+  ('lab', 'Vitamina B12', 'Vitamin B12', 111, 'USD', 80, 'Nivel de B12 (energía, anemia).', '2 días hábiles · Ayuno 8-12 hrs', 142),
+  ('lab', 'Ácido Fólico', 'Folic Acid', 109, 'USD', 80, 'Nivel de folato.', '2 días hábiles · Ayuno 8-12 hrs', 143),
+  ('lab', 'Perfil de Hierro', 'Iron Panel', 122, 'USD', 80, 'Hierro, ferritina, transferrina.', '2 días hábiles · Ayuno 8-12 hrs', 144),
+  ('lab', 'DHEA', 'DHEA', 105, 'USD', 80, 'Hormona suprarrenal.', '2 días hábiles · Ayuno 8-12 hrs', 145),
+  ('lab', 'DHEA-S', 'DHEA-S', 107, 'USD', 80, 'Sulfato de DHEA.', '2 días hábiles · Ayuno 8-12 hrs', 146)
+on conflict do nothing;

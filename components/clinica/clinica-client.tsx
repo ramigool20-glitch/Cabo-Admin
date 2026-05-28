@@ -51,11 +51,12 @@ const CAT_LABEL: Record<string, string> = {
 }
 
 export function ClinicaClient({
-  servicios, realizados, tabulador,
+  servicios, realizados, tabulador, fxRate,
 }: {
   servicios: Servicio[]
   realizados: Realizado[]
   tabulador: Tabulador
+  fxRate: number
 }) {
   const [tab, setTab] = useState<'tabulador' | 'registrar' | 'catalogo'>('tabulador')
 
@@ -70,7 +71,7 @@ export function ClinicaClient({
 
       {tab === 'tabulador' && <TabuladorView tabulador={tabulador} realizados={realizados} />}
       {tab === 'registrar' && <RegistrarView servicios={servicios} />}
-      {tab === 'catalogo' && <CatalogoView servicios={servicios} />}
+      {tab === 'catalogo' && <CatalogoView servicios={servicios} fxRate={fxRate} />}
     </div>
   )
 }
@@ -237,7 +238,7 @@ function RegistrarView({ servicios }: { servicios: Servicio[] }) {
   )
 }
 
-function CatalogoView({ servicios }: { servicios: Servicio[] }) {
+function CatalogoView({ servicios, fxRate }: { servicios: Servicio[]; fxRate: number }) {
   const cats = ['consulta', 'iv', 'lab', 'inyeccion', 'enfermeria', 'otro']
   return (
     <div className="space-y-3">
@@ -257,9 +258,14 @@ function CatalogoView({ servicios }: { servicios: Servicio[] }) {
                     </div>
                     <div className="text-right shrink-0">
                       {s.precio_cliente != null && (
-                        <p className="text-sm font-bold tabular-nums text-cyan-300">
-                          {formatMoney(s.precio_cliente, s.moneda_precio as 'MXN' | 'USD')}
-                        </p>
+                        <>
+                          <p className="text-sm font-bold tabular-nums text-cyan-300">
+                            {formatMoney(s.precio_cliente, s.moneda_precio as 'MXN' | 'USD')}
+                          </p>
+                          {s.moneda_precio === 'USD' && (
+                            <p className="text-[10px] text-zinc-500 tabular-nums">≈ {formatMoney(s.precio_cliente * fxRate, 'MXN')}</p>
+                          )}
+                        </>
                       )}
                       {s.comision_enfermera != null && (
                         <p className="text-[10px] text-emerald-400 tabular-nums">comisión {formatMoney(s.comision_enfermera, 'MXN')}</p>
