@@ -1,11 +1,23 @@
-import { Bell, Users, Building2, History, Wand2 } from 'lucide-react'
+import { Bell, Users, Building2, History, Wand2, Plug } from 'lucide-react'
 import Link from 'next/link'
 import { PushSection } from '@/components/config/push-section'
 import { HistorialNotificaciones } from '@/components/config/historial-notificaciones'
 import { DiagnosticoPush } from '@/components/config/diagnostico-push'
 import { BackfillFxButton } from '@/components/config/backfill-fx-button'
+import { IntegracionesPanel } from '@/components/config/integraciones-panel'
+import { createAdminClient } from '@/lib/supabase/admin'
 
-export default function ConfigPage() {
+export default async function ConfigPage() {
+  const admin = createAdminClient()
+  const [{ data: cuentas }, { data: negocios }, { data: socios }, intgRes, numRes] = await Promise.all([
+    admin.from('cuentas').select('id, nombre').eq('activo', true).order('nombre'),
+    admin.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
+    admin.from('profiles').select('id, nombre').eq('activo', true).order('nombre'),
+    admin.from('integraciones_mp').select('id, nombre, activa, cobros_count, ultimo_sync').order('created_at', { ascending: false }),
+    admin.from('whatsapp_autorizados').select('id, numero, nombre, activo').order('created_at', { ascending: false }),
+  ])
+  const prodUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cabo-admin.vercel.app'
+
   return (
     <div className="px-4 pt-5 pb-24 space-y-5 max-w-3xl mx-auto">
       <header className="space-y-1">
@@ -22,6 +34,21 @@ export default function ConfigPage() {
         </div>
         <PushSection />
         <DiagnosticoPush />
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center gap-2 px-1">
+          <Plug className="h-4 w-4 text-sky-400" />
+          <h2 className="text-sm font-semibold text-white">Integraciones automáticas</h2>
+        </div>
+        <IntegracionesPanel
+          cuentas={cuentas ?? []}
+          negocios={negocios ?? []}
+          socios={socios ?? []}
+          integraciones={intgRes.data ?? []}
+          numeros={numRes.data ?? []}
+          prodUrl={prodUrl}
+        />
       </section>
 
       <section className="space-y-2">
