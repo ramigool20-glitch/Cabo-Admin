@@ -11,6 +11,7 @@
     { "path": "/api/cron/cierre-noche",             "schedule": "0 3 * * *" },
     { "path": "/api/cron/fx-rate",                  "schedule": "30 12 * * *" },
     { "path": "/api/cron/radar",                    "schedule": "0 16 * * *" },
-    { "path": "/api/cron/mensual",                  "schedule": "0 14 1 * *" }
+    { "path": "/api/cron/mensual",                  "schedule": "0 14 1 * *" },
+    { "path": "/api/cron/ia-observacion",           "schedule": "0 17,1 * * *" }
   ]
 }
