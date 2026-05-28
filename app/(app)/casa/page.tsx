@@ -286,7 +286,9 @@ export default async function CasaPage(
       if (vista === 'todo') return true
       if (vista === 'compartido') return !t.atribuido_a
       return t.atribuido_a === vista
-    }).map((t) => ({ ...t, negocio_id: casa.id }))
+    }).map((t) => ({ ...t, negocio_id: casa.id })),
+    6,
+    fxRate
   )
 
   return (

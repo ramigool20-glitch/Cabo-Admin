@@ -22,17 +22,28 @@ export default async function DetalleEventoPage(
   const { id } = await props.params
   const supabase = await createClient()
 
-  const [{ data: evento }, { data: pagos }, { data: cuentas }] = await Promise.all([
+  const [{ data: evento }, { data: pagos }, { data: cuentas }, { data: fxLatest }] = await Promise.all([
     supabase.from('eventos').select('*, negocios(nombre)').eq('id', id).single(),
     supabase.from('eventos_pagos').select('*').eq('evento_id', id).order('fecha_pago', { ascending: false }),
     supabase.from('cuentas').select('id, nombre, moneda').eq('activo', true).order('nombre'),
+    supabase.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   if (!evento) notFound()
 
   const negocio = evento.negocios as unknown as { nombre: string } | null
   const estado = ESTADO_CHIP[evento.estado as keyof typeof ESTADO_CHIP]
-  const totalPagado = (pagos ?? []).reduce((s, p) => s + Number(p.monto), 0)
+  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
+  // Fix: sumar pagos convertidos a la moneda del evento (no mezclar USD/MXN)
+  const totalPagado = (pagos ?? []).reduce((s, p) => {
+    const monto = Number(p.monto)
+    if (p.moneda === evento.moneda) return s + monto
+    // Convertir entre monedas
+    if (!fxRate) return s + monto
+    if (p.moneda === 'USD' && evento.moneda === 'MXN') return s + monto * fxRate
+    if (p.moneda === 'MXN' && evento.moneda === 'USD') return s + monto / fxRate
+    return s + monto
+  }, 0)
   const pendiente = Number(evento.monto_total) - totalPagado
   const comision = Number(evento.monto_total) * (Number(evento.comision_porcentaje) / 100)
   const proveedor = Number(evento.monto_total) - comision

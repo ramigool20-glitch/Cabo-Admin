@@ -42,7 +42,7 @@ export default async function CashFlowPage() {
     // Por cobrar manuales
     admin.from('cuentas_por_cobrar').select('monto_total, monto_cobrado, moneda, fecha_vencimiento, estado').neq('estado', 'cancelado').neq('estado', 'cobrado'),
     // Eventos del Rancho pendientes
-    admin.from('eventos').select('monto_total, moneda, fecha_evento, estado, eventos_pagos(monto)').in('estado', ['reservado', 'confirmado']),
+    admin.from('eventos').select('monto_total, moneda, fecha_evento, estado, comision_porcentaje, eventos_pagos(monto)').in('estado', ['reservado', 'confirmado']),
   ])
 
   const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
@@ -68,18 +68,22 @@ export default async function CashFlowPage() {
   const totalGastosFijos = totalMensualEquivalente(gastosFijos ?? [])
   const totalPorPagarMXN = (porPagar ?? []).reduce((s, c) => c.moneda === 'MXN' ? s + (Number(c.monto_total) - Number(c.monto_pagado)) : s, 0)
   const totalPorPagarUSD = (porPagar ?? []).reduce((s, c) => c.moneda === 'USD' ? s + (Number(c.monto_total) - Number(c.monto_pagado)) : s, 0)
-  const nominaTotal = (empleados ?? []).reduce((s, e) => {
+  // Fix: separar nómina por moneda — antes solo contaba MXN
+  const nomina = (empleados ?? []).reduce((acc, e) => {
     const comps = (e.empleado_compensacion as Array<{ sueldo_base: number; moneda: string; frecuencia_pago: string }> | null) ?? []
     for (const c of comps) {
       const factor = c.frecuencia_pago === 'mensual' ? 1 : c.frecuencia_pago === 'quincenal' ? 2 : c.frecuencia_pago === 'semanal' ? 4.33 : 0
-      if (c.moneda === 'MXN') s += Number(c.sueldo_base) * factor
+      const monto = Number(c.sueldo_base) * factor
+      if (c.moneda === 'USD') acc.usd += monto
+      else acc.mxn += monto
     }
-    return s
-  }, 0)
+    return acc
+  }, { mxn: 0, usd: 0 })
 
-  const obligacionesMXN = totalGastosFijos.mxn + totalPorPagarMXN + nominaTotal
-  const obligacionesUSD = totalGastosFijos.usd + totalPorPagarUSD
+  const obligacionesMXN = totalGastosFijos.mxn + totalPorPagarMXN + nomina.mxn
+  const obligacionesUSD = totalGastosFijos.usd + totalPorPagarUSD + nomina.usd
   const obligacionesTotalMxn = obligacionesMXN + obligacionesUSD * (fxRate ?? 17)
+  const nominaTotal = nomina.mxn + nomina.usd * (fxRate ?? 17)
 
   const disponibleProyectado = saldos.total_mxn - obligacionesTotalMxn
 
@@ -88,15 +92,16 @@ export default async function CashFlowPage() {
   const porCobrarUsd = (porCobrar ?? []).reduce((s, c) => c.moneda === 'USD' ? s + (Number(c.monto_total) - Number(c.monto_cobrado)) : s, 0)
   const porCobrarTotalMxn = porCobrarMxn + porCobrarUsd * (fxRate ?? 17)
 
-  // RANCHO MCCOY — separado: solo nos quedamos con la comisión (25% default), no el monto total
+  // RANCHO MCCOY — separado: solo nos quedamos con la comisión (lee del evento, no hardcoded)
   let comisionRanchoMxn = 0, comisionRanchoUsd = 0
   for (const e of eventosPend ?? []) {
     const pagos = (e.eventos_pagos as Array<{ monto: number }>) ?? []
     const cobrado = pagos.reduce((sum, p) => sum + Number(p.monto), 0)
     const pend = Number(e.monto_total) - cobrado
     if (pend <= 0.01) continue
-    // El sistema usa 25% por defecto si no se especifica
-    const pct = 25 / 100
+    // Fix: leer comision_porcentaje del evento (no hardcoded 25)
+    const pctNum = e.comision_porcentaje != null ? Number(e.comision_porcentaje) : 25
+    const pct = pctNum / 100
     const comision = pend * pct
     if (e.moneda === 'USD') comisionRanchoUsd += comision
     else comisionRanchoMxn += comision

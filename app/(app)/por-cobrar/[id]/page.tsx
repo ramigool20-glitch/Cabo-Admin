@@ -175,7 +175,7 @@ export default async function DetalleCuentaPorCobrarPage(
                     </p>
                   </div>
                   <p className="text-sm font-bold tabular-nums text-emerald-400">
-                    {formatMoney(Number(p.monto), cuenta.moneda as 'MXN' | 'USD')}
+                    {formatMoney(Number(p.monto), (p.moneda || cuenta.moneda) as 'MXN' | 'USD')}
                   </p>
                 </li>
               )
