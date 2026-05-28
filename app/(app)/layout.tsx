@@ -21,12 +21,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const admin = createAdminClient()
   const { data: profile } = await admin
     .from('profiles')
-    .select('nombre, roles(nombre)')
+    .select('nombre, role_id')
     .eq('id', user.id)
     .single()
 
   const nombre = profile?.nombre ?? user.email?.split('@')[0] ?? 'Usuario'
-  const rol = (profile?.roles as unknown as { nombre: string } | null)?.nombre ?? null
+
+  // Consulta directa al rol (robusto, sin depender del embed de PostgREST)
+  let rol: string | null = null
+  if (profile?.role_id) {
+    const { data: roleRow } = await admin
+      .from('roles')
+      .select('nombre')
+      .eq('id', profile.role_id)
+      .single()
+    rol = roleRow?.nombre ?? null
+  }
   const esEnfermera = rol === 'enfermera'
 
   // ENFERMERA: vista limitada — solo Clínica, sin menú completo ni FAB
