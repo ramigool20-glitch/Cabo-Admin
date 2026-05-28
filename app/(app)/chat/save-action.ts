@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { aMxnEquivalente } from '@/lib/fx/server'
 import { registrarHistorial } from '@/lib/historial'
+import { sincronizarTxASubTabla } from '@/lib/sync-ads-ventas'
 
 export type SavePayload = {
   tipo: 'ingreso' | 'gasto'
@@ -16,6 +17,8 @@ export type SavePayload = {
   categoria?: string | null
   concepto?: string | null
   notas?: string | null
+  atribuido_a?: string | null  // para Casa: socio dueño del gasto personal (UUID)
+  atribuido_a_nombre?: string | null  // alternativa: nombre del socio, se resuelve a UUID
   metodo_captura: 'foto' | 'voz' | 'manual'
   foto_url?: string | null
   audio_url?: string | null
@@ -29,8 +32,20 @@ export async function saveAITransaccion(payload: SavePayload) {
 
   const fx = await aMxnEquivalente(payload.monto, payload.moneda, payload.fecha)
 
+  // Resolver atribuido_a desde nombre si vino (para Casa personal)
+  let atribuidoA = payload.atribuido_a ?? null
+  if (!atribuidoA && payload.atribuido_a_nombre) {
+    const { data: socios } = await supabase.from('profiles').select('id, nombre').eq('activo', true)
+    const h = payload.atribuido_a_nombre.toLowerCase().trim()
+    atribuidoA = (socios ?? []).find((s) => s.nombre.toLowerCase().includes(h) || h.includes(s.nombre.toLowerCase()))?.id ?? null
+  }
+
+  // Separar atribuido_a_nombre del insert (no es columna)
+  const { atribuido_a_nombre: _omit, ...payloadLimpio } = payload
+  void _omit
   const insertData = {
-    ...payload,
+    ...payloadLimpio,
+    atribuido_a: atribuidoA,
     monto_mxn_equivalente: fx.monto_mxn_equivalente,
     tipo_cambio_usado: fx.tipo_cambio_usado,
     capturado_por: user.id,
@@ -46,6 +61,19 @@ export async function saveAITransaccion(payload: SavePayload) {
 
   if (data?.id) {
     await registrarHistorial(data.id, 'creada', user.id, null, insertData)
+    // Sync a gastos_ads/ventas si la categoría/concepto aplica (igual que captura manual)
+    await sincronizarTxASubTabla(supabase, {
+      txId: data.id,
+      tipo: payload.tipo,
+      negocio_id: payload.negocio_id,
+      monto: payload.monto,
+      moneda: payload.moneda,
+      fecha: payload.fecha,
+      categoria: payload.categoria ?? null,
+      concepto: payload.concepto ?? null,
+      user_id: user.id,
+      fx,
+    })
   }
 
   revalidatePath('/transacciones')

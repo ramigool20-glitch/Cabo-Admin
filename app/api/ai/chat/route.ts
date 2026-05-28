@@ -29,6 +29,7 @@ const TOOL_PARAMS = {
     categoria:      { type: 'string' as const, description: 'Categoría' },
     metodo_pago:    { type: 'string' as const, description: 'mp_terminal, stripe, efectivo_mxn, etc.' },
     fecha:          { type: 'string' as const, description: 'YYYY-MM-DD, default hoy' },
+    atribuido_a_nombre: { type: 'string' as const, description: 'SOLO para gastos de Casa que sean PERSONALES de un socio: "Miguel" o "Sergio". Si es compartido o no es Casa, déjalo vacío.' },
   },
   required: ['tipo', 'monto', 'concepto'],
 }
@@ -71,6 +72,7 @@ function buildDraft(input: Record<string, unknown>): ChatDraft {
     cuenta_sugerida: (input.cuenta_nombre as string) || null,
     metodo_pago: (input.metodo_pago as string) || null,
     fecha: (input.fecha as string) || hoyEnCabos(),
+    atribuido_a_nombre: (input.atribuido_a_nombre as string) || null,
   }
 }
 

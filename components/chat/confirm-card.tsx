@@ -20,6 +20,7 @@ export type Draft = {
   negocio_sugerido?: string | null
   cuenta_sugerida?: string | null
   metodo_pago?: string | null
+  atribuido_a_nombre?: string | null
   metodo_captura: 'foto' | 'voz'
   foto_url?: string | null
   audio_url?: string | null
@@ -84,6 +85,7 @@ export function ConfirmCard({
         metodo_pago: draft.metodo_pago ?? null,
         categoria: categoria || null,
         concepto: concepto || null,
+        atribuido_a_nombre: draft.atribuido_a_nombre ?? null,
         metodo_captura: draft.metodo_captura,
         foto_url: draft.foto_url ?? null,
         audio_url: draft.audio_url ?? null,

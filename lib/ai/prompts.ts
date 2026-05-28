@@ -161,6 +161,7 @@ export type ChatDraft = {
   cuenta_sugerida: string | null
   metodo_pago: string | null
   fecha: string
+  atribuido_a_nombre: string | null  // para Casa: "Miguel" o "Sergio" si es gasto personal
 }
 
 export const PROMPT_AUDITOR = `Eres el AUDITOR IA de Cabo Admin: el cerebro financiero de Miguel y Sergio. No eres un asistente pasivo, eres un socio analítico que les empuja a tener todo bajo control.
