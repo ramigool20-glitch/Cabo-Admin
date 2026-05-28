@@ -1,4 +1,6 @@
 import { openai, OPENAI_MODEL } from '@/lib/ai/openai'
+import { anthropic, CLAUDE_MODEL } from '@/lib/ai/anthropic'
+import { getAIProvider } from '@/lib/ai/provider'
 
 export type ScoreAmenaza = {
   score: number              // 1-10
@@ -52,17 +54,29 @@ ${args.ultimaActividad ? `Última actividad: ${args.ultimaActividad}` : ''}
 Evalúa qué tan amenaza es para mi negocio.`
 
   try {
-    const res = await openai.chat.completions.create({
-      model: OPENAI_MODEL,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: PROMPT_TEMPLATE },
-        { role: 'user', content: userMsg },
-      ],
-      temperature: 0.2,
-    })
+    let content = '{}'
+    if (getAIProvider() === 'anthropic') {
+      const resp = await anthropic.messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 300,
+        system: PROMPT_TEMPLATE,
+        messages: [{ role: 'user', content: userMsg }],
+      })
+      const txt = resp.content.find((b) => b.type === 'text')
+      content = (txt && txt.type === 'text' ? txt.text : '{}').replace(/```json\s*|\s*```/g, '').trim()
+    } else {
+      const res = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: PROMPT_TEMPLATE },
+          { role: 'user', content: userMsg },
+        ],
+        temperature: 0.2,
+      })
+      content = res.choices[0]?.message?.content ?? '{}'
+    }
 
-    const content = res.choices[0]?.message?.content ?? '{}'
     const parsed = JSON.parse(content) as Partial<ScoreAmenaza>
     const score = Math.min(10, Math.max(1, Number(parsed.score) || 5))
     return {
