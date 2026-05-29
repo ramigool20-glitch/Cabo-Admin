@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha } from '@/lib/fechas'
 import { CobroForm } from '@/components/cobros/cobro-form'
+import { CobrosRealtime } from '@/components/cobros/cobros-realtime'
 
 const ESTADO_CHIP = {
   pendiente: { l: 'Pendiente', c: 'chip-yellow' },
@@ -28,6 +29,7 @@ export default async function CobrosPage() {
 
   return (
     <div className="px-4 pt-5 pb-24 space-y-5 max-w-2xl mx-auto">
+      <CobrosRealtime />
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-black heading-gradient">Cobros Stripe</h1>
         <span className={cn('chip', stripeConfigurado ? 'chip-green' : 'chip-yellow')}>

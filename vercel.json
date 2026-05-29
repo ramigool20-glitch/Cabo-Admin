@@ -14,6 +14,7 @@
     { "path": "/api/cron/mensual",                  "schedule": "0 14 1 * *" },
     { "path": "/api/cron/ia-observacion",           "schedule": "0 1,4,17 * * *" },
     { "path": "/api/cron/motivacional",             "schedule": "0 2,20,23 * * *" },
+    { "path": "/api/cron/stripe-sync",              "schedule": "*/2 * * * *" },
     { "path": "/api/cron/mp-sync",                  "schedule": "0 * * * *" }
   ]
 }
