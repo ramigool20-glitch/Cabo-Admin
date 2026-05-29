@@ -15,8 +15,10 @@ const newId = () => Math.random().toString(36).slice(2)
 
 export function AuditorClient({
   bienvenidaInicial,
+  seed,
 }: {
   bienvenidaInicial: string
+  seed?: { texto: string; nonce: number }
 }) {
   const router = useRouter()
   const [mensajes, setMensajes] = useState<Mensaje[]>([
@@ -30,6 +32,12 @@ export function AuditorClient({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensajes])
+
+  // Precarga texto desde "Hablar de esto" en una observación
+  useEffect(() => {
+    if (seed?.texto) setTexto(seed.texto)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed?.nonce])
 
   const enviar = async (e?: React.FormEvent) => {
     e?.preventDefault()
