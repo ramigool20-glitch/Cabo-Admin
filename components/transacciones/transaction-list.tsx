@@ -34,10 +34,12 @@ export function TransactionList({
   transacciones,
   flaggedIds = [],
   iaActivo = false,
+  perfilesMap = {},
 }: {
   transacciones: Transaccion[]
   flaggedIds?: string[]
   iaActivo?: boolean
+  perfilesMap?: Record<string, string>
 }) {
   const router = useRouter()
   const flagged = new Set(flaggedIds)
@@ -124,20 +126,20 @@ export function TransactionList({
                       <p className="text-xs text-zinc-500 truncate">
                         {t.negocios?.nombre ?? '—'} · {t.cuentas?.nombre ?? '—'}
                       </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        {iaActivo && (
-                          flagged.has(t.id)
-                            ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-300 text-[9px] font-medium tracking-tight"><AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.5} /> Revisar</span>
-                            : <span className="inline-flex items-center gap-1 text-[9px] font-medium tracking-tight text-cyan-300/60"><Sparkles className="h-2.5 w-2.5" strokeWidth={2.5} /> IA</span>
-                        )}
-                        {t.negocios?.tipo === 'casa' && (
-                          <span className="text-[9px] tracking-tight">
-                            {t.atribuido_a
-                              ? <span className="text-purple-300/80">Personal</span>
-                              : <span className="text-cyan-300/80">Compartido</span>}
-                          </span>
-                        )}
-                      </div>
+                      {((iaActivo && flagged.has(t.id)) || t.negocios?.tipo === 'casa') && (
+                        <div className="flex items-center gap-2 mt-1">
+                          {iaActivo && flagged.has(t.id) && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-300 text-[9px] font-medium tracking-tight"><AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.5} /> Revisar</span>
+                          )}
+                          {t.negocios?.tipo === 'casa' && (
+                            <span className="text-[9px] tracking-tight">
+                              {t.atribuido_a
+                                ? <span className="text-purple-300/90">👤 {perfilesMap[t.atribuido_a] ?? 'Personal'}</span>
+                                : <span className="text-cyan-300/80">⚖ Compartido</span>}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="text-right shrink-0">
                       <p className={cn('text-sm font-semibold tabular-nums', meta.color)}>

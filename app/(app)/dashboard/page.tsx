@@ -232,7 +232,7 @@ export default async function DashboardPage(
   const totalAlertas = (nTareas ?? 0) + (nMultas ?? 0) + (nPendientes ?? 0) + pp.vencidoCount + pc.vencidoCount
 
   return (
-    <div className="px-4 pt-5 pb-8 space-y-5 max-w-3xl mx-auto">
+    <div className="px-4 pt-5 pb-28 space-y-5 max-w-3xl mx-auto">
       {/* Header */}
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">

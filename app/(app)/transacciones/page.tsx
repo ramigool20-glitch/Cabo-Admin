@@ -54,11 +54,13 @@ export default async function TransaccionesPage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const transacciones = (txResult.data ?? []) as any[]
 
-  const [{ data: negocios }, { data: cuentas }, { data: fxLatest }] = await Promise.all([
+  const [{ data: negocios }, { data: cuentas }, { data: fxLatest }, { data: perfiles }] = await Promise.all([
     supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
     supabase.from('cuentas').select('id, nombre').eq('activo', true).order('nombre'),
     supabase.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('profiles').select('id, nombre'),
   ])
+  const perfilesMap = Object.fromEntries((perfiles ?? []).map((p) => [p.id, p.nombre]))
 
   const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
   const t = totalizar(transacciones, fxRate)
@@ -129,7 +131,7 @@ export default async function TransaccionesPage(
 
       <FiltersBar negocios={negocios ?? []} cuentas={cuentas ?? []} />
 
-      <TransactionList transacciones={(transacciones ?? []) as unknown as Transaccion[]} flaggedIds={flaggedIds} iaActivo={iaActivo} />
+      <TransactionList transacciones={(transacciones ?? []) as unknown as Transaccion[]} flaggedIds={flaggedIds} iaActivo={iaActivo} perfilesMap={perfilesMap} />
 
     </div>
   )

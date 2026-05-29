@@ -47,7 +47,7 @@ export default async function NegociosPage() {
   }
 
   return (
-    <div className="px-4 pt-5 pb-8 space-y-5 max-w-3xl mx-auto">
+    <div className="px-4 pt-5 pb-28 space-y-5 max-w-3xl mx-auto">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-black heading-gradient">Negocios</h1>
         <span className="chip">{negocios?.length ?? 0} activos</span>
