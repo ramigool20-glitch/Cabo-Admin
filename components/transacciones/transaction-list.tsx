@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowUpCircle, ArrowDownCircle, Gavel, ArrowLeftRight, ChevronRight } from 'lucide-react'
+import { ArrowUpCircle, ArrowDownCircle, Gavel, ArrowLeftRight, ChevronRight, Sparkles, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha } from '@/lib/fechas'
@@ -83,14 +83,15 @@ export function TransactionList({
     <div className="space-y-5">
       {/* Leyenda: revisión con IA */}
       {iaActivo && (
-        <div className="flex items-center gap-4 px-1 -mb-2">
-          <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500">
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300/90 border border-cyan-500/20 text-[9px] font-bold">✓ IA</span>
+        <div className="flex items-center justify-center gap-5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]/40 py-2">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium tracking-tight text-zinc-400">
+            <Sparkles className="h-3.5 w-3.5 text-cyan-400" strokeWidth={2} />
             Revisado con IA
           </span>
-          <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500">
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[9px] font-bold">⚠ IA</span>
-            Detectó algo
+          <span className="h-3 w-px bg-zinc-700/70" />
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium tracking-tight text-zinc-400">
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-400" strokeWidth={2} />
+            IA detectó algo
           </span>
         </div>
       )}
@@ -123,17 +124,17 @@ export function TransactionList({
                       <p className="text-xs text-zinc-500 truncate">
                         {t.negocios?.nombre ?? '—'} · {t.cuentas?.nombre ?? '—'}
                       </p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-2 mt-1">
                         {iaActivo && (
                           flagged.has(t.id)
-                            ? <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[9px] font-bold">⚠ IA: revisar</span>
-                            : <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300/80 border border-cyan-500/20 text-[9px] font-bold">✓ Revisado IA</span>
+                            ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-300 text-[9px] font-medium tracking-tight"><AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.5} /> Revisar</span>
+                            : <span className="inline-flex items-center gap-1 text-[9px] font-medium tracking-tight text-cyan-300/60"><Sparkles className="h-2.5 w-2.5" strokeWidth={2.5} /> IA</span>
                         )}
                         {t.negocios?.tipo === 'casa' && (
-                          <span className="text-[9px]">
+                          <span className="text-[9px] tracking-tight">
                             {t.atribuido_a
-                              ? <span className="text-purple-300">👤 personal</span>
-                              : <span className="text-cyan-300">⚖ compartido</span>}
+                              ? <span className="text-purple-300/80">Personal</span>
+                              : <span className="text-cyan-300/80">Compartido</span>}
                           </span>
                         )}
                       </div>
