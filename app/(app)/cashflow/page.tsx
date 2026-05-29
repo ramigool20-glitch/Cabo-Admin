@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney, cn } from '@/lib/utils'
 import { hoyEnCabos } from '@/lib/fechas'
 import { totalMensualEquivalente } from '@/lib/recurrentes-total'
-import { calcularSaldos, type CuentaConSaldoInicial, type TxParaSaldo } from '@/lib/saldos'
+import { calcularSaldos, fechaSaldoMasAntigua, type CuentaConSaldoInicial, type TxParaSaldo } from '@/lib/saldos'
 import { CuentaCard } from '@/components/cashflow/cuenta-card'
 import { NuevaCuentaForm } from '@/components/cashflow/nueva-cuenta-form'
 
@@ -15,8 +15,15 @@ export default async function CashFlowPage() {
   const hoy = hoyEnCabos()
   const inicioMes = hoy.slice(0, 7) + '-01'
 
+  // Cuentas primero, para acotar el query de tx por fecha de saldo inicial
+  // (evita el corte silencioso de 1000 filas de Supabase).
+  const { data: cuentas } = await admin.from('cuentas')
+    .select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas')
+    .eq('activo', true)
+    .order('nombre')
+  const desdeSaldo = fechaSaldoMasAntigua((cuentas ?? []) as unknown as CuentaConSaldoInicial[])
+
   const [
-    { data: cuentas },
     { data: txAll },
     { data: txMes },
     { data: gastosFijos },
@@ -26,13 +33,8 @@ export default async function CashFlowPage() {
     { data: porCobrar },
     { data: eventosPend },
   ] = await Promise.all([
-    // Cuentas con campos de saldo inicial (defensivo si migración 0021 no aplicada)
-    admin.from('cuentas')
-      .select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas')
-      .eq('activo', true)
-      .order('nombre'),
-    // TODAS las transacciones (para calcular saldo desde saldo_inicial; necesita fecha para filtrar)
-    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
+    // Transacciones desde la fecha de saldo inicial (necesita fecha para filtrar)
+    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha').gte('fecha', desdeSaldo).limit(20000),
     // Tx solo del mes (para movimiento neto)
     supabase.from('transacciones').select('tipo, monto, moneda, fecha, cuenta_id').gte('fecha', inicioMes),
     admin.from('gastos_recurrentes').select('nombre, monto, moneda, frecuencia, proximo_pago').eq('activo', true),

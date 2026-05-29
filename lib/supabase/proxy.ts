@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { createAdminClient } from './admin'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -47,6 +48,30 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
+  }
+
+  // Gating de rol del lado del SERVIDOR: la enfermera solo puede entrar a
+  // /clinica y /tareas. Cualquier otra página la regresa a /clinica antes de
+  // que el servidor renderice o consulte datos financieros.
+  if (
+    user &&
+    !isPublic &&
+    !pathname.startsWith('/api') &&
+    !pathname.startsWith('/clinica') &&
+    !pathname.startsWith('/tareas')
+  ) {
+    try {
+      const admin = createAdminClient()
+      const { data: prof } = await admin.from('profiles').select('roles(nombre)').eq('id', user.id).single()
+      const rol = (prof?.roles as unknown as { nombre: string } | null)?.nombre
+      if (rol === 'enfermera') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/clinica'
+        return NextResponse.redirect(url)
+      }
+    } catch {
+      // si falla la verificación de rol, no bloqueamos (la guard de cliente respalda)
+    }
   }
 
   return supabaseResponse

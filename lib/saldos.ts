@@ -63,6 +63,22 @@ export type SaldosResumen = {
  * - Las tx ANTES del día inicial se ignoran (ya están reflejadas en el saldo)
  * - Cuentas SIN saldo inicial capturado NO suman al total (saldo = 0)
  */
+/**
+ * Fecha de saldo inicial más antigua entre las cuentas con saldo bloqueado.
+ * Sirve para acotar el query de transacciones (las tx anteriores se ignoran
+ * en el cálculo), evitando el corte silencioso de 1000 filas de Supabase.
+ */
+export function fechaSaldoMasAntigua(
+  cuentas: Pick<CuentaConSaldoInicial, 'saldo_inicial_fecha' | 'saldo_inicial_locked'>[]
+): string {
+  let min: string | null = null
+  for (const c of cuentas) {
+    if (!c.saldo_inicial_locked || !c.saldo_inicial_fecha) continue
+    if (!min || c.saldo_inicial_fecha < min) min = c.saldo_inicial_fecha
+  }
+  return min ?? '2000-01-01'
+}
+
 export function calcularSaldos(
   cuentas: CuentaConSaldoInicial[],
   txs: TxParaSaldo[],

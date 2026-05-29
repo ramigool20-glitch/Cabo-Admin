@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { hoyEnCabos } from '@/lib/fechas'
 
 async function registrarMovimiento(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -11,13 +12,14 @@ async function registrarMovimiento(
   mensaje?: string | null,
   monto_propuesto?: number | null
 ) {
-  await supabase.from('multa_movimientos').insert({
+  const { error } = await supabase.from('multa_movimientos').insert({
     multa_id,
     actor_id,
     accion,
     mensaje: mensaje ?? null,
     monto_propuesto: monto_propuesto ?? null,
   })
+  if (error) throw new Error('No se pudo registrar el movimiento: ' + error.message)
 }
 
 /**
@@ -26,21 +28,21 @@ async function registrarMovimiento(
 export async function aceptarMulta(multaId: string): Promise<void> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  if (!user) throw new Error('No autenticado')
 
-  const { data: multa } = await supabase.from('multas').select('*').eq('id', multaId).single()
-  if (!multa) return
+  const { data: multa, error: multaErr } = await supabase.from('multas').select('*').eq('id', multaId).single()
+  if (multaErr || !multa) throw new Error('No se encontró la multa')
 
   const montoFinal = multa.monto_propuesto
 
   // Crear transacción de multa_interna
-  const { data: tx } = await supabase
+  const { data: tx, error: txErr } = await supabase
     .from('transacciones')
     .insert({
       tipo: 'multa_interna',
       monto: montoFinal,
       moneda: multa.moneda,
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: hoyEnCabos(),
       concepto: multa.motivo,
       categoria: 'multa',
       metodo_captura: 'multa',
@@ -49,8 +51,9 @@ export async function aceptarMulta(multaId: string): Promise<void> {
     })
     .select('id')
     .single()
+  if (txErr) throw new Error('No se pudo crear la transacción: ' + txErr.message)
 
-  await supabase
+  const { error: updErr } = await supabase
     .from('multas')
     .update({
       estado: 'aplicada',
@@ -60,6 +63,7 @@ export async function aceptarMulta(multaId: string): Promise<void> {
       resuelta_at: new Date().toISOString(),
     })
     .eq('id', multaId)
+  if (updErr) throw new Error('No se pudo aplicar la multa: ' + updErr.message)
 
   await registrarMovimiento(supabase, multaId, user.id, 'aceptar')
 
@@ -73,15 +77,15 @@ export async function aceptarMulta(multaId: string): Promise<void> {
 export async function justificarMulta(multaId: string, mensaje: string): Promise<void> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  if (!user) throw new Error('No autenticado')
 
-  await supabase
+  const { error } = await supabase
     .from('multas')
     .update({ estado: 'justificada' })
     .eq('id', multaId)
+  if (error) throw new Error('No se pudo justificar: ' + error.message)
 
   await registrarMovimiento(supabase, multaId, user.id, 'justificar', mensaje)
-
   revalidatePath('/multas')
 }
 
@@ -95,15 +99,15 @@ export async function solicitarReduccionMulta(
 ): Promise<void> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  if (!user) throw new Error('No autenticado')
 
-  await supabase
+  const { error } = await supabase
     .from('multas')
     .update({ estado: 'reduccion_solicitada' })
     .eq('id', multaId)
+  if (error) throw new Error('No se pudo solicitar la reducción: ' + error.message)
 
   await registrarMovimiento(supabase, multaId, user.id, 'solicitar_reduccion', mensaje, nuevoMonto)
-
   revalidatePath('/multas')
 }
 
@@ -120,18 +124,18 @@ export async function aprobarMulta(multaId: string): Promise<void> {
 export async function reducirMulta(multaId: string, nuevoMonto: number, mensaje?: string): Promise<void> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  if (!user) throw new Error('No autenticado')
 
-  const { data: multa } = await supabase.from('multas').select('*').eq('id', multaId).single()
-  if (!multa) return
+  const { data: multa, error: multaErr } = await supabase.from('multas').select('*').eq('id', multaId).single()
+  if (multaErr || !multa) throw new Error('No se encontró la multa')
 
-  const { data: tx } = await supabase
+  const { data: tx, error: txErr } = await supabase
     .from('transacciones')
     .insert({
       tipo: 'multa_interna',
       monto: nuevoMonto,
       moneda: multa.moneda,
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: hoyEnCabos(),
       concepto: `${multa.motivo} (reducida)`,
       categoria: 'multa',
       metodo_captura: 'multa',
@@ -140,8 +144,9 @@ export async function reducirMulta(multaId: string, nuevoMonto: number, mensaje?
     })
     .select('id')
     .single()
+  if (txErr) throw new Error('No se pudo crear la transacción: ' + txErr.message)
 
-  await supabase
+  const { error: updErr } = await supabase
     .from('multas')
     .update({
       estado: 'aplicada',
@@ -151,9 +156,9 @@ export async function reducirMulta(multaId: string, nuevoMonto: number, mensaje?
       resuelta_at: new Date().toISOString(),
     })
     .eq('id', multaId)
+  if (updErr) throw new Error('No se pudo aplicar la reducción: ' + updErr.message)
 
   await registrarMovimiento(supabase, multaId, user.id, 'reducir', mensaje, nuevoMonto)
-
   revalidatePath('/multas')
   revalidatePath('/dashboard')
 }
@@ -164,9 +169,9 @@ export async function reducirMulta(multaId: string, nuevoMonto: number, mensaje?
 export async function perdonarMulta(multaId: string, mensaje?: string): Promise<void> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  if (!user) throw new Error('No autenticado')
 
-  await supabase
+  const { error } = await supabase
     .from('multas')
     .update({
       estado: 'perdonada',
@@ -175,9 +180,9 @@ export async function perdonarMulta(multaId: string, mensaje?: string): Promise<
       resuelta_at: new Date().toISOString(),
     })
     .eq('id', multaId)
+  if (error) throw new Error('No se pudo perdonar: ' + error.message)
 
   await registrarMovimiento(supabase, multaId, user.id, 'perdonar', mensaje)
-
   revalidatePath('/multas')
 }
 
@@ -187,15 +192,15 @@ export async function perdonarMulta(multaId: string, mensaje?: string): Promise<
 export async function disputarMulta(multaId: string, mensaje: string): Promise<void> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  if (!user) throw new Error('No autenticado')
 
-  await supabase
+  const { error } = await supabase
     .from('multas')
     .update({ estado: 'pendiente_conversacion' })
     .eq('id', multaId)
+  if (error) throw new Error('No se pudo disputar: ' + error.message)
 
   await registrarMovimiento(supabase, multaId, user.id, 'disputar', mensaje)
-
   revalidatePath('/multas')
 }
 
@@ -212,22 +217,22 @@ export async function liquidarBalance(payload: {
 }): Promise<void> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  if (!user) throw new Error('No autenticado')
 
-  // Marca todas las multas aplicadas con responsable=pagador como liquidadas
-  await supabase
+  const { error } = await supabase
     .from('transacciones')
     .insert({
       tipo: 'liquidacion_socio',
       monto: payload.monto,
       moneda: payload.moneda,
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: hoyEnCabos(),
       concepto: `Liquidación entre socios`,
       categoria: 'liquidacion',
       metodo_captura: 'liquidacion',
       cuenta_id: payload.cuenta_id ?? null,
       capturado_por: user.id,
     })
+  if (error) throw new Error('No se pudo registrar la liquidación: ' + error.message)
 
   revalidatePath('/multas')
   revalidatePath('/dashboard')

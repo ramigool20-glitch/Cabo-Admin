@@ -6,7 +6,7 @@ import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { isRangoId, rangoFechas, type RangoId } from '@/lib/rangos'
 import { totalizar, porDia, porNegocio, porCategoria } from '@/lib/agregaciones'
-import { calcularSaldos, type CuentaConSaldoInicial, type TxParaSaldo } from '@/lib/saldos'
+import { calcularSaldos, fechaSaldoMasAntigua, type CuentaConSaldoInicial, type TxParaSaldo } from '@/lib/saldos'
 import { dispararPushesProgramados } from '@/lib/push/scheduler'
 import { RangoSelector } from '@/components/dashboard/rango-selector'
 import { UtilidadChart } from '@/components/dashboard/utilidad-chart'
@@ -143,13 +143,16 @@ export default async function DashboardPage(
       .lte('fecha', previoHasta),
   ])
 
-  // Saldos por cuenta (saldo_inicial + todas las tx históricas)
-  const [{ data: cuentasSaldo }, { data: txTodas }] = await Promise.all([
-    admin.from('cuentas')
-      .select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas')
-      .eq('activo', true),
-    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
-  ])
+  // Saldos por cuenta (saldo_inicial + tx desde la fecha de saldo inicial).
+  // Se acota por fecha para no chocar con el corte de 1000 filas de Supabase.
+  const { data: cuentasSaldo } = await admin.from('cuentas')
+    .select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas')
+    .eq('activo', true)
+  const desdeSaldo = fechaSaldoMasAntigua((cuentasSaldo ?? []) as unknown as CuentaConSaldoInicial[])
+  const { data: txTodas } = await admin.from('transacciones')
+    .select('tipo, monto, moneda, cuenta_id, fecha')
+    .gte('fecha', desdeSaldo)
+    .limit(20000)
   const fxFallbackTemp = fxRateHoy ? Number(fxRateHoy.rate_compra) : (fxHistorial?.[0] ? Number(fxHistorial[0].rate_compra) : null)
   const saldos = calcularSaldos(
     (cuentasSaldo ?? []) as unknown as CuentaConSaldoInicial[],
