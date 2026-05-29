@@ -7,6 +7,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { detectarIrregularidades, type Irregularidad } from './irregularidades'
 import { ejecutarRadar, type RadarInsight } from './radar'
+import { enviarPushAProfiles } from '@/lib/push/server'
 import { hoyEnCabos } from '@/lib/fechas'
 
 export type Severidad = 'grave' | 'atencion' | 'bien'
@@ -132,6 +133,108 @@ export async function persistirObservaciones(
   if (error) return { ok: false, nuevas: [], error: error.message }
 
   return { ok: true, nuevas }
+}
+
+/**
+ * Vigilancia EN CADA MOVIMIENTO: chequeo ligero al crear una transacción.
+ * Detecta duplicado inmediato y monto anómalo; si aplica crea observación
+ * (fuente='movimiento') y manda push. Nunca rompe la captura.
+ */
+export async function vigilarMovimiento(tx: {
+  id: string
+  tipo: string
+  monto: number
+  moneda: string
+  fecha: string
+  concepto: string | null
+  categoria: string | null
+  cuenta_id: string | null
+}): Promise<void> {
+  try {
+    const admin = createAdminClient()
+    const hallazgos: ObservacionInput[] = []
+
+    // Duplicado: misma cuenta + tipo + moneda + monto en ±1 día
+    if (tx.cuenta_id) {
+      const f = new Date(tx.fecha + 'T00:00:00').getTime()
+      const desde = new Date(f - 86400000).toISOString().slice(0, 10)
+      const hasta = new Date(f + 86400000).toISOString().slice(0, 10)
+      const { data: similares } = await admin
+        .from('transacciones')
+        .select('id')
+        .eq('cuenta_id', tx.cuenta_id)
+        .eq('tipo', tx.tipo)
+        .eq('moneda', tx.moneda)
+        .eq('monto', tx.monto)
+        .neq('id', tx.id)
+        .gte('fecha', desde)
+        .lte('fecha', hasta)
+      if (similares && similares.length > 0) {
+        hallazgos.push({
+          severidad: 'grave',
+          titulo: `Posible duplicado: ${tx.concepto || 'movimiento'}`,
+          detalle: `Acabas de capturar ${tx.monto} ${tx.moneda} y ya había otro igual en la misma cuenta en estas fechas. ¿Lo metiste dos veces?`,
+          recomendacion: 'Compara y borra el repetido.',
+          categoria: 'duplicado',
+          clave: `mov:dup:${tx.id}`,
+          datos: { link: `/transacciones/${tx.id}` },
+          fuente: 'movimiento',
+        })
+      }
+    }
+
+    // Monto anómalo: gasto > 3x el promedio de su categoría (30 días)
+    if (tx.tipo === 'gasto' && tx.categoria && tx.monto > 1000) {
+      const hace30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+      const { data: hist } = await admin
+        .from('transacciones')
+        .select('monto')
+        .eq('tipo', 'gasto')
+        .eq('categoria', tx.categoria)
+        .neq('id', tx.id)
+        .gte('fecha', hace30)
+      const montos = (hist ?? []).map((h) => Number(h.monto))
+      if (montos.length >= 4) {
+        const prom = montos.reduce((s, m) => s + m, 0) / montos.length
+        if (prom > 0 && tx.monto > prom * 3) {
+          hallazgos.push({
+            severidad: 'atencion',
+            titulo: `Gasto inusual en "${tx.categoria}"`,
+            detalle: `${tx.monto} ${tx.moneda} es ${(tx.monto / prom).toFixed(1)}x el promedio de "${tx.categoria}" (${prom.toFixed(0)}).`,
+            recomendacion: 'Verifica que el monto sea correcto.',
+            categoria: 'monto_anomalo',
+            clave: `mov:anom:${tx.id}`,
+            datos: { link: `/transacciones/${tx.id}` },
+            fuente: 'movimiento',
+          })
+        }
+      }
+    }
+
+    if (hallazgos.length === 0) return
+    await persistirObservaciones(hallazgos)
+
+    const { data: socios } = await admin
+      .from('profiles')
+      .select('id, role_id, roles(nombre)')
+      .eq('activo', true)
+    const dest = (socios ?? [])
+      .filter((p) => {
+        const r = p.roles as unknown as { nombre: string } | null
+        return r?.nombre === 'admin' || r?.nombre === 'socio'
+      })
+      .map((p) => p.id)
+    if (dest.length > 0) {
+      await enviarPushAProfiles(dest, {
+        title: '🧠 Alerta del Auditor',
+        body: hallazgos[0].titulo,
+        url: '/auditor',
+        tag: `mov-${tx.id}`,
+      })
+    }
+  } catch {
+    // nunca romper la captura
+  }
 }
 
 /**

@@ -7,6 +7,7 @@ import { flashOk } from '@/lib/flash'
 import { aMxnEquivalente } from '@/lib/fx/server'
 import { registrarHistorial } from '@/lib/historial'
 import { sincronizarTxASubTabla } from '@/lib/sync-ads-ventas'
+import { vigilarMovimiento } from '@/lib/ai/observaciones'
 
 const TransaccionSchema = z.object({
   tipo: z.enum(['ingreso', 'gasto']),
@@ -96,6 +97,18 @@ export async function createTransaccion(
       concepto: parsed.data.concepto ?? null,
       user_id: user.id,
       fx,
+    })
+
+    // Vigilancia en cada movimiento (duplicado / monto anómalo) → Auditor
+    await vigilarMovimiento({
+      id: nuevaTx.id,
+      tipo: parsed.data.tipo,
+      monto: parsed.data.monto,
+      moneda: parsed.data.moneda,
+      fecha: parsed.data.fecha,
+      concepto: parsed.data.concepto ?? null,
+      categoria: parsed.data.categoria ?? null,
+      cuenta_id: parsed.data.cuenta_id ?? null,
     })
   }
 
