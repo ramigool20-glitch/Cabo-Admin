@@ -63,7 +63,7 @@ export default async function DashboardPage(
   ] = await Promise.all([
     supabase
       .from('transacciones')
-      .select('tipo, monto, moneda, fecha, categoria, concepto, negocio_id, monto_mxn_equivalente, tipo_cambio_usado')
+      .select('tipo, monto, moneda, fecha, categoria, concepto, negocio_id, metodo_pago, monto_mxn_equivalente, tipo_cambio_usado')
       .gte('fecha', r.desde)
       .lte('fecha', r.hasta),
     supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
@@ -182,6 +182,38 @@ export default async function DashboardPage(
   const barNegocios = porNegocio(rows, negocios ?? [], fxFallback)
   const desgloseCats = desglosarCategorias(rows, fxFallback)
   const margen = t.ingresos_total_mxn > 0 ? (t.utilidad_total_mxn / t.ingresos_total_mxn) * 100 : null
+
+  // Radiografía del periodo: negocio campeón/a vigilar, top gastos, ingresos por método
+  const equivMxnRow = (x: { monto: number | string; moneda: string; monto_mxn_equivalente?: number | string | null }) =>
+    x.monto_mxn_equivalente != null ? Number(x.monto_mxn_equivalente) : (x.moneda === 'MXN' ? Number(x.monto) : (fxFallback ? Number(x.monto) * fxFallback : 0))
+
+  const negociosUtilidad = barNegocios
+    .map((n) => ({ nombre: n.nombre, utilidad: n.ingresos - n.gastos }))
+    .sort((a, b) => b.utilidad - a.utilidad)
+  const mejorNeg = negociosUtilidad[0] ?? null
+  const peorNeg = negociosUtilidad.length > 1 ? negociosUtilidad[negociosUtilidad.length - 1] : null
+
+  const topGastos = rows
+    .filter((x) => x.tipo === 'gasto')
+    .map((x) => ({ concepto: x.concepto as string | null, mxn: equivMxnRow(x), moneda: x.moneda as 'MXN' | 'USD', monto: Number(x.monto) }))
+    .sort((a, b) => b.mxn - a.mxn)
+    .slice(0, 3)
+
+  const METODO_LABEL: Record<string, string> = {
+    stripe: '💳 Stripe', mp_terminal: '📟 MP Terminal', mp_transferencia: '🔵 MP Transf.', mp_link: '🔗 MP Link',
+    efectivo_mxn: '💵 Efectivo', efectivo_usd: '💵 Efectivo USD', transferencia_bancaria: '🏦 Transferencia',
+    tarjeta: '💳 Tarjeta', domiciliado: '🔁 Domiciliado', otro: '· Otro',
+  }
+  const porMetodoMap = new Map<string, number>()
+  for (const x of rows) {
+    if (x.tipo !== 'ingreso') continue
+    const m = (x.metodo_pago as string | null) ?? 'otro'
+    porMetodoMap.set(m, (porMetodoMap.get(m) ?? 0) + equivMxnRow(x))
+  }
+  const ingresosPorMetodo = Array.from(porMetodoMap.entries())
+    .map(([metodo, mxn]) => ({ metodo, label: METODO_LABEL[metodo] ?? metodo, mxn }))
+    .sort((a, b) => b.mxn - a.mxn)
+  const totalIngMetodo = ingresosPorMetodo.reduce((s, m) => s + m.mxn, 0)
 
   // Resumen Por Pagar
   const pp = { totalMxn: 0, totalUsd: 0, vencidoMxn: 0, vencidoUsd: 0, count: 0, vencidoCount: 0 }
@@ -636,6 +668,67 @@ export default async function DashboardPage(
         <NegociosBar data={barNegocios} />
         {desgloseCats.items.length > 0 && (
           <AnalisisCategorias items={desgloseCats.items} total={desgloseCats.total} />
+        )}
+
+        {/* Negocio campeón / a vigilar */}
+        {mejorNeg && (mejorNeg.utilidad !== 0 || peorNeg) && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="card p-3 border-emerald-500/20">
+              <p className="text-[9px] uppercase tracking-wider text-zinc-500">🏆 Más rentable</p>
+              <p className="text-xs font-bold text-white truncate">{mejorNeg.nombre}</p>
+              <p className={cn('text-sm font-black tabular-nums', mejorNeg.utilidad >= 0 ? 'text-emerald-300' : 'text-rose-300')}>
+                {mejorNeg.utilidad >= 0 ? '+' : ''}{formatMoney(mejorNeg.utilidad, 'MXN')}
+              </p>
+            </div>
+            {peorNeg && (
+              <div className="card p-3 border-rose-500/20">
+                <p className="text-[9px] uppercase tracking-wider text-zinc-500">⚠️ A vigilar</p>
+                <p className="text-xs font-bold text-white truncate">{peorNeg.nombre}</p>
+                <p className={cn('text-sm font-black tabular-nums', peorNeg.utilidad >= 0 ? 'text-emerald-300' : 'text-rose-300')}>
+                  {peorNeg.utilidad >= 0 ? '+' : ''}{formatMoney(peorNeg.utilidad, 'MXN')}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Top 3 gastos más grandes */}
+        {topGastos.length > 0 && (
+          <div className="card p-3 space-y-2">
+            <p className="label-caps">💸 Gastos más grandes</p>
+            <ul className="space-y-1.5">
+              {topGastos.map((g, i) => (
+                <li key={i} className="flex items-center gap-2 text-sm">
+                  <span className="text-zinc-600 font-bold w-4">{i + 1}</span>
+                  <span className="flex-1 min-w-0 truncate text-zinc-200">{g.concepto || 'Sin concepto'}</span>
+                  <span className="font-bold tabular-nums text-rose-300">{formatMoney(g.monto, g.moneda)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Ingresos por método de pago */}
+        {ingresosPorMetodo.length > 0 && totalIngMetodo > 0 && (
+          <div className="card p-3 space-y-2">
+            <p className="label-caps">Ingresos por método</p>
+            <div className="space-y-1.5">
+              {ingresosPorMetodo.map((m) => {
+                const pct = (m.mxn / totalIngMetodo) * 100
+                return (
+                  <div key={m.metodo}>
+                    <div className="flex items-center justify-between text-[11px] mb-0.5">
+                      <span className="text-zinc-300">{m.label}</span>
+                      <span className="tabular-nums font-bold text-emerald-300">{formatMoney(m.mxn, 'MXN')} <span className="text-zinc-600 font-normal">{pct.toFixed(0)}%</span></span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-black/30 overflow-hidden">
+                      <div className="h-full rounded-full bg-emerald-500/70" style={{ width: `${Math.max(3, pct)}%` }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         )}
       </CollapsibleSection>
     </div>
