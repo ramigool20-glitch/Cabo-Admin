@@ -5,13 +5,14 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { isRangoId, rangoFechas, type RangoId } from '@/lib/rangos'
-import { totalizar, porDia, porNegocio, porCategoria } from '@/lib/agregaciones'
+import { totalizar, porDia, porNegocio } from '@/lib/agregaciones'
+import { desglosarCategorias } from '@/lib/categorias-grupos'
 import { calcularSaldos, fechaSaldoMasAntigua, type CuentaConSaldoInicial, type TxParaSaldo } from '@/lib/saldos'
 import { dispararPushesProgramados } from '@/lib/push/scheduler'
 import { RangoSelector } from '@/components/dashboard/rango-selector'
 import { UtilidadChart } from '@/components/dashboard/utilidad-chart'
 import { NegociosBar } from '@/components/dashboard/negocios-bar'
-import { CategoriasList } from '@/components/dashboard/categorias-list'
+import { AnalisisCategorias } from '@/components/transacciones/analisis-categorias'
 import { CollapsibleSection } from '@/components/dashboard/collapsible-section'
 import { FxMiniWidget } from '@/components/dashboard/fx-mini-widget'
 
@@ -62,7 +63,7 @@ export default async function DashboardPage(
   ] = await Promise.all([
     supabase
       .from('transacciones')
-      .select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente, tipo_cambio_usado')
+      .select('tipo, monto, moneda, fecha, categoria, concepto, negocio_id, monto_mxn_equivalente, tipo_cambio_usado')
       .gte('fecha', r.desde)
       .lte('fecha', r.hasta),
     supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
@@ -179,7 +180,8 @@ export default async function DashboardPage(
   const t = totalizar(rows, fxFallback)
   const seriePorDia = porDia(rows, fxFallback)
   const barNegocios = porNegocio(rows, negocios ?? [], fxFallback)
-  const topCats = porCategoria(rows, 6, fxFallback)
+  const desgloseCats = desglosarCategorias(rows, fxFallback)
+  const margen = t.ingresos_total_mxn > 0 ? (t.utilidad_total_mxn / t.ingresos_total_mxn) * 100 : null
 
   // Resumen Por Pagar
   const pp = { totalMxn: 0, totalUsd: 0, vencidoMxn: 0, vencidoUsd: 0, count: 0, vencidoCount: 0 }
@@ -341,6 +343,12 @@ export default async function DashboardPage(
             <p className={`text-4xl font-black tabular-nums ${t.utilidad_total_mxn >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
               {t.utilidad_total_mxn >= 0 ? '+' : ''}{formatMoney(t.utilidad_total_mxn, 'MXN')}
             </p>
+            {margen !== null && (
+              <p className="text-[11px] text-zinc-400">
+                Margen: <span className={cn('font-bold tabular-nums', margen >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{margen.toFixed(1)}%</span>
+                <span className="text-zinc-600"> · de cada $100 que entran, {margen >= 0 ? `$${margen.toFixed(0)} son ganancia` : `pierdes $${Math.abs(margen).toFixed(0)}`}</span>
+              </p>
+            )}
             {tPrev.utilidad_total_mxn !== 0 && (
               <p className="text-[11px] text-zinc-500">
                 Periodo anterior: {formatMoney(tPrev.utilidad_total_mxn, 'MXN')}
@@ -626,7 +634,9 @@ export default async function DashboardPage(
       <CollapsibleSection id="analytics" title="Analytics" emoji="📊" defaultOpen>
         <UtilidadChart data={seriePorDia} />
         <NegociosBar data={barNegocios} />
-        <CategoriasList data={topCats} />
+        {desgloseCats.items.length > 0 && (
+          <AnalisisCategorias items={desgloseCats.items} total={desgloseCats.total} />
+        )}
       </CollapsibleSection>
     </div>
   )
