@@ -7,6 +7,7 @@ import { cn, formatMoney } from '@/lib/utils'
 import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { toast } from '@/components/ui/toast'
 import { registrarServicioClinica, registrarResenaClinica, eliminarServicioClinica, type ClinicaState } from '@/app/(app)/clinica/actions'
+import { PushSection } from '@/components/config/push-section'
 import { useTransition } from 'react'
 
 type TabKey = 'inicio' | 'registrar' | 'catalogo'
@@ -260,6 +261,14 @@ function TabuladorView({ tabulador, realizados, esEnfermera, onGoTab }: { tabula
           </ul>
         )}
       </section>
+
+      {/* Notificaciones (solo enfermera): para que reciba tareas de los socios */}
+      {esEnfermera && (
+        <section className="space-y-2">
+          <h3 className="label-caps">🔔 Mis notificaciones</h3>
+          <PushSection />
+        </section>
+      )}
     </div>
   )
 }
