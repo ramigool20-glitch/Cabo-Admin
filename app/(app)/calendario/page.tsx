@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { hoyEnCabos, TZ } from '@/lib/fechas'
+import { hoyEnCabos } from '@/lib/fechas'
 import { eventosDelMes } from '@/lib/calendario'
-import { formatInTimeZone } from 'date-fns-tz'
 import { CalendarioCliente } from '@/components/calendario/calendario-cliente'
+
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
 type SearchParams = { ym?: string }  // formato 2026-05
 
@@ -45,7 +46,7 @@ export default async function CalendarioPage(
 
   const prevMes = mes === 0 ? { año: año - 1, mes: 11 } : { año, mes: mes - 1 }
   const nextMes = mes === 11 ? { año: año + 1, mes: 0 } : { año, mes: mes + 1 }
-  const tituloMes = formatInTimeZone(inicio, TZ, 'MMMM yyyy')
+  const tituloMes = `${MESES[mes]} ${año}`
   const esMesActual = fmtYM(año, mes) === hoy.slice(0, 7)
 
   return (

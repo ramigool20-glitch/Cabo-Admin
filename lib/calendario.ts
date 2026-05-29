@@ -50,9 +50,18 @@ function proyectarOcurrencias(
     return occ
   }
 
-  // Quincenal / semanal: necesitan un anclaje (proximo_pago)
+  // Quincenal = quincena mexicana: día 15 y día 30 (o último del mes si es menor)
+  if (frecuencia === 'quincenal') {
+    for (const dia of [15, Math.min(30, ultimoDiaMes)]) {
+      const f = new Date(inicioMes.getFullYear(), inicioMes.getMonth(), dia)
+      if (f >= inicioMes && f <= finMes) occ.push(ymd(f))
+    }
+    return Array.from(new Set(occ)).sort()
+  }
+
+  // Semanal: necesita un anclaje (proximo_pago)
   if (!proximoPago) return []
-  const intervalo = frecuencia === 'quincenal' ? 14 : 7
+  const intervalo = 7
   const ref = new Date(proximoPago + 'T00:00:00')
 
   // Caminar HACIA ATRÁS desde ref hasta antes de inicioMes
@@ -129,6 +138,21 @@ export async function eventosDelMes(año: number, mes: number): Promise<EventoCa
         link: `/recurrentes/${g.id}`,
         emoji: '📅',
         color: 'text-blue-400',
+      })
+    }
+  }
+
+  // 1b) Comisiones Patricia: cada SÁBADO (regla de pago de la clínica)
+  for (let d = 1; d <= ultimoDiaDelMes; d++) {
+    if (new Date(año, mes, d).getDay() === 6) {
+      eventos.push({
+        fecha: `${año}-${mm}-${String(d).padStart(2, '0')}`,
+        tipo: 'gasto_fijo',
+        titulo: 'Comisiones Patricia (pago del sábado)',
+        negocio: 'Cabo Walk-in Clinic',
+        link: '/nomina/pagos',
+        emoji: '💉',
+        color: 'text-emerald-400',
       })
     }
   }
