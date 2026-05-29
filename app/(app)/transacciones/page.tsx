@@ -61,6 +61,22 @@ export default async function TransaccionesPage(
   const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
   const t = totalizar(transacciones, fxRate)
 
+  // Transacciones marcadas por el Auditor IA (cruce con observaciones reales)
+  const flaggedIds: string[] = []
+  let iaActivo = false
+  const obsRes = await supabase
+    .from('auditor_observaciones')
+    .select('datos')
+    .in('estado', ['nueva', 'vista'])
+  if (!obsRes.error) {
+    iaActivo = true
+    for (const o of obsRes.data ?? []) {
+      const link = (o.datos as { link?: string } | null)?.link
+      const m = link?.match(/\/transacciones\/([0-9a-fA-F-]{36})/)
+      if (m) flaggedIds.push(m[1])
+    }
+  }
+
   return (
     <div className="px-4 pt-5 pb-24 space-y-4 max-w-3xl mx-auto">
       <header className="space-y-2">
@@ -106,7 +122,7 @@ export default async function TransaccionesPage(
 
       <FiltersBar negocios={negocios ?? []} cuentas={cuentas ?? []} />
 
-      <TransactionList transacciones={(transacciones ?? []) as unknown as Transaccion[]} />
+      <TransactionList transacciones={(transacciones ?? []) as unknown as Transaccion[]} flaggedIds={flaggedIds} iaActivo={iaActivo} />
 
     </div>
   )

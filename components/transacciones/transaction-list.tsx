@@ -30,8 +30,17 @@ const tipoMeta = {
   liquidacion_socio: { icon: ArrowLeftRight,  color: 'text-blue-600' },
 } as const
 
-export function TransactionList({ transacciones }: { transacciones: Transaccion[] }) {
+export function TransactionList({
+  transacciones,
+  flaggedIds = [],
+  iaActivo = false,
+}: {
+  transacciones: Transaccion[]
+  flaggedIds?: string[]
+  iaActivo?: boolean
+}) {
   const router = useRouter()
+  const flagged = new Set(flaggedIds)
 
   // Realtime: cuando llega cualquier cambio en transacciones, refrescamos la página.
   useEffect(() => {
@@ -72,6 +81,19 @@ export function TransactionList({ transacciones }: { transacciones: Transaccion[
 
   return (
     <div className="space-y-5">
+      {/* Leyenda: revisión con IA */}
+      {iaActivo && (
+        <div className="flex items-center gap-4 px-1 -mb-2">
+          <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300/90 border border-cyan-500/20 text-[9px] font-bold">✓ IA</span>
+            Revisado con IA
+          </span>
+          <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[9px] font-bold">⚠ IA</span>
+            Detectó algo
+          </span>
+        </div>
+      )}
       {Array.from(grupos.entries()).map(([fecha, items]) => (
         <section key={fecha} className="space-y-1.5">
           <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide px-1">
@@ -101,13 +123,20 @@ export function TransactionList({ transacciones }: { transacciones: Transaccion[
                       <p className="text-xs text-zinc-500 truncate">
                         {t.negocios?.nombre ?? '—'} · {t.cuentas?.nombre ?? '—'}
                       </p>
-                      {t.negocios?.tipo === 'casa' && (
-                        <p className="text-[9px] mt-0.5">
-                          {t.atribuido_a
-                            ? <span className="text-purple-300">👤 personal</span>
-                            : <span className="text-cyan-300">⚖ compartido</span>}
-                        </p>
-                      )}
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {iaActivo && (
+                          flagged.has(t.id)
+                            ? <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[9px] font-bold">⚠ IA: revisar</span>
+                            : <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300/80 border border-cyan-500/20 text-[9px] font-bold">✓ Revisado IA</span>
+                        )}
+                        {t.negocios?.tipo === 'casa' && (
+                          <span className="text-[9px]">
+                            {t.atribuido_a
+                              ? <span className="text-purple-300">👤 personal</span>
+                              : <span className="text-cyan-300">⚖ compartido</span>}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="text-right shrink-0">
                       <p className={cn('text-sm font-semibold tabular-nums', meta.color)}>
