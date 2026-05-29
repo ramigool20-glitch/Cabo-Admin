@@ -30,7 +30,12 @@ export async function updateSession(request: NextRequest) {
   const isPublic =
     pathname.startsWith('/login') ||
     pathname.startsWith('/auth') ||
-    pathname.startsWith('/api/auth')
+    pathname.startsWith('/api/auth') ||
+    // Crons (Bearer CRON_SECRET) y webhooks (firma) se autentican solos,
+    // no traen cookie de sesión. NO redirigir a /login o nunca se ejecutan.
+    pathname.startsWith('/api/cron') ||
+    pathname.startsWith('/api/webhooks') ||
+    pathname === '/api/stripe/webhook'
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()
