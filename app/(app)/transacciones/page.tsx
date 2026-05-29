@@ -1,10 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { TransactionList, type Transaccion } from '@/components/transacciones/transaction-list'
 import { FiltersBar } from '@/components/transacciones/filters-bar'
+import { AnalisisCategorias } from '@/components/transacciones/analisis-categorias'
 import { RangoSelector } from '@/components/dashboard/rango-selector'
 import { formatMoney } from '@/lib/utils'
 import { isRangoId, rangoFechas, type RangoId } from '@/lib/rangos'
 import { totalizar } from '@/lib/agregaciones'
+import { desglosarCategorias } from '@/lib/categorias-grupos'
 
 type SearchParams = {
   tipo?: string
@@ -60,6 +62,7 @@ export default async function TransaccionesPage(
 
   const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
   const t = totalizar(transacciones, fxRate)
+  const desglose = desglosarCategorias(transacciones, fxRate)
 
   // Transacciones marcadas por el Auditor IA (cruce con observaciones reales)
   const flaggedIds: string[] = []
@@ -118,6 +121,10 @@ export default async function TransaccionesPage(
             </p>
           </div>
         </div>
+      )}
+
+      {desglose.items.length > 0 && (
+        <AnalisisCategorias items={desglose.items} total={desglose.total} />
       )}
 
       <FiltersBar negocios={negocios ?? []} cuentas={cuentas ?? []} />
