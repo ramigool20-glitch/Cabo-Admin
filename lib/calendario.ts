@@ -1,4 +1,6 @@
+import { formatInTimeZone } from 'date-fns-tz'
 import { createAdminClient } from './supabase/admin'
+import { TZ } from './fechas'
 
 type Frecuencia = 'mensual' | 'quincenal' | 'semanal' | 'anual'
 
@@ -91,8 +93,10 @@ export type EventoCalendario = {
  */
 export async function eventosDelMes(año: number, mes: number): Promise<EventoCalendario[]> {
   const admin = createAdminClient()
-  const inicio = new Date(año, mes, 1).toISOString().slice(0, 10)
-  const fin = new Date(año, mes + 1, 0).toISOString().slice(0, 10)
+  const mm = String(mes + 1).padStart(2, '0')
+  const ultimoDiaDelMes = new Date(año, mes + 1, 0).getDate()
+  const inicio = `${año}-${mm}-01`
+  const fin = `${año}-${mm}-${String(ultimoDiaDelMes).padStart(2, '0')}`
 
   const eventos: EventoCalendario[] = []
 
@@ -175,16 +179,21 @@ export async function eventosDelMes(año: number, mes: number): Promise<EventoCa
     })
   }
 
-  // 4) Tareas con fecha límite en este mes
+  // 4) Tareas con fecha límite en este mes (fecha en hora de Cabo, no UTC).
+  // Ampliamos la ventana ±1 día para no perder tareas del borde por el desfase de zona.
+  const prevDia = new Date(año, mes, 0).toISOString().slice(0, 10)      // último día del mes anterior
+  const nextDia = new Date(año, mes + 1, 2).toISOString().slice(0, 10)  // 2 del mes siguiente
   const { data: tareas } = await admin
     .from('tareas')
     .select('id, titulo, fecha_limite, prioridad, estado, multa_monto, moneda_multa')
-    .gte('fecha_limite', `${inicio}T00:00:00`)
-    .lte('fecha_limite', `${fin}T23:59:59`)
+    .gte('fecha_limite', `${prevDia}T00:00:00`)
+    .lte('fecha_limite', `${nextDia}T23:59:59`)
     .in('estado', ['pendiente', 'en_progreso', 'vencida'])
   for (const t of tareas ?? []) {
+    const fechaCabo = formatInTimeZone(new Date(t.fecha_limite), TZ, 'yyyy-MM-dd')
+    if (fechaCabo < inicio || fechaCabo > fin) continue
     eventos.push({
-      fecha: t.fecha_limite.slice(0, 10),
+      fecha: fechaCabo,
       tipo: 'tarea',
       titulo: t.titulo,
       monto: t.multa_monto ? Number(t.multa_monto) : undefined,
@@ -202,7 +211,7 @@ export async function eventosDelMes(año: number, mes: number): Promise<EventoCa
     .select('id, motivo, monto_propuesto, moneda, estado, created_at')
     .in('estado', ['propuesta', 'justificada', 'reduccion_solicitada', 'pendiente_conversacion'])
   for (const m of multas ?? []) {
-    const fecha = m.created_at.slice(0, 10)
+    const fecha = formatInTimeZone(new Date(m.created_at), TZ, 'yyyy-MM-dd')
     if (fecha < inicio || fecha > fin) continue
     eventos.push({
       fecha,

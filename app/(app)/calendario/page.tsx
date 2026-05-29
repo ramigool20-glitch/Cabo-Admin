@@ -14,8 +14,9 @@ function parseYM(ym?: string): { año: number; mes: number } {
     const [a, m] = ym.split('-').map(Number)
     return { año: a, mes: m - 1 }
   }
-  const ahora = new Date()
-  return { año: ahora.getFullYear(), mes: ahora.getMonth() }
+  // Mes actual según hora de Cabo (no UTC del servidor)
+  const hoy = hoyEnCabos() // "2026-05-28"
+  return { año: Number(hoy.slice(0, 4)), mes: Number(hoy.slice(5, 7)) - 1 }
 }
 
 function fmtYM(año: number, mes: number): string {
