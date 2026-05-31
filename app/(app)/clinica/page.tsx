@@ -24,20 +24,33 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
     }
   }
 
-  // Quincena actual: 1-15 o 16-fin de mes
+  // Quincena actual: 1-15 o 16-fin de mes (solo para etiqueta del sueldo)
   const dia = Number(hoy.slice(8, 10))
   const ym = hoy.slice(0, 7)
   const finMes = new Date(Number(hoy.slice(0, 4)), Number(hoy.slice(5, 7)), 0).getDate()
-  const desde = dia <= 15 ? `${ym}-01` : `${ym}-16`
-  const hasta = dia <= 15 ? `${ym}-15` : `${ym}-${String(finMes).padStart(2, '0')}`
-  const periodo = dia <= 15 ? `1-15 ${ym}` : `16-${finMes} ${ym}`
+  const quincenaInicio = dia <= 15 ? `${ym}-01` : `${ym}-16`
+  const quincenaLabel = dia <= 15 ? `1-15 ${ym}` : `16-${finMes} ${ym}`
 
+  // El tablero muestra SOLO lo NO pagado (pagado_at IS NULL). Al pagar se reinicia.
   const [servRes, realRes, cfgRes, fxRes] = await Promise.all([
     admin.from('clinica_servicios').select('*').eq('activo', true).order('orden'),
-    admin.from('clinica_realizados').select('*').gte('fecha', desde).lte('fecha', hasta).order('fecha', { ascending: false }),
+    admin.from('clinica_realizados').select('*').is('pagado_at', null).order('fecha', { ascending: false }),
     admin.from('clinica_config_enfermera').select('*').eq('activa', true).limit(1).maybeSingle(),
     admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
   ])
+
+  // ¿Sueldo de la quincena actual ya pagado?
+  let sueldoQuincenaPagado = false
+  if (cfgRes.data?.enfermera_id) {
+    const { data: pagoSueldo } = await admin
+      .from('clinica_pagos')
+      .select('id')
+      .eq('enfermera_id', cfgRes.data.enfermera_id)
+      .eq('tipo', 'sueldo_quincenal')
+      .eq('periodo_inicio', quincenaInicio)
+      .maybeSingle()
+    sueldoQuincenaPagado = !!pagoSueldo
+  }
   const fxRate = fxRes.data ? Number(fxRes.data.rate_compra) : 17
 
   // Si las tablas no existen aún
@@ -61,13 +74,18 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
   const reviewsRealizados = realizados.filter((r) => r.tipo === 'review')
   const serviciosRealizados = realizados.filter((r) => r.tipo !== 'review')
 
-  // Tabulador
+  // Tabulador: lo PENDIENTE de cobrar
   const comisiones = serviciosRealizados.reduce((s, r) => s + Number(r.pago_comision), 0)
   const propinas = realizados.reduce((s, r) => s + Number(r.propina), 0)
   const bono = reviewsRealizados.reduce((s, r) => s + Number(r.pago_comision), 0)
   const reviews = reviewsRealizados.length
-  const sueldoBase = cfg?.sueldo_base_quincenal ?? 0
+  // Sueldo solo si la quincena actual NO está pagada
+  const sueldoBase = sueldoQuincenaPagado ? 0 : (cfg?.sueldo_base_quincenal ?? 0)
   const total = comisiones + propinas + bono + sueldoBase
+
+  const periodo = sueldoQuincenaPagado && realizados.length === 0
+    ? `Al corriente ✓ (${quincenaLabel})`
+    : `Pendiente de cobro · ${quincenaLabel}`
 
   const tabulador: Tabulador = {
     periodo, comisiones, propinas, bono, sueldoBase, total,
