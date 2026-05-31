@@ -31,8 +31,23 @@ export async function procesarCobroPagado(
   paymentIntentId: string | null,
   opts: { push?: boolean } = {}
 ): Promise<boolean> {
-  if (cobro.estado === 'cobrado') return false
   const admin = createAdminClient()
+
+  // ATÓMICO: solo procesa si logra marcarlo cobrado desde 'pendiente'.
+  // Si dos webhooks llegan en paralelo (retry de Stripe), solo uno gana
+  // y el otro se queda sin hacer nada (evita doble transacción).
+  const { data: claimed } = await admin
+    .from('cobros_stripe')
+    .update({
+      estado: 'cobrado',
+      cobrado_at: new Date().toISOString(),
+      stripe_payment_intent_id: paymentIntentId,
+    })
+    .eq('id', cobro.id)
+    .eq('estado', 'pendiente')
+    .select('id')
+  if (!claimed || claimed.length === 0) return false
+
   const fechaHoy = hoyEnCabos()
   const fx = await aMxnEquivalente(Number(cobro.monto), cobro.moneda, fechaHoy)
 
@@ -53,18 +68,11 @@ export async function procesarCobroPagado(
   }
   const { data: tx } = await admin.from('transacciones').insert(txInsert).select('id').single()
 
-  await admin
-    .from('cobros_stripe')
-    .update({
-      estado: 'cobrado',
-      cobrado_at: new Date().toISOString(),
-      stripe_payment_intent_id: paymentIntentId,
-      transaccion_id: tx?.id ?? null,
-    })
-    .eq('id', cobro.id)
-
-  if (tx?.id && cobro.creado_por) {
-    await registrarHistorial(tx.id, 'creada', cobro.creado_por, null, txInsert)
+  if (tx?.id) {
+    await admin.from('cobros_stripe').update({ transaccion_id: tx.id }).eq('id', cobro.id)
+    if (cobro.creado_por) {
+      await registrarHistorial(tx.id, 'creada', cobro.creado_por, null, txInsert)
+    }
   }
 
   if (opts.push) {
