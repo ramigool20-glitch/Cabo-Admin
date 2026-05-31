@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireSocio } from '@/lib/auth/require-socio'
 import webpush from 'web-push'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -22,6 +23,8 @@ if (publicKey && privateKey) {
  * - Las que fallen con 404/410 las marca como inválidas y las borra
  */
 export async function POST(req: Request) {
+  const g = await requireSocio()
+  if (g instanceof NextResponse) return g
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

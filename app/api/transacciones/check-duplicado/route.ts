@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
+import { requireSocio } from '@/lib/auth/require-socio'
 import { createClient } from '@/lib/supabase/server'
 import { buscarDuplicados } from '@/lib/duplicados'
 
 export const runtime = 'nodejs'
 
 export async function POST(req: Request) {
+  const g = await requireSocio()
+  if (g instanceof NextResponse) return g
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ duplicados: [] })

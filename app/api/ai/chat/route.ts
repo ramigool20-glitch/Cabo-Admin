@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireSocio } from '@/lib/auth/require-socio'
 import { anthropic, CLAUDE_MODEL } from '@/lib/ai/anthropic'
 import { openai, OPENAI_MODEL } from '@/lib/ai/openai'
 import { getAIProvider } from '@/lib/ai/provider'
@@ -261,6 +262,8 @@ async function chatAnthropic(systemText: string, messages: ChatMessage[]) {
 // =============================================================
 export async function POST(req: Request) {
   try {
+    const g = await requireSocio()
+    if (g instanceof NextResponse) return g
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

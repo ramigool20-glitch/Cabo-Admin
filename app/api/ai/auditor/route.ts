@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireSocio } from '@/lib/auth/require-socio'
 import { openai, OPENAI_MODEL } from '@/lib/ai/openai'
 import { PROMPT_AUDITOR, type ChatMessage } from '@/lib/ai/prompts'
 import { createClient } from '@/lib/supabase/server'
@@ -1567,6 +1568,8 @@ async function ejecutarTool(
 
 export async function POST(req: Request) {
   try {
+    const g = await requireSocio()
+    if (g instanceof NextResponse) return g
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

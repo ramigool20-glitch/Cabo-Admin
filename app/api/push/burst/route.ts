@@ -3,6 +3,7 @@
  * Llamado desde /config (botón "Mandar ráfaga de prueba").
  */
 import { NextResponse } from 'next/server'
+import { requireSocio } from '@/lib/auth/require-socio'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { enviarPushAProfiles } from '@/lib/push/server'
@@ -11,6 +12,8 @@ import { programarPushes } from '@/lib/push/scheduler'
 export const runtime = 'nodejs'
 
 export async function POST(req: Request) {
+  const g = await requireSocio()
+  if (g instanceof NextResponse) return g
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

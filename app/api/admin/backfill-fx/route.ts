@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireSocio } from '@/lib/auth/require-socio'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { aMxnEquivalente } from '@/lib/fx/server'
@@ -12,6 +13,8 @@ export const maxDuration = 60
  * anterior más cercano disponible en fx_rates).
  */
 export async function POST() {
+  const g = await requireSocio()
+  if (g instanceof NextResponse) return g
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

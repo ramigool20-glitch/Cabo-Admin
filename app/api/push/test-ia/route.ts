@@ -4,6 +4,7 @@
  * Usa sesión del usuario (no requiere CRON_SECRET).
  */
 import { NextResponse } from 'next/server'
+import { requireSocio } from '@/lib/auth/require-socio'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ejecutarRadar } from '@/lib/ai/radar'
@@ -25,6 +26,8 @@ Te paso insights e irregularidades de su data. Redacta UNA observación push:
 Responde SOLO el texto, nada más.`
 
 export async function POST() {
+  const g = await requireSocio()
+  if (g instanceof NextResponse) return g
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireSocio } from '@/lib/auth/require-socio'
 import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
@@ -29,6 +30,8 @@ export async function POST(
   req: Request,
   ctx: { params: Promise<{ tipo: string }> }
 ) {
+  const g = await requireSocio()
+  if (g instanceof NextResponse) return g
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
