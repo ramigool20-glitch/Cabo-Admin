@@ -43,6 +43,10 @@ export type Realizado = {
   propina: number
   cobrado_cliente: number | null
   notas?: string | null
+  pago_id?: string | null
+  propina_pago_id?: string | null
+  estado_aprobacion?: string | null
+  foto_url?: string | null
 }
 
 export type Tabulador = {
@@ -96,7 +100,7 @@ export function ClinicaClient({
       )}
 
       {tab === 'inicio' && <TabuladorView tabulador={tabulador} realizados={realizados} esEnfermera={esEnfermera} onGoTab={goTab} />}
-      {tab === 'registrar' && <RegistrarView servicios={servicios} />}
+      {tab === 'registrar' && <RegistrarView servicios={servicios} esEnfermera={esEnfermera} />}
       {tab === 'catalogo' && <CatalogoView servicios={servicios} fxRate={fxRate} />}
       {tab === 'pagos' && allowPagos && pagosData && (
         <ClinicaPagoCard data={pagosData} cuentas={cuentas} />
@@ -161,24 +165,15 @@ function TabuladorView({ tabulador, realizados, esEnfermera, onGoTab }: { tabula
         </div>
       </section>
 
-      {/* Accesos rápidos (solo enfermera) */}
+      {/* Acceso rápido (solo enfermera): registrar lo hace el admin, no ella */}
       {esEnfermera && onGoTab && (
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => onGoTab('registrar')}
-            className="rounded-xl p-3 flex items-center gap-2 bg-cyan-500/15 border border-cyan-500/40 text-cyan-200 font-bold text-sm active:scale-[0.98] transition-transform"
-          >
-            <PlusCircle className="h-5 w-5" /> Registrar servicio
-          </button>
-          <button
-            type="button"
-            onClick={() => onGoTab('catalogo')}
-            className="rounded-xl p-3 flex items-center gap-2 bg-purple-500/15 border border-purple-500/40 text-purple-200 font-bold text-sm active:scale-[0.98] transition-transform"
-          >
-            <ClipboardList className="h-5 w-5" /> Ver catálogo
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => onGoTab('catalogo')}
+          className="w-full rounded-xl p-3 flex items-center justify-center gap-2 bg-purple-500/15 border border-purple-500/40 text-purple-200 font-bold text-sm active:scale-[0.98] transition-transform"
+        >
+          <ClipboardList className="h-5 w-5" /> Ver catálogo
+        </button>
       )}
 
       {/* Desglose en cards */}
@@ -294,10 +289,15 @@ function Linea({ label, monto, sub, color }: { label: string; monto: number; sub
   )
 }
 
-function RegistrarView({ servicios }: { servicios: Servicio[] }) {
+function RegistrarView({ servicios, esEnfermera }: { servicios: Servicio[]; esEnfermera: boolean }) {
   const [modo, setModo] = useState<'servicio' | 'resena'>('servicio')
   return (
     <div className="space-y-3">
+      {esEnfermera && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] text-amber-200">
+          📸 Foto obligatoria como comprobante. Tu registro se envía a aprobación de Miguel/Sergio. Cuenta cuando lo aprueben.
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
         <button
           type="button"
@@ -314,17 +314,17 @@ function RegistrarView({ servicios }: { servicios: Servicio[] }) {
           <Star className="h-3.5 w-3.5" /> Reseña
         </button>
       </div>
-      {modo === 'servicio' ? <ServicioForm servicios={servicios} /> : <ResenaForm />}
+      {modo === 'servicio' ? <ServicioForm servicios={servicios} esEnfermera={esEnfermera} /> : <ResenaForm esEnfermera={esEnfermera} />}
     </div>
   )
 }
 
-function ResenaForm() {
+function ResenaForm({ esEnfermera = false }: { esEnfermera?: boolean }) {
   const [state, formAction, pending] = useActionState<ClinicaState, FormData>(registrarResenaClinica, {})
   useEffect(() => {
-    if (state.ok) toast.success('Reseña registrada', 'Sumada al bono de la enfermera ⭐')
+    if (state.ok) toast.success(esEnfermera ? 'Enviado a aprobación' : 'Reseña registrada', esEnfermera ? 'Patricia: espera que el admin apruebe' : 'Sumada al bono de la enfermera ⭐')
     else if (state.error) toast.error('Error', state.error)
-  }, [state])
+  }, [state, esEnfermera])
 
   return (
     <form action={formAction} key={state.ok ? Math.random() : 'resena'} className="rounded-2xl p-4 space-y-3 bg-gradient-to-br from-amber-500/10 to-orange-500/5 border border-amber-500/30">
@@ -354,6 +354,11 @@ function ResenaForm() {
         <input name="nota" placeholder="Ej: 5 estrellas en Google" className="input-base w-full h-10 text-sm" />
       </div>
 
+      <div className="space-y-1.5">
+        <label className="label-caps">{esEnfermera ? '📸 Foto comprobante (obligatoria)' : '📸 Foto (opcional)'}</label>
+        <input name="foto" type="file" accept="image/*" required={esEnfermera} className="text-xs text-zinc-300 file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-amber-500/20 file:text-amber-200 file:text-[11px] file:font-bold" />
+      </div>
+
       {state.error && <p className="text-xs text-rose-400">{state.error}</p>}
 
       <button type="submit" disabled={pending} className="w-full h-10 text-sm rounded-xl font-bold bg-amber-500 text-zinc-950 inline-flex items-center justify-center gap-1.5 disabled:opacity-50">
@@ -364,7 +369,7 @@ function ResenaForm() {
   )
 }
 
-function ServicioForm({ servicios }: { servicios: Servicio[] }) {
+function ServicioForm({ servicios, esEnfermera = false }: { servicios: Servicio[]; esEnfermera?: boolean }) {
   const [state, formAction, pending] = useActionState<ClinicaState, FormData>(registrarServicioClinica, {})
   const [servicioId, setServicioId] = useState('')
   const [fueraHorario, setFueraHorario] = useState(false)
@@ -472,11 +477,16 @@ function ServicioForm({ servicios }: { servicios: Servicio[] }) {
         <input name="notas" placeholder="opcional" className="input-base w-full h-10 text-sm" />
       </div>
 
+      <div className="space-y-1.5">
+        <label className="label-caps">{esEnfermera ? '📸 Foto comprobante (obligatoria)' : '📸 Foto (opcional)'}</label>
+        <input name="foto" type="file" accept="image/*" required={esEnfermera} className="text-xs text-zinc-300 file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-cyan-500/20 file:text-cyan-200 file:text-[11px] file:font-bold" />
+      </div>
+
       {state.error && <p className="text-xs text-rose-400">{state.error}</p>}
 
       <button type="submit" disabled={pending} className="btn-primary w-full h-10 text-sm">
         {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-        Registrar
+        {esEnfermera ? 'Enviar a aprobación' : 'Registrar'}
       </button>
     </form>
   )

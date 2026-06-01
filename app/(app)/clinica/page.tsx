@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { hoyEnCabos } from '@/lib/fechas'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ClinicaClient, type Servicio, type Realizado, type Tabulador } from '@/components/clinica/clinica-client'
-import type { ClinicaPagoData, CorteRow } from '@/components/clinica/clinica-pago-card'
+import type { ClinicaPagoData, CorteRow, PendienteAprobar } from '@/components/clinica/clinica-pago-card'
 
 type SearchParams = { tab?: string }
 
@@ -32,13 +32,19 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
   const quincenaInicio = dia <= 15 ? `${ym}-01` : `${ym}-16`
   const quincenaLabel = dia <= 15 ? `1-15 ${ym}` : `16-${finMes} ${ym}`
 
-  // El tablero muestra solo lo EN CURSO (no cortado). Al hacer corte, esos
-  // realizados se asocian al corte (pago_id) y desaparecen de aquí.
-  const [servRes, realRes, cfgRes, fxRes] = await Promise.all([
+  // El tablero muestra realizados APROBADOS con CUALQUIER parte sin cortar
+  // (comisión sin cortar O propina sin cortar). Pendientes de aprobar aparte.
+  const [servRes, realRes, cfgRes, fxRes, pendAprRes] = await Promise.all([
     admin.from('clinica_servicios').select('*').eq('activo', true).order('orden'),
-    admin.from('clinica_realizados').select('*').is('pago_id', null).order('fecha', { ascending: false }),
+    admin.from('clinica_realizados').select('*')
+      .eq('estado_aprobacion', 'aprobado')
+      .or('pago_id.is.null,propina_pago_id.is.null')
+      .order('fecha', { ascending: false }),
     admin.from('clinica_config_enfermera').select('*').eq('activa', true).limit(1).maybeSingle(),
     admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+    admin.from('clinica_realizados').select('id, tipo, servicio_nombre, fecha, pago_comision, propina, foto_url, enfermera_id, notas')
+      .eq('estado_aprobacion', 'pendiente')
+      .order('created_at', { ascending: false }),
   ])
 
   // ¿Sueldo de la quincena actual ya cortado (pendiente o pagado)?
@@ -59,6 +65,34 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
       : 'sin_corte'
   }
   const fxRate = fxRes.data ? Number(fxRes.data.rate_compra) : 17
+
+  // Si las tablas no existen aún
+  if (servRes.error && /relation.*does not exist/i.test(servRes.error.message)) {
+    return (
+      <div className="px-4 pt-5 pb-24 max-w-3xl mx-auto">
+        <EmptyState
+          emoji="🏥"
+          title="Falta activar el módulo Clínica"
+          description="Pega la migración 0025_clinica.sql en Supabase para crear el catálogo y el tabulador."
+        />
+      </div>
+    )
+  }
+
+  const servicios = (servRes.data ?? []) as unknown as Servicio[]
+  const realizados = (realRes.data ?? []) as unknown as Realizado[]
+  const cfg = cfgRes.data
+
+  // Separar por tipo + por estado de corte (pago_id para comisión/review; propina_pago_id para propina)
+  const reviewsUncut = realizados.filter((r) => r.tipo === 'review' && r.pago_id == null)
+  const serviciosUncut = realizados.filter((r) => r.tipo !== 'review' && r.pago_id == null)
+  const propinasUncutRows = realizados.filter((r) => r.propina_pago_id == null && Number(r.propina) > 0)
+
+  // Tabulador: lo PENDIENTE de cortar (de cada tipo)
+  const comisiones = serviciosUncut.reduce((s, r) => s + Number(r.pago_comision), 0)
+  const propinas = propinasUncutRows.reduce((s, r) => s + Number(r.propina), 0)
+  const bono = reviewsUncut.reduce((s, r) => s + Number(r.pago_comision), 0)
+  const reviews = reviewsUncut.length
 
   // === Datos del admin: cortes pendientes + histórico + cuentas (no enfermera) ===
   let pagosData: ClinicaPagoData | null = null
@@ -92,19 +126,16 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
       monto_total: Number(p.monto_total), created_at: p.created_at,
     })
 
-    // realRes contiene los EN CURSO (pago_id IS NULL); reuse para el split
-    const enCursoRows = (realRes.data ?? []) as unknown as Array<{ tipo?: string | null; pago_comision: number; propina: number }>
-    const enCursoServ = enCursoRows.filter((r) => r.tipo !== 'review')
-    const enCursoRev = enCursoRows.filter((r) => r.tipo === 'review')
-
+    // realRes ya está filtrado a aprobado + alguna parte sin cortar;
+    // ahora separamos por componente (comisión, propina, review).
     pagosData = {
       nombre: cfgRes.data.nombre ?? 'Patricia',
       enCurso: {
-        serviciosCount: enCursoServ.length,
-        comisiones: enCursoServ.reduce((s, r) => s + Number(r.pago_comision), 0),
-        propinas: enCursoServ.reduce((s, r) => s + Number(r.propina), 0),
-        reviewsCount: enCursoRev.length,
-        reviewsMonto: enCursoRev.reduce((s, r) => s + Number(r.pago_comision), 0),
+        serviciosCount: serviciosUncut.length,
+        comisiones: comisiones,
+        propinas: propinas,
+        reviewsCount: reviewsUncut.length,
+        reviewsMonto: bono,
       },
       quincena: {
         label: quincenaLabel,
@@ -113,35 +144,31 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
       },
       pendientes: (pendientesRes.data ?? []).map(mapCorte),
       historial: (historialRes.data ?? []).map(mapCorte),
+      pendientesAprobar: [],
     }
+
+    // Pendientes de aprobar: con foto firmada
+    const pendAprRows = pendAprRes.data ?? []
+    const pendientesAprobar: PendienteAprobar[] = []
+    for (const p of pendAprRows) {
+      let fotoUrl: string | null = null
+      if (p.foto_url) {
+        const { data: signed } = await admin.storage.from('recibos').createSignedUrl(p.foto_url, 60 * 60 * 8)
+        fotoUrl = signed?.signedUrl ?? null
+      }
+      pendientesAprobar.push({
+        id: p.id,
+        tipo: (p.tipo === 'review' ? 'review' : 'servicio'),
+        servicio_nombre: p.servicio_nombre,
+        fecha: p.fecha,
+        pago_comision: Number(p.pago_comision),
+        propina: Number(p.propina),
+        foto_url: fotoUrl,
+        notas: p.notas,
+      })
+    }
+    pagosData.pendientesAprobar = pendientesAprobar
   }
-
-  // Si las tablas no existen aún
-  if (servRes.error && /relation.*does not exist/i.test(servRes.error.message)) {
-    return (
-      <div className="px-4 pt-5 pb-24 max-w-3xl mx-auto">
-        <EmptyState
-          emoji="🏥"
-          title="Falta activar el módulo Clínica"
-          description="Pega la migración 0025_clinica.sql en Supabase para crear el catálogo y el tabulador."
-        />
-      </div>
-    )
-  }
-
-  const servicios = (servRes.data ?? []) as unknown as Servicio[]
-  const realizados = (realRes.data ?? []) as unknown as Realizado[]
-  const cfg = cfgRes.data
-
-  // Separar servicios vs reseñas (tipo puede no existir aún → cuenta como servicio)
-  const reviewsRealizados = realizados.filter((r) => r.tipo === 'review')
-  const serviciosRealizados = realizados.filter((r) => r.tipo !== 'review')
-
-  // Tabulador: lo PENDIENTE de cobrar
-  const comisiones = serviciosRealizados.reduce((s, r) => s + Number(r.pago_comision), 0)
-  const propinas = realizados.reduce((s, r) => s + Number(r.propina), 0)
-  const bono = reviewsRealizados.reduce((s, r) => s + Number(r.pago_comision), 0)
-  const reviews = reviewsRealizados.length
   // Sueldo solo si la quincena actual NO tiene corte ya creado
   const sueldoBase = sueldoQuincenaCortado ? 0 : (cfg?.sueldo_base_quincenal ?? 0)
   const total = comisiones + propinas + bono + sueldoBase
@@ -152,7 +179,7 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
 
   const tabulador: Tabulador = {
     periodo, comisiones, propinas, bono, sueldoBase, total,
-    numServicios: serviciosRealizados.length, reviews,
+    numServicios: serviciosUncut.length, reviews,
   }
 
   return (

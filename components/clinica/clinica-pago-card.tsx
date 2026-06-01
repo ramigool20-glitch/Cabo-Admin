@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Loader2, Stethoscope, Star, Wallet, Check, Scissors, X, Clock } from 'lucide-react'
+import { Loader2, Stethoscope, Star, Wallet, Check, Scissors, X, Clock, ImageIcon } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
 import { formatearFecha } from '@/lib/fechas'
 import { toast } from '@/components/ui/toast'
 import {
-  hacerCorteComisiones, hacerCorteReviews, hacerCorteQuincena,
+  hacerCorteComisiones, hacerCortePropinas, hacerCorteReviews, hacerCorteQuincena,
   marcarCortePagado, cancelarCorte,
 } from '@/app/(app)/clinica/pagos-actions'
+import { aprobarRealizado, rechazarRealizado } from '@/app/(app)/clinica/actions'
 
 export type CorteRow = {
   id: string
@@ -17,6 +18,17 @@ export type CorteRow = {
   periodo_fin: string
   monto_total: number
   created_at: string
+}
+
+export type PendienteAprobar = {
+  id: string
+  tipo: 'review' | 'servicio'
+  servicio_nombre: string | null
+  fecha: string
+  pago_comision: number
+  propina: number
+  foto_url: string | null
+  notas: string | null
 }
 
 export type ClinicaPagoData = {
@@ -35,6 +47,7 @@ export type ClinicaPagoData = {
   }
   pendientes: CorteRow[]
   historial: CorteRow[]
+  pendientesAprobar?: PendienteAprobar[]
 }
 
 const TIPO_META: Record<CorteRow['tipo_visual'], { emoji: string; label: string; chip: string }> = {
@@ -72,16 +85,38 @@ export function ClinicaPagoCard({
         </div>
       </div>
 
+      {/* ═══════ PENDIENTES DE APROBAR ═══════ */}
+      {(data.pendientesAprobar?.length ?? 0) > 0 && (
+        <section className="space-y-2">
+          <p className="text-[10px] uppercase tracking-wider font-bold text-rose-300">
+            🔔 Pendientes de aprobar ({data.pendientesAprobar!.length}) — Patricia las registró
+          </p>
+          <div className="space-y-2">
+            {data.pendientesAprobar!.map((p) => (
+              <PendienteAprobarRow key={p.id} item={p} />
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ═══════ EN CURSO (pendiente de cortar) ═══════ */}
       <section className="space-y-2">
         <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">En curso</p>
 
         <BloqueEnCurso
-          emoji="🩺" label="Comisiones (servicios + propinas)" color="cyan"
-          monto={data.enCurso.comisiones + data.enCurso.propinas}
-          detalle={`${data.enCurso.serviciosCount} servicios${data.enCurso.propinas > 0 ? ` + ${formatMoney(data.enCurso.propinas, 'MXN')} propinas` : ''}`}
+          emoji="🩺" label="Comisiones de servicios" color="cyan"
+          monto={data.enCurso.comisiones}
+          detalle={`${data.enCurso.serviciosCount} servicios`}
           pending={pending}
           onCortar={() => accionCorte(hacerCorteComisiones, 'comisiones')}
+        />
+
+        <BloqueEnCurso
+          emoji="💵" label="Propinas" color="emerald"
+          monto={data.enCurso.propinas}
+          detalle="propinas acumuladas (corte aparte)"
+          pending={pending}
+          onCortar={() => accionCorte(hacerCortePropinas, 'propinas')}
         />
 
         <BloqueEnCurso
@@ -151,13 +186,14 @@ export function ClinicaPagoCard({
 function BloqueEnCurso({
   emoji, label, color, monto, detalle, pending, onCortar,
 }: {
-  emoji: string; label: string; color: 'cyan' | 'amber' | 'indigo'
+  emoji: string; label: string; color: 'cyan' | 'amber' | 'indigo' | 'emerald'
   monto: number; detalle: string; pending: boolean; onCortar: () => void
 }) {
   const palette = {
-    cyan:   { text: 'text-cyan-300',   ring: 'border-cyan-500/20' },
-    amber:  { text: 'text-amber-300',  ring: 'border-amber-500/20' },
-    indigo: { text: 'text-indigo-300', ring: 'border-indigo-500/20' },
+    cyan:    { text: 'text-cyan-300',    ring: 'border-cyan-500/20' },
+    amber:   { text: 'text-amber-300',   ring: 'border-amber-500/20' },
+    indigo:  { text: 'text-indigo-300',  ring: 'border-indigo-500/20' },
+    emerald: { text: 'text-emerald-300', ring: 'border-emerald-500/20' },
   }[color]
   const vacio = monto <= 0
 
@@ -269,6 +305,85 @@ function CorteRowPendiente({
             >
               {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
               Confirmar pago de {formatMoney(Number(corte.monto_total), 'MXN')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────
+// Fila de pendiente de aprobar (registro hecho por la enfermera)
+// ─────────────────────────────────────────────────────
+function PendienteAprobarRow({ item }: { item: PendienteAprobar }) {
+  const [pending, start] = useTransition()
+  const [showRechazo, setShowRechazo] = useState(false)
+  const [motivo, setMotivo] = useState('')
+  const total = Number(item.pago_comision) + Number(item.propina)
+
+  const aprobar = () => {
+    start(async () => {
+      const r = await aprobarRealizado(item.id)
+      if (r.ok) toast.success('✓ Aprobado', 'Ya cuenta en el tabulador')
+      else toast.error('Error', r.error)
+    })
+  }
+
+  const rechazar = () => {
+    if (!motivo.trim()) { toast.error('Falta motivo'); return }
+    start(async () => {
+      const r = await rechazarRealizado(item.id, motivo)
+      if (r.ok) { toast.info('Rechazado'); setShowRechazo(false); setMotivo('') }
+      else toast.error('Error', r.error)
+    })
+  }
+
+  return (
+    <div className="rounded-xl border border-rose-500/30 bg-rose-500/5">
+      <div className="flex gap-3 p-3">
+        {item.foto_url ? (
+          <a href={item.foto_url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={item.foto_url} alt="" className="h-16 w-16 rounded-lg object-cover border border-rose-500/40" />
+          </a>
+        ) : (
+          <div className="h-16 w-16 rounded-lg bg-zinc-900 border border-zinc-700 inline-flex items-center justify-center shrink-0">
+            <ImageIcon className="h-5 w-5 text-zinc-600" />
+          </div>
+        )}
+        <div className="flex-1 min-w-0 leading-tight">
+          <p className="text-sm font-bold text-white truncate">{item.tipo === 'review' ? '⭐ ' : '🩺 '}{item.servicio_nombre || 'Sin nombre'}</p>
+          <p className="text-[10px] text-zinc-500">{formatearFecha(item.fecha, 'EEE dd MMM')}</p>
+          <p className="text-sm font-bold tabular-nums text-rose-200 mt-0.5">{formatMoney(total, 'MXN')}</p>
+          {item.notas && <p className="text-[10px] text-zinc-500 truncate italic">"{item.notas}"</p>}
+        </div>
+      </div>
+
+      {!showRechazo ? (
+        <div className="flex gap-1.5 px-3 pb-3">
+          <button
+            type="button" disabled={pending}
+            onClick={aprobar}
+            className="flex-1 h-8 rounded-lg bg-emerald-500 text-zinc-950 text-[11px] font-bold inline-flex items-center justify-center gap-1 disabled:opacity-50"
+          >
+            {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Aprobar
+          </button>
+          <button
+            type="button" disabled={pending}
+            onClick={() => setShowRechazo(true)}
+            className="h-8 px-2.5 rounded-lg border border-zinc-700 text-zinc-400 text-[11px] font-bold inline-flex items-center gap-1 disabled:opacity-50"
+          >
+            <X className="h-3 w-3" /> Rechazar
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2 px-3 pb-3">
+          <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo del rechazo" className="input-base w-full h-8 text-[11px]" />
+          <div className="flex gap-1.5">
+            <button type="button" onClick={() => { setShowRechazo(false); setMotivo('') }} className="h-8 px-3 rounded-lg border border-zinc-700 text-zinc-400 text-[11px]">Atrás</button>
+            <button type="button" disabled={pending} onClick={rechazar} className="flex-1 h-8 rounded-lg bg-rose-500 text-white text-[11px] font-bold disabled:opacity-50">
+              {pending ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : 'Confirmar rechazo'}
             </button>
           </div>
         </div>

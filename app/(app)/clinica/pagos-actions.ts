@@ -35,7 +35,7 @@ function revalidarTodo() {
 // 1) HACER CORTE — crea snapshot estado='pendiente', NO paga aún
 // ============================================================
 
-/** Corte semanal: servicios + propinas (NO reviews — son aparte). */
+/** Corte semanal: SOLO comisiones de servicios (propinas y reviews son aparte). */
 export async function hacerCorteComisiones(): Promise<CorteState> {
   const user = await authUser()
   if (!user) return { error: 'No autenticado' }
@@ -45,16 +45,15 @@ export async function hacerCorteComisiones(): Promise<CorteState> {
   const admin = createAdminClient()
   const { data: pendientes, error: pErr } = await admin
     .from('clinica_realizados')
-    .select('id, pago_comision, propina, fecha')
+    .select('id, pago_comision, fecha')
     .eq('enfermera_id', cfg.enfermera_id)
+    .eq('estado_aprobacion', 'aprobado')
     .neq('tipo', 'review')
     .is('pago_id', null)
   if (pErr) return { error: 'No se pudo leer pendientes: ' + pErr.message }
-  if (!pendientes || pendientes.length === 0) return { error: 'No hay servicios sin cortar' }
+  if (!pendientes || pendientes.length === 0) return { error: 'No hay servicios sin cortar (aprobados)' }
 
-  const montoComisiones = pendientes.reduce((s, r) => s + Number(r.pago_comision), 0)
-  const montoPropinas = pendientes.reduce((s, r) => s + Number(r.propina), 0)
-  const total = montoComisiones + montoPropinas
+  const total = pendientes.reduce((s, r) => s + Number(r.pago_comision), 0)
   if (total <= 0) return { error: 'El total del corte es 0' }
 
   const fechas = pendientes.map((r) => r.fecha).sort()
@@ -65,8 +64,8 @@ export async function hacerCorteComisiones(): Promise<CorteState> {
       tipo: 'comisiones',
       periodo_inicio: fechas[0],
       periodo_fin: fechas[fechas.length - 1],
-      monto_comisiones: montoComisiones,
-      monto_propinas: montoPropinas,
+      monto_comisiones: total,
+      monto_propinas: 0,
       monto_reviews: 0,
       monto_sueldo_base: 0,
       monto_total: total,
@@ -76,18 +75,57 @@ export async function hacerCorteComisiones(): Promise<CorteState> {
     })
     .select('id')
     .single()
-  if (pgErr || !pago) {
-    if (/column .*estado.* does not exist/i.test(pgErr?.message ?? '')) {
-      return { error: 'Falta correr el ALTER de la columna estado (migración 0032)' }
-    }
-    return { error: 'No se pudo crear el corte: ' + pgErr?.message }
-  }
+  if (pgErr || !pago) return { error: 'No se pudo crear el corte: ' + (pgErr?.message ?? '') }
 
-  await admin
+  await admin.from('clinica_realizados').update({ pago_id: pago.id }).in('id', pendientes.map((r) => r.id))
+  revalidarTodo()
+  return { ok: true, pagoId: pago.id, total }
+}
+
+/** Corte de propinas (separado). */
+export async function hacerCortePropinas(): Promise<CorteState> {
+  const user = await authUser()
+  if (!user) return { error: 'No autenticado' }
+  const cfg = await getEnfermera()
+  if (!cfg?.enfermera_id) return { error: 'Falta configurar la enfermera activa' }
+
+  const admin = createAdminClient()
+  const { data: pendientes, error: pErr } = await admin
     .from('clinica_realizados')
-    .update({ pago_id: pago.id })
-    .in('id', pendientes.map((r) => r.id))
+    .select('id, propina, fecha')
+    .eq('enfermera_id', cfg.enfermera_id)
+    .eq('estado_aprobacion', 'aprobado')
+    .is('propina_pago_id', null)
+    .gt('propina', 0)
+  if (pErr) return { error: 'No se pudo leer propinas: ' + pErr.message }
+  if (!pendientes || pendientes.length === 0) return { error: 'No hay propinas sin cortar' }
 
+  const total = pendientes.reduce((s, r) => s + Number(r.propina), 0)
+  if (total <= 0) return { error: 'El total del corte es 0' }
+
+  const fechas = pendientes.map((r) => r.fecha).sort()
+  const { data: pago, error: pgErr } = await admin
+    .from('clinica_pagos')
+    .insert({
+      enfermera_id: cfg.enfermera_id,
+      tipo: 'comisiones',
+      periodo_inicio: fechas[0],
+      periodo_fin: fechas[fechas.length - 1],
+      monto_comisiones: 0,
+      monto_propinas: total,
+      monto_reviews: 0,
+      monto_sueldo_base: 0,
+      monto_total: total,
+      incluye_reviews: false,
+      estado: 'pendiente',
+      notas: `Corte de propinas (${pendientes.length} items)`,
+      pagado_por: user.id,
+    })
+    .select('id')
+    .single()
+  if (pgErr || !pago) return { error: 'No se pudo crear el corte: ' + (pgErr?.message ?? '') }
+
+  await admin.from('clinica_realizados').update({ propina_pago_id: pago.id }).in('id', pendientes.map((r) => r.id))
   revalidarTodo()
   return { ok: true, pagoId: pago.id, total }
 }
@@ -105,6 +143,7 @@ export async function hacerCorteReviews(): Promise<CorteState> {
     .select('id, pago_comision, fecha')
     .eq('enfermera_id', cfg.enfermera_id)
     .eq('tipo', 'review')
+    .eq('estado_aprobacion', 'aprobado')
     .is('pago_id', null)
   if (pErr) return { error: 'No se pudo leer reviews: ' + pErr.message }
   if (!reviews || reviews.length === 0) return { error: 'No hay reviews sin cortar' }
@@ -280,14 +319,23 @@ export async function cancelarCorte(pagoId: string): Promise<CorteState> {
   if (!user) return { error: 'No autenticado' }
   const admin = createAdminClient()
 
-  const { data: pago } = await admin.from('clinica_pagos').select('estado').eq('id', pagoId).single()
+  const { data: pago } = await admin
+    .from('clinica_pagos')
+    .select('estado, monto_comisiones, monto_propinas')
+    .eq('id', pagoId)
+    .single()
   if (!pago) return { error: 'Corte no encontrado' }
   if (pago.estado !== 'pendiente') return { error: `Solo se pueden cancelar cortes pendientes (este está ${pago.estado})` }
 
-  // Liberar los realizados asociados
-  await admin.from('clinica_realizados').update({ pago_id: null }).eq('pago_id', pagoId)
+  // Liberar los realizados — si era corte de propinas, libera propina_pago_id;
+  // si era de comisiones/reviews, libera pago_id.
+  const fuePropinasSolo = Number(pago.monto_propinas) > 0 && Number(pago.monto_comisiones) === 0
+  if (fuePropinasSolo) {
+    await admin.from('clinica_realizados').update({ propina_pago_id: null }).eq('propina_pago_id', pagoId)
+  } else {
+    await admin.from('clinica_realizados').update({ pago_id: null }).eq('pago_id', pagoId)
+  }
 
-  // Marcar el corte cancelado
   const { error } = await admin
     .from('clinica_pagos')
     .update({ estado: 'cancelado', notas: `Cancelado por ${user.id} el ${new Date().toISOString()}` })
