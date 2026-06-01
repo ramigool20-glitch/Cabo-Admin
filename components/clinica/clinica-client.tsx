@@ -8,12 +8,15 @@ import { formatearFecha, hoyEnCabos } from '@/lib/fechas'
 import { toast } from '@/components/ui/toast'
 import { registrarServicioClinica, registrarResenaClinica, eliminarServicioClinica, type ClinicaState } from '@/app/(app)/clinica/actions'
 import { PushSection } from '@/components/config/push-section'
+import { ClinicaPagoCard, type ClinicaPagoData } from '@/components/clinica/clinica-pago-card'
 import { useTransition } from 'react'
+import { Wallet } from 'lucide-react'
 
-type TabKey = 'inicio' | 'registrar' | 'catalogo'
-function normalizeTab(t: string | null): TabKey {
+type TabKey = 'inicio' | 'registrar' | 'catalogo' | 'pagos'
+function normalizeTab(t: string | null, allowPagos: boolean): TabKey {
   if (t === 'registrar') return 'registrar'
   if (t === 'catalogo') return 'catalogo'
+  if (t === 'pagos' && allowPagos) return 'pagos'
   return 'inicio'
 }
 
@@ -64,32 +67,40 @@ const CAT_LABEL: Record<string, string> = {
 
 export function ClinicaClient({
   servicios, realizados, tabulador, fxRate, esEnfermera = false,
+  pagosData = null, cuentas = [],
 }: {
   servicios: Servicio[]
   realizados: Realizado[]
   tabulador: Tabulador
   fxRate: number
   esEnfermera?: boolean
+  pagosData?: ClinicaPagoData | null
+  cuentas?: Array<{ id: string; nombre: string }>
 }) {
   const router = useRouter()
   const sp = useSearchParams()
-  const tab = normalizeTab(sp.get('tab'))
+  const allowPagos = !esEnfermera && !!pagosData
+  const tab = normalizeTab(sp.get('tab'), allowPagos)
   const goTab = (t: TabKey) => router.replace(`/clinica?tab=${t}`, { scroll: false })
 
   return (
     <div className="space-y-4">
       {/* Pestañas superiores: solo para socios/admin. La enfermera usa su menú inferior. */}
       {!esEnfermera && (
-        <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+        <div className={cn('grid gap-1 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]', allowPagos ? 'grid-cols-4' : 'grid-cols-3')}>
           <TabBtn active={tab === 'inicio'} onClick={() => goTab('inicio')} icon={DollarSign} label="Tabulador" />
           <TabBtn active={tab === 'registrar'} onClick={() => goTab('registrar')} icon={Plus} label="Registrar" />
           <TabBtn active={tab === 'catalogo'} onClick={() => goTab('catalogo')} icon={ClipboardList} label="Catálogo" />
+          {allowPagos && <TabBtn active={tab === 'pagos'} onClick={() => goTab('pagos')} icon={Wallet} label="Pagos" />}
         </div>
       )}
 
       {tab === 'inicio' && <TabuladorView tabulador={tabulador} realizados={realizados} esEnfermera={esEnfermera} onGoTab={goTab} />}
       {tab === 'registrar' && <RegistrarView servicios={servicios} />}
       {tab === 'catalogo' && <CatalogoView servicios={servicios} fxRate={fxRate} />}
+      {tab === 'pagos' && allowPagos && pagosData && (
+        <ClinicaPagoCard data={pagosData} cuentas={cuentas} />
+      )}
     </div>
   )
 }

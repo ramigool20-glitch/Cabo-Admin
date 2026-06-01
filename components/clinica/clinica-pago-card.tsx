@@ -87,7 +87,12 @@ export function ClinicaPagoCard({
         <BloqueEnCurso
           emoji="⭐" label="Reviews acumuladas" color="amber"
           monto={data.enCurso.reviewsMonto}
-          detalle={`${data.enCurso.reviewsCount} reviews`}
+          detalle={
+            data.enCurso.reviewsCount === 0 ? 'sin reviews todavía'
+            : data.enCurso.reviewsCount < 10
+              ? `${data.enCurso.reviewsCount} reviews · 💡 cobra al juntar 10 (faltan ${10 - data.enCurso.reviewsCount})`
+              : `${data.enCurso.reviewsCount} reviews · ✓ listo para cortar`
+          }
           pending={pending}
           onCortar={() => accionCorte(hacerCorteReviews, 'reviews')}
         />

@@ -1,21 +1,18 @@
 import Link from 'next/link'
-import { ChevronLeft, DollarSign } from 'lucide-react'
+import { ChevronLeft, DollarSign, Stethoscope, ChevronRight } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { periodoActual } from '@/lib/nomina-calculo'
 import { PagoEmpleadoCard, type PagoEmpleado } from '@/components/nomina/pago-empleado-card'
-import { ClinicaPagoCard, type ClinicaPagoData, type CorteRow } from '@/components/clinica/clinica-pago-card'
-import { hoyEnCabos } from '@/lib/fechas'
 
 export default async function NominaPagosPage() {
   const admin = createAdminClient()
 
-  const [{ data: empleados }, { data: cuentas }, { data: negocios }, { data: cfgEnf }] = await Promise.all([
+  const [{ data: empleados }, { data: cuentas }, { data: negocios }] = await Promise.all([
     admin.from('empleados')
       .select('id, nombre, puesto, empleado_compensacion(sueldo_base, moneda, comision_porcentaje, comision_base, frecuencia_pago, negocio_id, activo)')
       .eq('activo', true).order('nombre'),
     admin.from('cuentas').select('id, nombre').eq('activo', true).order('nombre'),
     admin.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
-    admin.from('clinica_config_enfermera').select('*').eq('activa', true).maybeSingle(),
   ])
 
   const pagos: PagoEmpleado[] = []
@@ -81,87 +78,6 @@ export default async function NominaPagosPage() {
 
   const totalPagar = pagos.filter((p) => !p.yaPagado).reduce((s, p) => s + p.total, 0)
 
-  // === Datos para la tarjeta de Patricia (clínica) — flujo de cortes ===
-  let clinicaData: ClinicaPagoData | null = null
-  const enfermeraId = cfgEnf?.enfermera_id
-  const nombreEnfermera = cfgEnf?.nombre ?? 'Patricia'
-  if (enfermeraId) {
-    const hoyStr = hoyEnCabos()
-    const dia = Number(hoyStr.slice(8, 10))
-    const ym = hoyStr.slice(0, 7)
-    const finMes = new Date(Number(hoyStr.slice(0, 4)), Number(hoyStr.slice(5, 7)), 0).getDate()
-    const periodoInicio = dia <= 15 ? `${ym}-01` : `${ym}-16`
-
-    const [enCursoRes, quincenaActualRes, pendientesRes, historialRes] = await Promise.all([
-      // En curso = realizados sin pago_id (no cortados)
-      admin.from('clinica_realizados')
-        .select('id, tipo, pago_comision, propina')
-        .eq('enfermera_id', enfermeraId)
-        .is('pago_id', null),
-      // ¿Hay corte para esta quincena? (cualquier estado != cancelado)
-      admin.from('clinica_pagos')
-        .select('id, estado')
-        .eq('enfermera_id', enfermeraId)
-        .eq('tipo', 'sueldo_quincenal')
-        .eq('periodo_inicio', periodoInicio)
-        .in('estado', ['pendiente', 'pagado'])
-        .maybeSingle(),
-      // Cortes pendientes de pago
-      admin.from('clinica_pagos')
-        .select('id, tipo, monto_total, monto_comisiones, monto_propinas, monto_reviews, monto_sueldo_base, periodo_inicio, periodo_fin, created_at')
-        .eq('enfermera_id', enfermeraId)
-        .eq('estado', 'pendiente')
-        .order('created_at', { ascending: false }),
-      // Histórico pagados (últimos 10)
-      admin.from('clinica_pagos')
-        .select('id, tipo, monto_total, monto_comisiones, monto_reviews, periodo_inicio, periodo_fin, created_at')
-        .eq('enfermera_id', enfermeraId)
-        .eq('estado', 'pagado')
-        .order('created_at', { ascending: false })
-        .limit(10),
-    ])
-
-    const enCurso = (enCursoRes.data ?? []) as Array<{ id: string; tipo: string | null; pago_comision: number; propina: number }>
-    const servicios = enCurso.filter((r) => r.tipo !== 'review')
-    const reviews = enCurso.filter((r) => r.tipo === 'review')
-
-    function tipoVisual(p: { tipo: string; monto_comisiones?: number | string | null; monto_reviews?: number | string | null }): CorteRow['tipo_visual'] {
-      if (p.tipo === 'sueldo_quincenal') return 'sueldo_quincenal'
-      if (Number(p.monto_reviews ?? 0) > 0 && Number(p.monto_comisiones ?? 0) === 0) return 'reviews'
-      return 'comisiones'
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mapCorte = (p: any): CorteRow => ({
-      id: p.id,
-      tipo_visual: tipoVisual(p),
-      periodo_inicio: p.periodo_inicio,
-      periodo_fin: p.periodo_fin,
-      monto_total: Number(p.monto_total),
-      created_at: p.created_at,
-    })
-
-    clinicaData = {
-      nombre: nombreEnfermera,
-      enCurso: {
-        serviciosCount: servicios.length,
-        comisiones: servicios.reduce((s, r) => s + Number(r.pago_comision), 0),
-        propinas: servicios.reduce((s, r) => s + Number(r.propina), 0),
-        reviewsCount: reviews.length,
-        reviewsMonto: reviews.reduce((s, r) => s + Number(r.pago_comision), 0),
-      },
-      quincena: {
-        label: dia <= 15 ? `1-15 ${ym}` : `16-${finMes} ${ym}`,
-        monto: Number(cfgEnf?.sueldo_base_quincenal ?? 0),
-        estado: quincenaActualRes.data?.estado === 'pagado' ? 'pagado'
-              : quincenaActualRes.data?.estado === 'pendiente' ? 'pendiente'
-              : 'sin_corte',
-      },
-      pendientes: (pendientesRes.data ?? []).map(mapCorte),
-      historial: (historialRes.data ?? []).map(mapCorte),
-    }
-  }
-
   return (
     <div className="px-4 pt-5 pb-24 space-y-4 max-w-3xl mx-auto">
       <Link href="/nomina" className="inline-flex items-center gap-1 text-sm text-zinc-400">
@@ -180,10 +96,22 @@ export default async function NominaPagosPage() {
         <p className="text-3xl font-black tabular-nums text-emerald-300">{totalPagar.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</p>
       </section>
 
+      {/* Atajo a los pagos de la clínica (viven dentro de /clinica → tab Pagos) */}
+      <Link
+        href="/clinica?tab=pagos"
+        className="card flex items-center gap-3 p-3 hover:bg-[var(--bg-card-hover)] transition-colors"
+      >
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
+          <Stethoscope className="h-5 w-5" />
+        </span>
+        <div className="flex-1 leading-tight">
+          <p className="text-sm font-bold text-white">Pagos de la clínica (Patricia)</p>
+          <p className="text-[11px] text-zinc-500">Cortes semanales, reviews y quincena → /clinica</p>
+        </div>
+        <ChevronRight className="h-4 w-4 text-zinc-400" />
+      </Link>
+
       <div className="space-y-3">
-        {clinicaData && (
-          <ClinicaPagoCard data={clinicaData} cuentas={cuentas ?? []} />
-        )}
         {pagos.map((p) => (
           <PagoEmpleadoCard key={p.empleadoId} pago={p} cuentas={cuentas ?? []} negocios={negocios ?? []} />
         ))}

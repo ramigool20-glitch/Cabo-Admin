@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { hoyEnCabos } from '@/lib/fechas'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ClinicaClient, type Servicio, type Realizado, type Tabulador } from '@/components/clinica/clinica-client'
+import type { ClinicaPagoData, CorteRow } from '@/components/clinica/clinica-pago-card'
 
 type SearchParams = { tab?: string }
 
@@ -42,6 +43,7 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
 
   // ¿Sueldo de la quincena actual ya cortado (pendiente o pagado)?
   let sueldoQuincenaCortado = false
+  let quincenaActualEstado: 'sin_corte' | 'pendiente' | 'pagado' = 'sin_corte'
   if (cfgRes.data?.enfermera_id) {
     const { data: pagoSueldo } = await admin
       .from('clinica_pagos')
@@ -52,8 +54,67 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
       .in('estado', ['pendiente', 'pagado'])
       .maybeSingle()
     sueldoQuincenaCortado = !!pagoSueldo
+    quincenaActualEstado = pagoSueldo?.estado === 'pagado' ? 'pagado'
+      : pagoSueldo?.estado === 'pendiente' ? 'pendiente'
+      : 'sin_corte'
   }
   const fxRate = fxRes.data ? Number(fxRes.data.rate_compra) : 17
+
+  // === Datos del admin: cortes pendientes + histórico + cuentas (no enfermera) ===
+  let pagosData: ClinicaPagoData | null = null
+  let cuentasAdmin: Array<{ id: string; nombre: string }> = []
+  if (!esEnfermera && cfgRes.data?.enfermera_id) {
+    const [cuentasRes, pendientesRes, historialRes] = await Promise.all([
+      admin.from('cuentas').select('id, nombre').eq('activo', true).order('nombre'),
+      admin.from('clinica_pagos')
+        .select('id, tipo, monto_total, monto_comisiones, monto_propinas, monto_reviews, monto_sueldo_base, periodo_inicio, periodo_fin, created_at')
+        .eq('enfermera_id', cfgRes.data.enfermera_id)
+        .eq('estado', 'pendiente')
+        .order('created_at', { ascending: false }),
+      admin.from('clinica_pagos')
+        .select('id, tipo, monto_total, monto_comisiones, monto_reviews, periodo_inicio, periodo_fin, created_at')
+        .eq('enfermera_id', cfgRes.data.enfermera_id)
+        .eq('estado', 'pagado')
+        .order('created_at', { ascending: false })
+        .limit(10),
+    ])
+    cuentasAdmin = cuentasRes.data ?? []
+
+    function tipoVisual(p: { tipo: string; monto_comisiones?: number | string | null; monto_reviews?: number | string | null }): CorteRow['tipo_visual'] {
+      if (p.tipo === 'sueldo_quincenal') return 'sueldo_quincenal'
+      if (Number(p.monto_reviews ?? 0) > 0 && Number(p.monto_comisiones ?? 0) === 0) return 'reviews'
+      return 'comisiones'
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mapCorte = (p: any): CorteRow => ({
+      id: p.id, tipo_visual: tipoVisual(p),
+      periodo_inicio: p.periodo_inicio, periodo_fin: p.periodo_fin,
+      monto_total: Number(p.monto_total), created_at: p.created_at,
+    })
+
+    // realRes contiene los EN CURSO (pago_id IS NULL); reuse para el split
+    const enCursoRows = (realRes.data ?? []) as unknown as Array<{ tipo?: string | null; pago_comision: number; propina: number }>
+    const enCursoServ = enCursoRows.filter((r) => r.tipo !== 'review')
+    const enCursoRev = enCursoRows.filter((r) => r.tipo === 'review')
+
+    pagosData = {
+      nombre: cfgRes.data.nombre ?? 'Patricia',
+      enCurso: {
+        serviciosCount: enCursoServ.length,
+        comisiones: enCursoServ.reduce((s, r) => s + Number(r.pago_comision), 0),
+        propinas: enCursoServ.reduce((s, r) => s + Number(r.propina), 0),
+        reviewsCount: enCursoRev.length,
+        reviewsMonto: enCursoRev.reduce((s, r) => s + Number(r.pago_comision), 0),
+      },
+      quincena: {
+        label: quincenaLabel,
+        monto: Number(cfgRes.data.sueldo_base_quincenal ?? 0),
+        estado: quincenaActualEstado,
+      },
+      pendientes: (pendientesRes.data ?? []).map(mapCorte),
+      historial: (historialRes.data ?? []).map(mapCorte),
+    }
+  }
 
   // Si las tablas no existen aún
   if (servRes.error && /relation.*does not exist/i.test(servRes.error.message)) {
@@ -108,7 +169,15 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
         </header>
       )}
 
-      <ClinicaClient servicios={servicios} realizados={realizados} tabulador={tabulador} fxRate={fxRate} esEnfermera={esEnfermera} />
+      <ClinicaClient
+        servicios={servicios}
+        realizados={realizados}
+        tabulador={tabulador}
+        fxRate={fxRate}
+        esEnfermera={esEnfermera}
+        pagosData={pagosData}
+        cuentas={cuentasAdmin}
+      />
     </div>
   )
 }
