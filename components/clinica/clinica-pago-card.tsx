@@ -136,7 +136,7 @@ export function ClinicaPagoCard({
           emoji="💼" label={`Sueldo quincena ${data.quincena.label}`} color="indigo"
           monto={data.quincena.estado === 'sin_corte' ? data.quincena.monto : 0}
           detalle={data.quincena.estado === 'pagado' ? '✓ ya pagada' : data.quincena.estado === 'pendiente' ? '⏳ corte ya hecho, pendiente de pago' : 'base quincenal'}
-          pending={pending || data.quincena.estado !== 'sin_corte'}
+          pending={pending}
           onCortar={() => accionCorte(hacerCorteQuincena, 'quincena')}
         />
       </section>

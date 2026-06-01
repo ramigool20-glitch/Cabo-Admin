@@ -144,6 +144,71 @@ export default async function DashboardPage(
       .lte('fecha', previoHasta),
   ])
 
+  // === Próximos pagos a Patricia (enfermera) — sábados y quincenas ===
+  type PagoPatricia = { etiqueta: string; fecha: string; monto: number; emoji: string; nota?: string }
+  const proxPagosPatricia: PagoPatricia[] = []
+  const { data: cfgPatricia } = await admin
+    .from('clinica_config_enfermera')
+    .select('enfermera_id, sueldo_base_quincenal')
+    .eq('activa', true)
+    .maybeSingle()
+  if (cfgPatricia?.enfermera_id) {
+    // En curso: comisiones + propinas aprobadas sin cortar
+    const { data: enCursoRows } = await admin
+      .from('clinica_realizados')
+      .select('tipo, pago_comision, propina, pago_id, propina_pago_id')
+      .eq('enfermera_id', cfgPatricia.enfermera_id)
+      .eq('estado_aprobacion', 'aprobado')
+      .or('pago_id.is.null,propina_pago_id.is.null')
+    const rows = enCursoRows ?? []
+    const comAcum = rows.filter((r) => r.tipo !== 'review' && r.pago_id == null).reduce((s, r) => s + Number(r.pago_comision), 0)
+    const propAcum = rows.filter((r) => r.propina_pago_id == null && Number(r.propina) > 0).reduce((s, r) => s + Number(r.propina), 0)
+
+    // Próximo sábado
+    const hoyDate = new Date(hoy + 'T12:00:00')
+    const dow = hoyDate.getDay() // 0=dom..6=sab
+    const diasParaSat = (6 - dow + 7) % 7 || 7
+    const proxSat = new Date(hoyDate)
+    proxSat.setDate(hoyDate.getDate() + diasParaSat)
+    const fechaSat = proxSat.toISOString().slice(0, 10)
+    proxPagosPatricia.push({
+      etiqueta: 'Comisiones + propinas (sábado)',
+      fecha: fechaSat,
+      monto: comAcum + propAcum,
+      emoji: '🩺',
+      nota: `acumulado actual: ${comAcum > 0 ? `$${comAcum.toFixed(0)} comisiones` : ''}${comAcum > 0 && propAcum > 0 ? ' + ' : ''}${propAcum > 0 ? `$${propAcum.toFixed(0)} propinas` : !comAcum && !propAcum ? 'aún sin movimiento' : ''}`,
+    })
+
+    // Próxima quincena (día 15 o último del mes)
+    const diaHoy = Number(hoy.slice(8, 10))
+    const ym = hoy.slice(0, 7)
+    let fechaQ: string
+    if (diaHoy < 15) {
+      fechaQ = `${ym}-15`
+    } else {
+      // siguiente quincena: día 30 (o último) si todavía no, sino día 15 del siguiente mes
+      const finMes = new Date(Number(hoy.slice(0, 4)), Number(hoy.slice(5, 7)), 0).getDate()
+      const dia30 = Math.min(30, finMes)
+      if (diaHoy < dia30) {
+        fechaQ = `${ym}-${String(dia30).padStart(2, '0')}`
+      } else {
+        const y = Number(hoy.slice(0, 4))
+        const m = Number(hoy.slice(5, 7))
+        const ny = m === 12 ? y + 1 : y
+        const nm = m === 12 ? 1 : m + 1
+        fechaQ = `${ny}-${String(nm).padStart(2, '0')}-15`
+      }
+    }
+    proxPagosPatricia.push({
+      etiqueta: 'Quincena (sueldo base)',
+      fecha: fechaQ,
+      monto: Number(cfgPatricia.sueldo_base_quincenal ?? 0),
+      emoji: '💼',
+    })
+    // ordena por fecha asc
+    proxPagosPatricia.sort((a, b) => a.fecha.localeCompare(b.fecha))
+  }
+
   // Saldos por cuenta (saldo_inicial + tx desde la fecha de saldo inicial).
   // Se acota por fecha para no chocar con el corte de 1000 filas de Supabase.
   const { data: cuentasSaldo } = await admin.from('cuentas')
@@ -451,6 +516,33 @@ export default async function DashboardPage(
 
         {/* FX widget */}
         <FxMiniWidget rateHoy={fxRateHoy} historial={fxHistorial ?? []} />
+
+        {/* Próximos pagos a Patricia (clínica) */}
+        {proxPagosPatricia.length > 0 && (
+          <Link href="/clinica?tab=pagos" className="card p-3 space-y-2 hover:bg-[var(--bg-card-hover)] transition-colors">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-300">🏥</span>
+              <p className="label-caps text-emerald-300">Próximos pagos · Patricia</p>
+              <ChevronRight className="h-4 w-4 text-zinc-400 ml-auto" />
+            </div>
+            <ul className="space-y-1.5">
+              {proxPagosPatricia.map((p, i) => {
+                const dias = Math.ceil((new Date(p.fecha + 'T00:00:00').getTime() - new Date(hoy + 'T00:00:00').getTime()) / (24 * 60 * 60 * 1000))
+                const cuando = dias === 0 ? 'HOY' : dias === 1 ? 'mañana' : `en ${dias} días`
+                return (
+                  <li key={i} className="flex items-center gap-2 text-xs">
+                    <span>{p.emoji}</span>
+                    <div className="flex-1 min-w-0 leading-tight">
+                      <p className="font-medium text-zinc-200 truncate">{p.etiqueta}</p>
+                      <p className="text-[10px] text-zinc-500">{formatearFecha(p.fecha, 'EEE dd MMM')} · {cuando}{p.nota ? ` · ${p.nota}` : ''}</p>
+                    </div>
+                    <p className={cn('text-sm font-bold tabular-nums', p.monto > 0 ? 'text-emerald-300' : 'text-zinc-500')}>{formatMoney(p.monto, 'MXN')}</p>
+                  </li>
+                )
+              })}
+            </ul>
+          </Link>
+        )}
 
         {/* Por Pagar + Por Cobrar */}
         <div className="grid grid-cols-2 gap-3">
