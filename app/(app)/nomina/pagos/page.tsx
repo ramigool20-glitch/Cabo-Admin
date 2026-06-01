@@ -3,7 +3,7 @@ import { ChevronLeft, DollarSign } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { periodoActual } from '@/lib/nomina-calculo'
 import { PagoEmpleadoCard, type PagoEmpleado } from '@/components/nomina/pago-empleado-card'
-import { ClinicaPagoCard, type ClinicaPagoData } from '@/components/clinica/clinica-pago-card'
+import { ClinicaPagoCard, type ClinicaPagoData, type CorteRow } from '@/components/clinica/clinica-pago-card'
 import { hoyEnCabos } from '@/lib/fechas'
 
 export default async function NominaPagosPage() {
@@ -81,7 +81,7 @@ export default async function NominaPagosPage() {
 
   const totalPagar = pagos.filter((p) => !p.yaPagado).reduce((s, p) => s + p.total, 0)
 
-  // === Datos para la tarjeta de Patricia (clínica) ===
+  // === Datos para la tarjeta de Patricia (clínica) — flujo de cortes ===
   let clinicaData: ClinicaPagoData | null = null
   const enfermeraId = cfgEnf?.enfermera_id
   const nombreEnfermera = cfgEnf?.nombre ?? 'Patricia'
@@ -91,43 +91,74 @@ export default async function NominaPagosPage() {
     const ym = hoyStr.slice(0, 7)
     const finMes = new Date(Number(hoyStr.slice(0, 4)), Number(hoyStr.slice(5, 7)), 0).getDate()
     const periodoInicio = dia <= 15 ? `${ym}-01` : `${ym}-16`
-    const periodoFin = dia <= 15 ? `${ym}-15` : `${ym}-${String(finMes).padStart(2, '0')}`
 
-    const [pendRes, pagoSueldoRes, histRes] = await Promise.all([
+    const [enCursoRes, quincenaActualRes, pendientesRes, historialRes] = await Promise.all([
+      // En curso = realizados sin pago_id (no cortados)
       admin.from('clinica_realizados')
-        .select('id, tipo, pago_comision, propina, pagado_at')
+        .select('id, tipo, pago_comision, propina')
         .eq('enfermera_id', enfermeraId)
-        .is('pagado_at', null),
+        .is('pago_id', null),
+      // ¿Hay corte para esta quincena? (cualquier estado != cancelado)
       admin.from('clinica_pagos')
-        .select('id, created_at')
+        .select('id, estado')
         .eq('enfermera_id', enfermeraId)
         .eq('tipo', 'sueldo_quincenal')
         .eq('periodo_inicio', periodoInicio)
+        .in('estado', ['pendiente', 'pagado'])
         .maybeSingle(),
+      // Cortes pendientes de pago
       admin.from('clinica_pagos')
-        .select('id, tipo, monto_total, periodo_inicio, periodo_fin, created_at')
+        .select('id, tipo, monto_total, monto_comisiones, monto_propinas, monto_reviews, monto_sueldo_base, periodo_inicio, periodo_fin, created_at')
         .eq('enfermera_id', enfermeraId)
+        .eq('estado', 'pendiente')
+        .order('created_at', { ascending: false }),
+      // Histórico pagados (últimos 10)
+      admin.from('clinica_pagos')
+        .select('id, tipo, monto_total, monto_comisiones, monto_reviews, periodo_inicio, periodo_fin, created_at')
+        .eq('enfermera_id', enfermeraId)
+        .eq('estado', 'pagado')
         .order('created_at', { ascending: false })
-        .limit(5),
+        .limit(10),
     ])
 
-    const pendientes = (pendRes.data ?? []) as Array<{ id: string; tipo: string | null; pago_comision: number; propina: number }>
-    const servicios = pendientes.filter((r) => r.tipo !== 'review')
-    const reviews = pendientes.filter((r) => r.tipo === 'review')
+    const enCurso = (enCursoRes.data ?? []) as Array<{ id: string; tipo: string | null; pago_comision: number; propina: number }>
+    const servicios = enCurso.filter((r) => r.tipo !== 'review')
+    const reviews = enCurso.filter((r) => r.tipo === 'review')
+
+    function tipoVisual(p: { tipo: string; monto_comisiones?: number | string | null; monto_reviews?: number | string | null }): CorteRow['tipo_visual'] {
+      if (p.tipo === 'sueldo_quincenal') return 'sueldo_quincenal'
+      if (Number(p.monto_reviews ?? 0) > 0 && Number(p.monto_comisiones ?? 0) === 0) return 'reviews'
+      return 'comisiones'
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mapCorte = (p: any): CorteRow => ({
+      id: p.id,
+      tipo_visual: tipoVisual(p),
+      periodo_inicio: p.periodo_inicio,
+      periodo_fin: p.periodo_fin,
+      monto_total: Number(p.monto_total),
+      created_at: p.created_at,
+    })
 
     clinicaData = {
       nombre: nombreEnfermera,
-      comisiones: servicios.reduce((s, r) => s + Number(r.pago_comision), 0),
-      propinas: servicios.reduce((s, r) => s + Number(r.propina), 0),
-      serviciosCount: servicios.length,
-      reviewsMonto: reviews.reduce((s, r) => s + Number(r.pago_comision), 0),
-      reviewsCount: reviews.length,
-      sueldoQuincenalMonto: Number(cfgEnf?.sueldo_base_quincenal ?? 0),
-      sueldoQuincenaLabel: dia <= 15 ? `1-15 ${ym}` : `16-${finMes} ${ym}`,
-      sueldoQuincenaPagado: !!pagoSueldoRes.data,
-      sueldoQuincenaPagadoAt: pagoSueldoRes.data?.created_at ?? null,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      historial: (histRes.data ?? []) as any,
+      enCurso: {
+        serviciosCount: servicios.length,
+        comisiones: servicios.reduce((s, r) => s + Number(r.pago_comision), 0),
+        propinas: servicios.reduce((s, r) => s + Number(r.propina), 0),
+        reviewsCount: reviews.length,
+        reviewsMonto: reviews.reduce((s, r) => s + Number(r.pago_comision), 0),
+      },
+      quincena: {
+        label: dia <= 15 ? `1-15 ${ym}` : `16-${finMes} ${ym}`,
+        monto: Number(cfgEnf?.sueldo_base_quincenal ?? 0),
+        estado: quincenaActualRes.data?.estado === 'pagado' ? 'pagado'
+              : quincenaActualRes.data?.estado === 'pendiente' ? 'pendiente'
+              : 'sin_corte',
+      },
+      pendientes: (pendientesRes.data ?? []).map(mapCorte),
+      historial: (historialRes.data ?? []).map(mapCorte),
     }
   }
 

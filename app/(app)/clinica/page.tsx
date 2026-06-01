@@ -31,25 +31,27 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
   const quincenaInicio = dia <= 15 ? `${ym}-01` : `${ym}-16`
   const quincenaLabel = dia <= 15 ? `1-15 ${ym}` : `16-${finMes} ${ym}`
 
-  // El tablero muestra SOLO lo NO pagado (pagado_at IS NULL). Al pagar se reinicia.
+  // El tablero muestra solo lo EN CURSO (no cortado). Al hacer corte, esos
+  // realizados se asocian al corte (pago_id) y desaparecen de aquí.
   const [servRes, realRes, cfgRes, fxRes] = await Promise.all([
     admin.from('clinica_servicios').select('*').eq('activo', true).order('orden'),
-    admin.from('clinica_realizados').select('*').is('pagado_at', null).order('fecha', { ascending: false }),
+    admin.from('clinica_realizados').select('*').is('pago_id', null).order('fecha', { ascending: false }),
     admin.from('clinica_config_enfermera').select('*').eq('activa', true).limit(1).maybeSingle(),
     admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  // ¿Sueldo de la quincena actual ya pagado?
-  let sueldoQuincenaPagado = false
+  // ¿Sueldo de la quincena actual ya cortado (pendiente o pagado)?
+  let sueldoQuincenaCortado = false
   if (cfgRes.data?.enfermera_id) {
     const { data: pagoSueldo } = await admin
       .from('clinica_pagos')
-      .select('id')
+      .select('id, estado')
       .eq('enfermera_id', cfgRes.data.enfermera_id)
       .eq('tipo', 'sueldo_quincenal')
       .eq('periodo_inicio', quincenaInicio)
+      .in('estado', ['pendiente', 'pagado'])
       .maybeSingle()
-    sueldoQuincenaPagado = !!pagoSueldo
+    sueldoQuincenaCortado = !!pagoSueldo
   }
   const fxRate = fxRes.data ? Number(fxRes.data.rate_compra) : 17
 
@@ -79,13 +81,13 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
   const propinas = realizados.reduce((s, r) => s + Number(r.propina), 0)
   const bono = reviewsRealizados.reduce((s, r) => s + Number(r.pago_comision), 0)
   const reviews = reviewsRealizados.length
-  // Sueldo solo si la quincena actual NO está pagada
-  const sueldoBase = sueldoQuincenaPagado ? 0 : (cfg?.sueldo_base_quincenal ?? 0)
+  // Sueldo solo si la quincena actual NO tiene corte ya creado
+  const sueldoBase = sueldoQuincenaCortado ? 0 : (cfg?.sueldo_base_quincenal ?? 0)
   const total = comisiones + propinas + bono + sueldoBase
 
-  const periodo = sueldoQuincenaPagado && realizados.length === 0
+  const periodo = sueldoQuincenaCortado && realizados.length === 0
     ? `Al corriente ✓ (${quincenaLabel})`
-    : `Pendiente de cobro · ${quincenaLabel}`
+    : `Pendiente de cortar · ${quincenaLabel}`
 
   const tabulador: Tabulador = {
     periodo, comisiones, propinas, bono, sueldoBase, total,

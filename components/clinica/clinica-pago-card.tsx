@@ -1,31 +1,46 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Loader2, Stethoscope, Star, Wallet, Check, ChevronDown } from 'lucide-react'
+import { Loader2, Stethoscope, Star, Wallet, Check, Scissors, X, Clock } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
 import { formatearFecha } from '@/lib/fechas'
 import { toast } from '@/components/ui/toast'
-import { pagarComisionesEnfermera, pagarSueldoQuincenaEnfermera } from '@/app/(app)/clinica/pagos-actions'
+import {
+  hacerCorteComisiones, hacerCorteReviews, hacerCorteQuincena,
+  marcarCortePagado, cancelarCorte,
+} from '@/app/(app)/clinica/pagos-actions'
+
+export type CorteRow = {
+  id: string
+  tipo_visual: 'comisiones' | 'reviews' | 'sueldo_quincenal'
+  periodo_inicio: string
+  periodo_fin: string
+  monto_total: number
+  created_at: string
+}
 
 export type ClinicaPagoData = {
   nombre: string
-  comisiones: number
-  propinas: number
-  serviciosCount: number
-  reviewsMonto: number
-  reviewsCount: number
-  sueldoQuincenalMonto: number
-  sueldoQuincenaLabel: string
-  sueldoQuincenaPagado: boolean
-  sueldoQuincenaPagadoAt?: string | null
-  historial: Array<{
-    id: string
-    tipo: 'comisiones' | 'sueldo_quincenal'
-    monto_total: number
-    periodo_inicio: string
-    periodo_fin: string
-    created_at: string
-  }>
+  enCurso: {
+    serviciosCount: number
+    comisiones: number
+    propinas: number
+    reviewsCount: number
+    reviewsMonto: number
+  }
+  quincena: {
+    label: string
+    monto: number
+    estado: 'sin_corte' | 'pendiente' | 'pagado'
+  }
+  pendientes: CorteRow[]
+  historial: CorteRow[]
+}
+
+const TIPO_META: Record<CorteRow['tipo_visual'], { emoji: string; label: string; chip: string }> = {
+  comisiones:       { emoji: '🩺', label: 'Comisiones', chip: 'text-cyan-300' },
+  reviews:          { emoji: '⭐', label: 'Reviews',    chip: 'text-amber-300' },
+  sueldo_quincenal: { emoji: '💼', label: 'Quincena',   chip: 'text-indigo-300' },
 }
 
 export function ClinicaPagoCard({
@@ -35,184 +50,223 @@ export function ClinicaPagoCard({
   cuentas: Array<{ id: string; nombre: string }>
 }) {
   const [pending, start] = useTransition()
-  const [expandCom, setExpandCom] = useState(false)
-  const [expandSueldo, setExpandSueldo] = useState(false)
-  const [incluyeReviews, setIncluyeReviews] = useState(true)
-  const [cuentaIdCom, setCuentaIdCom] = useState<string>('')
-  const [cuentaIdSueldo, setCuentaIdSueldo] = useState<string>('')
-  const [notasCom, setNotasCom] = useState('')
-  const [notasSueldo, setNotasSueldo] = useState('')
 
-  const totalComisiones = data.comisiones + data.propinas + (incluyeReviews ? data.reviewsMonto : 0)
-  const hayComisionesPendientes = data.serviciosCount > 0 || data.propinas > 0 || data.reviewsCount > 0
-
-  const pagarCom = () => {
+  const accionCorte = (fn: () => Promise<{ ok?: boolean; total?: number; error?: string }>, label: string) => {
     start(async () => {
-      const res = await pagarComisionesEnfermera({
-        incluyeReviews,
-        cuentaId: cuentaIdCom || null,
-        notas: notasCom || null,
-      })
-      if (res.ok) {
-        toast.success('Pagado ✓', `${formatMoney(res.total ?? 0, 'MXN')} registrados como gasto`)
-        setExpandCom(false); setNotasCom('')
-      } else toast.error('Error', res.error)
-    })
-  }
-
-  const pagarSueldo = () => {
-    start(async () => {
-      const res = await pagarSueldoQuincenaEnfermera({
-        cuentaId: cuentaIdSueldo || null,
-        notas: notasSueldo || null,
-      })
-      if (res.ok) {
-        toast.success('Quincena pagada ✓', `${formatMoney(res.total ?? 0, 'MXN')} registrados`)
-        setExpandSueldo(false); setNotasSueldo('')
-      } else toast.error('Error', res.error)
+      const r = await fn()
+      if (r.ok) toast.success(`Corte de ${label} creado`, `${formatMoney(r.total ?? 0, 'MXN')} pendiente de pago`)
+      else toast.error('Error', r.error)
     })
   }
 
   return (
-    <div className="card-glow p-4 space-y-3">
+    <div className="card-glow p-4 space-y-4">
+      {/* Header */}
       <div className="flex items-center gap-2">
         <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
           <Stethoscope className="h-5 w-5" />
         </span>
         <div className="flex-1 leading-tight">
           <p className="text-sm font-black text-white">{data.nombre}</p>
-          <p className="text-[11px] text-zinc-500">Enfermera · clínica</p>
+          <p className="text-[11px] text-zinc-500">Enfermera · clínica · cortes en 2 pasos</p>
         </div>
       </div>
 
-      {/* 🩺 Comisiones semanales */}
-      <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]/40 p-3 space-y-2">
-        <button type="button" onClick={() => setExpandCom((v) => !v)} className="w-full flex items-center gap-2 text-left">
-          <span className="text-base">🩺</span>
-          <div className="flex-1 leading-tight">
-            <p className="text-xs font-bold text-cyan-300">Comisiones pendientes</p>
-            <p className="text-[10px] text-zinc-500">
-              {data.serviciosCount} servicios · {formatMoney(data.comisiones, 'MXN')}
-              {data.propinas > 0 && ` + ${formatMoney(data.propinas, 'MXN')} propinas`}
-            </p>
-          </div>
-          <p className="text-sm font-black tabular-nums text-cyan-300">{formatMoney(data.comisiones + data.propinas, 'MXN')}</p>
-          <ChevronDown className={cn('h-4 w-4 text-zinc-500 transition-transform', expandCom && 'rotate-180')} />
-        </button>
+      {/* ═══════ EN CURSO (pendiente de cortar) ═══════ */}
+      <section className="space-y-2">
+        <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">En curso</p>
 
-        {/* Reviews acumuladas (toggle) */}
-        {data.reviewsCount > 0 && (
-          <label className="flex items-center gap-2 rounded-lg bg-amber-500/8 border border-amber-500/20 p-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={incluyeReviews}
-              onChange={(e) => setIncluyeReviews(e.target.checked)}
-              className="h-4 w-4 rounded border-amber-500/40 bg-[var(--bg-input)] text-amber-500"
-            />
-            <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
-            <span className="flex-1 text-[11px] text-amber-200">
-              {data.reviewsCount} reviews · {formatMoney(data.reviewsMonto, 'MXN')}
-            </span>
-            <span className="text-[9px] text-amber-300/60">{incluyeReviews ? 'incluir' : 'rodar a siguiente'}</span>
-          </label>
-        )}
+        <BloqueEnCurso
+          emoji="🩺" label="Comisiones (servicios + propinas)" color="cyan"
+          monto={data.enCurso.comisiones + data.enCurso.propinas}
+          detalle={`${data.enCurso.serviciosCount} servicios${data.enCurso.propinas > 0 ? ` + ${formatMoney(data.enCurso.propinas, 'MXN')} propinas` : ''}`}
+          pending={pending}
+          onCortar={() => accionCorte(hacerCorteComisiones, 'comisiones')}
+        />
 
-        {expandCom && hayComisionesPendientes && (
-          <div className="space-y-2 pt-1">
-            <div className="space-y-1.5">
-              <label className="label-caps">Cuenta de salida (opcional)</label>
-              <select value={cuentaIdCom} onChange={(e) => setCuentaIdCom(e.target.value)} className="input-base w-full h-9 text-xs">
-                <option value="">— Sin cuenta —</option>
-                {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>
-            </div>
-            <input
-              value={notasCom}
-              onChange={(e) => setNotasCom(e.target.value)}
-              placeholder="Notas (opcional)"
-              className="input-base w-full h-9 text-xs"
-            />
-            <button
-              type="button"
-              disabled={pending}
-              onClick={pagarCom}
-              className="w-full h-10 rounded-lg bg-emerald-500 text-zinc-950 text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
-            >
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
-              Pagar {formatMoney(totalComisiones, 'MXN')}
-            </button>
-          </div>
-        )}
+        <BloqueEnCurso
+          emoji="⭐" label="Reviews acumuladas" color="amber"
+          monto={data.enCurso.reviewsMonto}
+          detalle={`${data.enCurso.reviewsCount} reviews`}
+          pending={pending}
+          onCortar={() => accionCorte(hacerCorteReviews, 'reviews')}
+        />
 
-        {!hayComisionesPendientes && (
-          <p className="text-[11px] text-zinc-500 text-center py-1">Sin comisiones pendientes ✨</p>
-        )}
+        <BloqueEnCurso
+          emoji="💼" label={`Sueldo quincena ${data.quincena.label}`} color="indigo"
+          monto={data.quincena.estado === 'sin_corte' ? data.quincena.monto : 0}
+          detalle={data.quincena.estado === 'pagado' ? '✓ ya pagada' : data.quincena.estado === 'pendiente' ? '⏳ corte ya hecho, pendiente de pago' : 'base quincenal'}
+          pending={pending || data.quincena.estado !== 'sin_corte'}
+          onCortar={() => accionCorte(hacerCorteQuincena, 'quincena')}
+        />
       </section>
 
-      {/* 💼 Sueldo quincenal */}
-      <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]/40 p-3 space-y-2">
-        <button type="button" onClick={() => setExpandSueldo((v) => !v)} className="w-full flex items-center gap-2 text-left">
-          <span className="text-base">💼</span>
-          <div className="flex-1 leading-tight">
-            <p className="text-xs font-bold text-indigo-300">Sueldo quincena</p>
-            <p className="text-[10px] text-zinc-500">{data.sueldoQuincenaLabel}</p>
-          </div>
-          {data.sueldoQuincenaPagado ? (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-              <Check className="h-3 w-3" /> Pagada
-            </span>
-          ) : (
-            <p className="text-sm font-black tabular-nums text-indigo-300">{formatMoney(data.sueldoQuincenalMonto, 'MXN')}</p>
-          )}
-          <ChevronDown className={cn('h-4 w-4 text-zinc-500 transition-transform', expandSueldo && 'rotate-180')} />
-        </button>
-
-        {data.sueldoQuincenaPagado && data.sueldoQuincenaPagadoAt && (
-          <p className="text-[10px] text-zinc-500">Pagada el {formatearFecha(data.sueldoQuincenaPagadoAt.slice(0, 10), 'dd MMM yyyy')}</p>
-        )}
-
-        {expandSueldo && !data.sueldoQuincenaPagado && data.sueldoQuincenalMonto > 0 && (
-          <div className="space-y-2 pt-1">
-            <div className="space-y-1.5">
-              <label className="label-caps">Cuenta de salida (opcional)</label>
-              <select value={cuentaIdSueldo} onChange={(e) => setCuentaIdSueldo(e.target.value)} className="input-base w-full h-9 text-xs">
-                <option value="">— Sin cuenta —</option>
-                {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>
-            </div>
-            <input
-              value={notasSueldo}
-              onChange={(e) => setNotasSueldo(e.target.value)}
-              placeholder="Notas (opcional)"
-              className="input-base w-full h-9 text-xs"
-            />
-            <button
-              type="button"
-              disabled={pending}
-              onClick={pagarSueldo}
-              className="w-full h-10 rounded-lg bg-indigo-500 text-white text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
-            >
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
-              Pagar quincena {formatMoney(data.sueldoQuincenalMonto, 'MXN')}
-            </button>
-          </div>
-        )}
-      </section>
-
-      {/* Histórico */}
-      {data.historial.length > 0 && (
-        <section className="space-y-1">
-          <p className="label-caps">📜 Últimos pagos</p>
-          <ul className="space-y-0.5">
-            {data.historial.map((h) => (
-              <li key={h.id} className="flex items-center gap-2 text-[11px] text-zinc-400">
-                <span className="text-zinc-600">{formatearFecha(h.created_at.slice(0, 10), 'dd MMM')}</span>
-                <span className="flex-1">{h.tipo === 'comisiones' ? '🩺 Comisiones' : '💼 Quincena'}</span>
-                <span className="tabular-nums font-bold text-zinc-200">{formatMoney(Number(h.monto_total), 'MXN')}</span>
-              </li>
+      {/* ═══════ CORTES PENDIENTES (cortados, no pagados) ═══════ */}
+      {data.pendientes.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-[10px] uppercase tracking-wider font-bold text-amber-300">
+            ⏳ Cortes pendientes de pago ({data.pendientes.length})
+          </p>
+          <div className="space-y-2">
+            {data.pendientes.map((c) => (
+              <CorteRowPendiente key={c.id} corte={c} cuentas={cuentas} />
             ))}
+          </div>
+        </section>
+      )}
+
+      {/* ═══════ HISTÓRICO ═══════ */}
+      {data.historial.length > 0 && (
+        <section className="space-y-1.5">
+          <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">✓ Histórico de pagos</p>
+          <ul className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]/40 divide-y divide-[var(--border-subtle)] overflow-hidden">
+            {data.historial.map((h) => {
+              const m = TIPO_META[h.tipo_visual]
+              return (
+                <li key={h.id} className="flex items-center gap-2 px-3 py-2 text-[11px]">
+                  <span>{m.emoji}</span>
+                  <span className="flex-1 truncate text-zinc-300">
+                    {m.label} · {formatearFecha(h.periodo_inicio, 'dd MMM')} – {formatearFecha(h.periodo_fin, 'dd MMM')}
+                  </span>
+                  <span className="text-zinc-600 tabular-nums">{formatearFecha(h.created_at.slice(0, 10), 'dd MMM')}</span>
+                  <span className="font-bold tabular-nums text-zinc-100">{formatMoney(Number(h.monto_total), 'MXN')}</span>
+                </li>
+              )
+            })}
           </ul>
         </section>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────
+// Bloque "En curso" (pendiente de cortar)
+// ─────────────────────────────────────────────────────
+function BloqueEnCurso({
+  emoji, label, color, monto, detalle, pending, onCortar,
+}: {
+  emoji: string; label: string; color: 'cyan' | 'amber' | 'indigo'
+  monto: number; detalle: string; pending: boolean; onCortar: () => void
+}) {
+  const palette = {
+    cyan:   { text: 'text-cyan-300',   ring: 'border-cyan-500/20' },
+    amber:  { text: 'text-amber-300',  ring: 'border-amber-500/20' },
+    indigo: { text: 'text-indigo-300', ring: 'border-indigo-500/20' },
+  }[color]
+  const vacio = monto <= 0
+
+  return (
+    <div className={cn('flex items-center gap-3 rounded-xl border bg-[var(--bg-card)]/40 px-3 py-2.5', palette.ring)}>
+      <span className="text-base">{emoji}</span>
+      <div className="flex-1 min-w-0 leading-tight">
+        <p className={cn('text-[11px] font-bold truncate', palette.text)}>{label}</p>
+        <p className="text-[10px] text-zinc-500 truncate">{detalle}</p>
+      </div>
+      <p className={cn('text-sm font-black tabular-nums', vacio ? 'text-zinc-600' : palette.text)}>{formatMoney(monto, 'MXN')}</p>
+      <button
+        type="button"
+        disabled={vacio || pending}
+        onClick={onCortar}
+        className={cn(
+          'h-8 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition-colors',
+          vacio || pending
+            ? 'border border-zinc-800 text-zinc-600 cursor-not-allowed'
+            : 'bg-white/5 border border-white/10 text-white hover:bg-white/10',
+        )}
+      >
+        {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Scissors className="h-3 w-3" />}
+        Cortar
+      </button>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────
+// Fila de corte pendiente con expand para Pagar/Cancelar
+// ─────────────────────────────────────────────────────
+function CorteRowPendiente({
+  corte, cuentas,
+}: {
+  corte: CorteRow
+  cuentas: Array<{ id: string; nombre: string }>
+}) {
+  const m = TIPO_META[corte.tipo_visual]
+  const [expanded, setExpanded] = useState(false)
+  const [cuentaId, setCuentaId] = useState('')
+  const [notas, setNotas] = useState('')
+  const [pending, start] = useTransition()
+
+  const pagar = () => {
+    start(async () => {
+      const r = await marcarCortePagado({ pagoId: corte.id, cuentaId: cuentaId || null, notas: notas || null })
+      if (r.ok) {
+        toast.success('✓ Pagado', `${formatMoney(r.total ?? 0, 'MXN')} registrados como gasto`)
+        setExpanded(false); setNotas('')
+      } else toast.error('Error', r.error)
+    })
+  }
+
+  const cancelar = () => {
+    if (!confirm('¿Cancelar este corte? Los servicios volverán a "en curso".')) return
+    start(async () => {
+      const r = await cancelarCorte(corte.id)
+      if (r.ok) toast.info('Corte cancelado')
+      else toast.error('Error', r.error)
+    })
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5">
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        <span className="text-base">{m.emoji}</span>
+        <div className="flex-1 min-w-0 leading-tight">
+          <p className={cn('text-[11px] font-bold', m.chip)}>
+            {m.label} · {formatearFecha(corte.periodo_inicio, 'dd MMM')} – {formatearFecha(corte.periodo_fin, 'dd MMM')}
+          </p>
+          <p className="text-[10px] text-zinc-500 inline-flex items-center gap-1">
+            <Clock className="h-2.5 w-2.5" /> cortado {formatearFecha(corte.created_at.slice(0, 10), 'dd MMM')}
+          </p>
+        </div>
+        <p className="text-sm font-black tabular-nums text-amber-200">{formatMoney(Number(corte.monto_total), 'MXN')}</p>
+      </div>
+
+      {!expanded ? (
+        <div className="flex gap-1.5 px-3 pb-2.5">
+          <button
+            type="button" disabled={pending}
+            onClick={() => setExpanded(true)}
+            className="flex-1 h-8 rounded-lg bg-emerald-500 text-zinc-950 text-[11px] font-bold inline-flex items-center justify-center gap-1 disabled:opacity-50"
+          >
+            <Wallet className="h-3 w-3" /> Marcar pagado
+          </button>
+          <button
+            type="button" disabled={pending}
+            onClick={cancelar}
+            className="h-8 px-2.5 rounded-lg border border-zinc-700 text-zinc-400 text-[11px] font-bold inline-flex items-center gap-1 disabled:opacity-50"
+          >
+            <X className="h-3 w-3" /> Cancelar
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2 px-3 pb-3">
+          <select value={cuentaId} onChange={(e) => setCuentaId(e.target.value)} className="input-base w-full h-8 text-[11px]">
+            <option value="">— Cuenta de salida (opcional) —</option>
+            {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+          <input value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Notas" className="input-base w-full h-8 text-[11px]" />
+          <div className="flex gap-1.5">
+            <button type="button" onClick={() => setExpanded(false)} className="h-8 px-3 rounded-lg border border-zinc-700 text-zinc-400 text-[11px]">Atrás</button>
+            <button
+              type="button" disabled={pending}
+              onClick={pagar}
+              className="flex-1 h-8 rounded-lg bg-emerald-500 text-zinc-950 text-[11px] font-bold inline-flex items-center justify-center gap-1 disabled:opacity-50"
+            >
+              {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+              Confirmar pago de {formatMoney(Number(corte.monto_total), 'MXN')}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
