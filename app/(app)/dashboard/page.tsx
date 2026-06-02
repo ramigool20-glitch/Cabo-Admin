@@ -15,6 +15,9 @@ import { NegociosBar } from '@/components/dashboard/negocios-bar'
 import { AnalisisCategorias } from '@/components/transacciones/analisis-categorias'
 import { CollapsibleSection } from '@/components/dashboard/collapsible-section'
 import { FxMiniWidget } from '@/components/dashboard/fx-mini-widget'
+import { CashflowForecastCard } from '@/components/dashboard/cashflow-forecast-card'
+import { proyectarCashFlow } from '@/lib/cashflow/forecast'
+import { ResumenSemanalCard, type ResumenSemanalRow } from '@/components/dashboard/resumen-semanal-card'
 
 type SearchParams = { rango?: string; desde?: string; hasta?: string }
 
@@ -226,6 +229,17 @@ export default async function DashboardPage(
     fxFallbackTemp
   )
   const cuentasSinCapturar = saldos.por_cuenta.filter((c) => !c.locked).length
+
+  // Proyección de cash flow 90d (incluye saldo actual + eventos agendados)
+  const cashflowForecast = await proyectarCashFlow({ admin, dias: 90 }).catch(() => null)
+
+  // Último resumen semanal IA (si existe, generado por cron lunes 8am)
+  const { data: ultimoResumen } = await admin
+    .from('resumen_semanal')
+    .select('id, semana_inicio, semana_fin, generado_at, resumen_md, datos')
+    .order('semana_inicio', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   // FX rate fallback: prefiere el de hoy, sino el más reciente conocido
   let fxFallback: number | null = fxRateHoy ? Number(fxRateHoy.rate_compra) : null
@@ -516,6 +530,12 @@ export default async function DashboardPage(
 
         {/* FX widget */}
         <FxMiniWidget rateHoy={fxRateHoy} historial={fxHistorial ?? []} />
+
+        {/* Resumen semanal IA (último disponible) */}
+        {ultimoResumen && <ResumenSemanalCard row={ultimoResumen as ResumenSemanalRow} />}
+
+        {/* Proyección cash flow 30/60/90d */}
+        {cashflowForecast && <CashflowForecastCard f={cashflowForecast} />}
 
         {/* Próximos pagos a Patricia (clínica) */}
         {proxPagosPatricia.length > 0 && (
