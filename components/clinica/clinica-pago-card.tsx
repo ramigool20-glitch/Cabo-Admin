@@ -6,7 +6,7 @@ import { cn, formatMoney } from '@/lib/utils'
 import { formatearFecha } from '@/lib/fechas'
 import { toast } from '@/components/ui/toast'
 import {
-  hacerCorteComisiones, hacerCortePropinas, hacerCorteReviews, hacerCorteQuincena,
+  hacerCorteSemanal, hacerCorteReviews, hacerCorteQuincena,
   marcarCortePagado, cancelarCorte,
 } from '@/app/(app)/clinica/pagos-actions'
 import { aprobarRealizado, rechazarRealizado } from '@/app/(app)/clinica/actions'
@@ -31,12 +31,19 @@ export type PendienteAprobar = {
   notas: string | null
 }
 
+export type SemanaEnCurso = {
+  inicio: string // dom YYYY-MM-DD
+  fin: string    // sáb YYYY-MM-DD
+  comisiones: number
+  serviciosCount: number
+  propinas: number
+  propinasCount: number
+}
+
 export type ClinicaPagoData = {
   nombre: string
   enCurso: {
-    serviciosCount: number
-    comisiones: number
-    propinas: number
+    semanas: SemanaEnCurso[]
     reviewsCount: number
     reviewsMonto: number
   }
@@ -99,25 +106,26 @@ export function ClinicaPagoCard({
         </section>
       )}
 
-      {/* ═══════ EN CURSO (pendiente de cortar) ═══════ */}
+      {/* ═══════ EN CURSO (pendiente de cortar) — POR SEMANA ═══════ */}
       <section className="space-y-2">
-        <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">En curso</p>
+        <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">
+          Semanas en curso (dom – sáb)
+        </p>
 
-        <BloqueEnCurso
-          emoji="🩺" label="Comisiones de servicios" color="cyan"
-          monto={data.enCurso.comisiones}
-          detalle={`${data.enCurso.serviciosCount} servicios`}
-          pending={pending}
-          onCortar={() => accionCorte(hacerCorteComisiones, 'comisiones')}
-        />
-
-        <BloqueEnCurso
-          emoji="💵" label="Propinas" color="emerald"
-          monto={data.enCurso.propinas}
-          detalle="propinas acumuladas (corte aparte)"
-          pending={pending}
-          onCortar={() => accionCorte(hacerCortePropinas, 'propinas')}
-        />
+        {data.enCurso.semanas.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-zinc-700 bg-black/20 px-3 py-3 text-center text-[11px] text-zinc-500">
+            Nada sin cortar. Patricia no ha registrado servicios desde el último corte.
+          </div>
+        ) : (
+          data.enCurso.semanas.map((s) => (
+            <BloqueSemana
+              key={s.inicio}
+              semana={s}
+              pending={pending}
+              onCortar={() => accionCorte(() => hacerCorteSemanal({ desde: s.inicio, hasta: s.fin }), `semana ${formatearFecha(s.inicio, 'dd MMM')}`)}
+            />
+          ))
+        )}
 
         <BloqueEnCurso
           emoji="⭐" label="Reviews acumuladas" color="amber"
@@ -176,6 +184,56 @@ export function ClinicaPagoCard({
           </ul>
         </section>
       )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────
+// Bloque "Semana en curso" — combina comisiones + propinas de una semana
+// ─────────────────────────────────────────────────────
+function BloqueSemana({
+  semana, pending, onCortar,
+}: {
+  semana: SemanaEnCurso
+  pending: boolean
+  onCortar: () => void
+}) {
+  const total = semana.comisiones + semana.propinas
+  const vacio = total <= 0
+  return (
+    <div className="rounded-xl border border-cyan-500/25 bg-gradient-to-br from-cyan-500/5 to-emerald-500/5 px-3 py-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-bold text-cyan-200">
+          📅 {formatearFecha(semana.inicio, 'dd MMM')} – {formatearFecha(semana.fin, 'dd MMM')}
+        </p>
+        <p className="text-base font-black tabular-nums text-white">{formatMoney(total, 'MXN')}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-[10px]">
+        <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/20 px-2 py-1.5">
+          <p className="text-cyan-300/80 uppercase tracking-wider text-[9px]">🩺 Comisiones</p>
+          <p className="text-cyan-200 font-bold tabular-nums">{formatMoney(semana.comisiones, 'MXN')}</p>
+          <p className="text-zinc-500">{semana.serviciosCount} servicios</p>
+        </div>
+        <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2 py-1.5">
+          <p className="text-emerald-300/80 uppercase tracking-wider text-[9px]">💵 Propinas</p>
+          <p className="text-emerald-200 font-bold tabular-nums">{formatMoney(semana.propinas, 'MXN')}</p>
+          <p className="text-zinc-500">{semana.propinasCount} items</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        disabled={vacio || pending}
+        onClick={onCortar}
+        className={cn(
+          'w-full h-9 rounded-lg text-[11px] font-bold inline-flex items-center justify-center gap-1.5',
+          vacio || pending
+            ? 'border border-zinc-800 text-zinc-600 cursor-not-allowed'
+            : 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-zinc-950 hover:opacity-90',
+        )}
+      >
+        {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Scissors className="h-3.5 w-3.5" />}
+        Cortar semana
+      </button>
     </div>
   )
 }

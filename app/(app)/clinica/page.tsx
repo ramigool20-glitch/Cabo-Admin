@@ -126,14 +126,37 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
       monto_total: Number(p.monto_total), created_at: p.created_at,
     })
 
+    // Agrupar lo no cortado por semana (dom–sáb). Las semanas son los ciclos de corte.
+    const semanasMap = new Map<string, { inicio: string; fin: string; comisiones: number; serviciosCount: number; propinas: number; propinasCount: number }>()
+    function semanaDe(fechaStr: string): { inicio: string; fin: string } {
+      const d = new Date(fechaStr + 'T12:00:00')
+      const dow = d.getDay() // 0=domingo
+      const ini = new Date(d); ini.setDate(d.getDate() - dow)
+      const fin = new Date(d); fin.setDate(d.getDate() + (6 - dow))
+      return { inicio: ini.toISOString().slice(0, 10), fin: fin.toISOString().slice(0, 10) }
+    }
+    for (const r of serviciosUncut) {
+      const { inicio, fin } = semanaDe(r.fecha)
+      const cur = semanasMap.get(inicio) ?? { inicio, fin, comisiones: 0, serviciosCount: 0, propinas: 0, propinasCount: 0 }
+      cur.comisiones += Number(r.pago_comision)
+      cur.serviciosCount += 1
+      semanasMap.set(inicio, cur)
+    }
+    for (const r of propinasUncutRows) {
+      const { inicio, fin } = semanaDe(r.fecha)
+      const cur = semanasMap.get(inicio) ?? { inicio, fin, comisiones: 0, serviciosCount: 0, propinas: 0, propinasCount: 0 }
+      cur.propinas += Number(r.propina)
+      cur.propinasCount += 1
+      semanasMap.set(inicio, cur)
+    }
+    const semanas = Array.from(semanasMap.values()).sort((a, b) => a.inicio.localeCompare(b.inicio))
+
     // realRes ya está filtrado a aprobado + alguna parte sin cortar;
     // ahora separamos por componente (comisión, propina, review).
     pagosData = {
       nombre: cfgRes.data.nombre ?? 'Patricia',
       enCurso: {
-        serviciosCount: serviciosUncut.length,
-        comisiones: comisiones,
-        propinas: propinas,
+        semanas,
         reviewsCount: reviewsUncut.length,
         reviewsMonto: bono,
       },
@@ -169,16 +192,21 @@ export default async function ClinicaPage({ searchParams }: { searchParams: Prom
     }
     pagosData.pendientesAprobar = pendientesAprobar
   }
-  // Sueldo solo si la quincena actual NO tiene corte ya creado
-  const sueldoBase = sueldoQuincenaCortado ? 0 : (cfg?.sueldo_base_quincenal ?? 0)
+  // Sueldo: muestra siempre el monto config; solo se excluye del TOTAL si ya está pagado
+  const sueldoConfig = Number(cfg?.sueldo_base_quincenal ?? 0)
+  const sueldoBase = quincenaActualEstado === 'pagado' ? 0 : sueldoConfig
+  const sueldoEstadoLabel =
+    quincenaActualEstado === 'pagado' ? '✓ pagada este periodo'
+      : quincenaActualEstado === 'pendiente' ? '⏳ corte hecho · esperando pago'
+      : 'sin cortar'
   const total = comisiones + propinas + bono + sueldoBase
 
-  const periodo = sueldoQuincenaCortado && realizados.length === 0
+  const periodo = quincenaActualEstado === 'pagado' && realizados.length === 0
     ? `Al corriente ✓ (${quincenaLabel})`
-    : `Pendiente de cortar · ${quincenaLabel}`
+    : `Pendiente · ${quincenaLabel}`
 
   const tabulador: Tabulador = {
-    periodo, comisiones, propinas, bono, sueldoBase, total,
+    periodo, comisiones, propinas, bono, sueldoBase, sueldoEstadoLabel, total,
     numServicios: serviciosUncut.length, reviews,
   }
 

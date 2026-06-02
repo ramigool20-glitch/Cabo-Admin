@@ -55,6 +55,7 @@ export type Tabulador = {
   propinas: number
   bono: number
   sueldoBase: number
+  sueldoEstadoLabel?: string
   total: number
   numServicios: number
   reviews: number
@@ -178,7 +179,7 @@ function TabuladorView({ tabulador, realizados, esEnfermera, onGoTab }: { tabula
 
       {/* Desglose en cards */}
       <div className="grid grid-cols-2 gap-2">
-        <Linea label="💼 Sueldo base" monto={tabulador.sueldoBase} />
+        <Linea label="💼 Sueldo base" monto={tabulador.sueldoBase} sub={tabulador.sueldoEstadoLabel} />
         <Linea label="🩺 Comisiones" monto={tabulador.comisiones} sub={`${tabulador.numServicios} servicios`} color="text-cyan-300" />
         <Linea label="💵 Propinas" monto={tabulador.propinas} color="text-emerald-400" />
         <Linea label="⭐ Bono reviews" monto={tabulador.bono} sub={`${reviews} reviews`} color="text-amber-400" />

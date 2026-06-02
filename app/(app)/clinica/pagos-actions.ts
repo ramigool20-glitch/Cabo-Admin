@@ -35,6 +35,69 @@ function revalidarTodo() {
 // 1) HACER CORTE — crea snapshot estado='pendiente', NO paga aún
 // ============================================================
 
+/** Corte semanal combinado: comisiones + propinas de UNA semana (dom-sáb). */
+export async function hacerCorteSemanal(rango: { desde: string; hasta: string }): Promise<CorteState> {
+  const user = await authUser()
+  if (!user) return { error: 'No autenticado' }
+  const cfg = await getEnfermera()
+  if (!cfg?.enfermera_id) return { error: 'Falta configurar la enfermera activa' }
+
+  const admin = createAdminClient()
+
+  // Servicios aprobados de la semana, no cortados (ni comisión ni propina)
+  const { data: rows, error: rErr } = await admin
+    .from('clinica_realizados')
+    .select('id, pago_comision, propina, fecha, pago_id, propina_pago_id, tipo')
+    .eq('enfermera_id', cfg.enfermera_id)
+    .eq('estado_aprobacion', 'aprobado')
+    .neq('tipo', 'review')
+    .gte('fecha', rango.desde)
+    .lte('fecha', rango.hasta)
+  if (rErr) return { error: 'No se pudo leer la semana: ' + rErr.message }
+
+  const pendComision = (rows ?? []).filter((r) => r.pago_id == null)
+  const pendPropina = (rows ?? []).filter((r) => r.propina_pago_id == null && Number(r.propina) > 0)
+  if (pendComision.length === 0 && pendPropina.length === 0) {
+    return { error: 'No hay servicios ni propinas sin cortar en esa semana' }
+  }
+
+  const totalComision = pendComision.reduce((s, r) => s + Number(r.pago_comision), 0)
+  const totalPropina = pendPropina.reduce((s, r) => s + Number(r.propina), 0)
+  const total = totalComision + totalPropina
+  if (total <= 0) return { error: 'El total del corte es 0' }
+
+  const { data: pago, error: pgErr } = await admin
+    .from('clinica_pagos')
+    .insert({
+      enfermera_id: cfg.enfermera_id,
+      tipo: 'comisiones',
+      periodo_inicio: rango.desde,
+      periodo_fin: rango.hasta,
+      monto_comisiones: totalComision,
+      monto_propinas: totalPropina,
+      monto_reviews: 0,
+      monto_sueldo_base: 0,
+      monto_total: total,
+      incluye_reviews: false,
+      estado: 'pendiente',
+      notas: `Semana ${rango.desde} – ${rango.hasta}`,
+      pagado_por: user.id,
+    })
+    .select('id')
+    .single()
+  if (pgErr || !pago) return { error: 'No se pudo crear el corte: ' + (pgErr?.message ?? '') }
+
+  if (pendComision.length > 0) {
+    await admin.from('clinica_realizados').update({ pago_id: pago.id }).in('id', pendComision.map((r) => r.id))
+  }
+  if (pendPropina.length > 0) {
+    await admin.from('clinica_realizados').update({ propina_pago_id: pago.id }).in('id', pendPropina.map((r) => r.id))
+  }
+
+  revalidarTodo()
+  return { ok: true, pagoId: pago.id, total }
+}
+
 /** Corte semanal: SOLO comisiones de servicios (propinas y reviews son aparte). */
 export async function hacerCorteComisiones(): Promise<CorteState> {
   const user = await authUser()
@@ -321,19 +384,18 @@ export async function cancelarCorte(pagoId: string): Promise<CorteState> {
 
   const { data: pago } = await admin
     .from('clinica_pagos')
-    .select('estado, monto_comisiones, monto_propinas')
+    .select('estado, monto_comisiones, monto_propinas, monto_reviews')
     .eq('id', pagoId)
     .single()
   if (!pago) return { error: 'Corte no encontrado' }
   if (pago.estado !== 'pendiente') return { error: `Solo se pueden cancelar cortes pendientes (este está ${pago.estado})` }
 
-  // Liberar los realizados — si era corte de propinas, libera propina_pago_id;
-  // si era de comisiones/reviews, libera pago_id.
-  const fuePropinasSolo = Number(pago.monto_propinas) > 0 && Number(pago.monto_comisiones) === 0
-  if (fuePropinasSolo) {
-    await admin.from('clinica_realizados').update({ propina_pago_id: null }).eq('propina_pago_id', pagoId)
-  } else {
+  // Liberar los realizados — los cortes pueden tener comisiones, propinas, o ambos
+  if (Number(pago.monto_comisiones) > 0 || Number(pago.monto_reviews) > 0) {
     await admin.from('clinica_realizados').update({ pago_id: null }).eq('pago_id', pagoId)
+  }
+  if (Number(pago.monto_propinas) > 0) {
+    await admin.from('clinica_realizados').update({ propina_pago_id: null }).eq('propina_pago_id', pagoId)
   }
 
   const { error } = await admin
