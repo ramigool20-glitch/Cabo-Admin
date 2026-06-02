@@ -18,6 +18,7 @@ import { hoyEnCabos } from '@/lib/fechas'
 
 export type Irregularidad = {
   tipo: 'duplicado' | 'monto_anomalo' | 'sin_categoria' | 'sobregiro' | 'fijo_vencido' | 'evento_sin_anticipo' | 'fx_viejo' | 'usd_sin_fx'
+       | 'split_incompleto' | 'cpp_vencida' | 'cpc_vencida'
   severidad: 'alta' | 'media' | 'baja'
   titulo: string
   detalle: string
@@ -206,6 +207,77 @@ export async function detectarIrregularidades(): Promise<Irregularidad[]> {
         link: '/fx',
       })
     }
+  }
+
+  // ============================================================
+  // 9. SPLITS INCOMPLETOS — split_grupo_id con != 2 filas
+  // ============================================================
+  const { data: splits } = await admin
+    .from('transacciones')
+    .select('id, split_grupo_id, concepto, fecha, monto')
+    .not('split_grupo_id', 'is', null)
+    .gte('fecha', hace30)
+  type SplitRow = { id: string; split_grupo_id: string | null; concepto: string | null; fecha: string; monto: number }
+  const grupos = new Map<string, SplitRow[]>()
+  for (const s of (splits ?? []) as SplitRow[]) {
+    const k = s.split_grupo_id as string
+    if (!grupos.has(k)) grupos.set(k, [])
+    grupos.get(k)!.push(s)
+  }
+  for (const [grupoId, rows] of grupos.entries()) {
+    if (rows.length === 2) continue // OK
+    irregularidades.push({
+      tipo: 'split_incompleto',
+      severidad: 'alta',
+      titulo: `Pago dividido huérfano (${rows.length} ${rows.length === 1 ? 'fila' : 'filas'})`,
+      detalle: `El split ${grupoId.slice(0, 8)} (${rows[0].concepto ?? 'sin concepto'} · ${rows[0].fecha}) tiene ${rows.length} fila${rows.length !== 1 ? 's' : ''} en vez de 2. Revisa si una se borró por error o si tiene 3+ filas por accidente.`,
+      link: `/transacciones/${rows[0].id}`,
+      ids: rows.map((r) => r.id),
+    })
+  }
+
+  // ============================================================
+  // 10. CUENTAS POR PAGAR VENCIDAS — fecha_vencimiento pasada
+  // ============================================================
+  const { data: cppV } = await admin
+    .from('cuentas_por_pagar')
+    .select('id, concepto, proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento')
+    .neq('estado', 'pagada')
+    .lt('fecha_vencimiento', hoy)
+  for (const c of cppV ?? []) {
+    const dias = Math.floor((new Date(hoy + 'T00:00:00').getTime() - new Date(c.fecha_vencimiento + 'T00:00:00').getTime()) / 86_400_000)
+    const pendiente = Number(c.monto_total) - Number(c.monto_pagado ?? 0)
+    if (pendiente <= 0) continue
+    irregularidades.push({
+      tipo: 'cpp_vencida',
+      severidad: dias > 7 ? 'alta' : 'media',
+      titulo: `Cuenta por pagar vencida ${dias}d`,
+      detalle: `"${c.concepto}"${c.proveedor ? ' · ' + c.proveedor : ''} venció el ${c.fecha_vencimiento}. Saldo pendiente: ${c.moneda} ${pendiente.toFixed(2)}.`,
+      link: '/por-pagar',
+      ids: [c.id],
+    })
+  }
+
+  // ============================================================
+  // 11. CUENTAS POR COBRAR VENCIDAS
+  // ============================================================
+  const { data: cpcV } = await admin
+    .from('cuentas_por_cobrar')
+    .select('id, concepto, cliente_nombre, monto_total, monto_cobrado, moneda, fecha_vencimiento')
+    .neq('estado', 'cobrada')
+    .lt('fecha_vencimiento', hoy)
+  for (const c of cpcV ?? []) {
+    const dias = Math.floor((new Date(hoy + 'T00:00:00').getTime() - new Date(c.fecha_vencimiento + 'T00:00:00').getTime()) / 86_400_000)
+    const pendiente = Number(c.monto_total) - Number(c.monto_cobrado ?? 0)
+    if (pendiente <= 0) continue
+    irregularidades.push({
+      tipo: 'cpc_vencida',
+      severidad: dias > 7 ? 'alta' : 'media',
+      titulo: `Cuenta por cobrar vencida ${dias}d`,
+      detalle: `"${c.concepto}"${c.cliente_nombre ? ' · ' + c.cliente_nombre : ''} venció el ${c.fecha_vencimiento}. Por cobrar: ${c.moneda} ${pendiente.toFixed(2)}.`,
+      link: '/por-cobrar',
+      ids: [c.id],
+    })
   }
 
   // Ordenar por severidad

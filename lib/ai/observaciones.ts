@@ -42,6 +42,9 @@ const RECO_IRREG: Record<Irregularidad['tipo'], string> = {
   evento_sin_anticipo: 'Confirma el anticipo o el evento está en riesgo.',
   fx_viejo: 'Actualiza el tipo de cambio del día.',
   usd_sin_fx: 'Aplica el tipo de cambio a la transacción USD.',
+  split_incompleto: 'Verifica las filas del grupo: deben ser 2. Repone o elimina la suelta.',
+  cpp_vencida: 'Págala, abona parcial, o reprograma su fecha de vencimiento.',
+  cpc_vencida: 'Cóbrale al cliente o reprograma; si ya no se va a cobrar, márcala perdida.',
 }
 
 const sevIrreg = (s: Irregularidad['severidad']): Severidad => (s === 'alta' ? 'grave' : 'atencion')
