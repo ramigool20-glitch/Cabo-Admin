@@ -66,6 +66,23 @@ export function TransactionForm({
   const [metodoPago2, setMetodoPago2] = useState<string>('')
   const [monto1Str, setMonto1Str] = useState<string>('')
 
+  // Concepto controlado + sugerencia IA
+  const [conceptoStr, setConceptoStr] = useState<string>(defaults.concepto ?? '')
+  type SugerenciaIA = {
+    categoria: string | null
+    negocio_id: string | null
+    negocio_nombre: string | null
+    cuenta_id: string | null
+    cuenta_nombre: string | null
+    metodo_pago: string | null
+    confianza: 'alta' | 'media' | 'baja'
+    fuente: 'historico_exacto' | 'historico_fuzzy' | 'ia'
+    ejemplos_count: number
+  }
+  const [sugerencia, setSugerencia] = useState<SugerenciaIA | null>(null)
+  const [sugLoading, setSugLoading] = useState(false)
+  const [sugDescartada, setSugDescartada] = useState(false)
+
   const action = isEdit
     ? updateTransaccion.bind(null, defaults.id!)
     : createTransaccion
@@ -119,6 +136,41 @@ export function TransactionForm({
   useEffect(() => {
     if (!splitActivo) { setCuentaId2(''); setMetodoPago2(''); setMonto1Str('') }
   }, [splitActivo])
+
+  // Sugerencia IA: pide al backend cuando el concepto tiene ≥4 chars (debounce 600ms)
+  useEffect(() => {
+    if (isEdit) return // sugerencias solo al crear
+    setSugDescartada(false)
+    const trimmed = conceptoStr.trim()
+    if (trimmed.length < 4) { setSugerencia(null); return }
+    const ctrl = new AbortController()
+    const t = setTimeout(async () => {
+      setSugLoading(true)
+      try {
+        const res = await fetch('/api/ai/sugerir-categorizacion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ concepto: trimmed, tipo, monto: parseFloat(montoStr) || undefined }),
+          signal: ctrl.signal,
+        })
+        if (res.ok) {
+          const json = await res.json()
+          setSugerencia(json.sugerencia ?? null)
+        }
+      } catch { /* ignore aborts */ }
+      finally { setSugLoading(false) }
+    }, 600)
+    return () => { clearTimeout(t); ctrl.abort() }
+  }, [conceptoStr, tipo, isEdit, montoStr])
+
+  function aplicarSugerencia() {
+    if (!sugerencia) return
+    if (sugerencia.categoria) setCategoria(sugerencia.categoria)
+    if (sugerencia.negocio_id) setNegocioId(sugerencia.negocio_id)
+    if (sugerencia.cuenta_id) onCuentaChange(sugerencia.cuenta_id)
+    if (sugerencia.metodo_pago) setMetodoPago(sugerencia.metodo_pago)
+    setSugDescartada(true)
+  }
 
   // Si el negocio es Casa, sugerimos solo categorías de casa
   const negocioSel = negocios.find((n) => n.id === negocioId)
@@ -456,17 +508,59 @@ export function TransactionForm({
         </div>
       )}
 
-      {/* Concepto */}
+      {/* Concepto + sugerencia IA */}
       <div className="space-y-2">
         <label htmlFor="concepto" className="text-sm font-medium">Concepto</label>
         <input
           id="concepto"
           name="concepto"
           type="text"
-          defaultValue={defaults.concepto ?? ''}
+          value={conceptoStr}
+          onChange={(e) => setConceptoStr(e.target.value)}
           placeholder="¿En qué fue?"
           className="w-full h-12 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
+        {!isEdit && sugLoading && (
+          <p className="text-[10px] text-zinc-500 inline-flex items-center gap-1">⏳ Buscando sugerencia…</p>
+        )}
+        {!isEdit && !sugDescartada && sugerencia && (sugerencia.categoria || sugerencia.negocio_id || sugerencia.cuenta_id) && (
+          <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-3 space-y-2">
+            <div className="flex items-start gap-2">
+              <span className="text-base shrink-0">🤖</span>
+              <div className="flex-1 leading-tight">
+                <p className="text-[11px] font-bold text-cyan-200">
+                  Sugerencia · {sugerencia.confianza === 'alta' ? '✓ alta' : sugerencia.confianza === 'media' ? 'media' : 'baja'} confianza
+                  <span className="text-[10px] text-cyan-300/60 ml-1">
+                    ({sugerencia.fuente === 'historico_exacto' ? 'match exacto' : sugerencia.fuente === 'historico_fuzzy' ? `${sugerencia.ejemplos_count} similares` : 'IA'})
+                  </span>
+                </p>
+                <p className="text-[11px] text-zinc-300 mt-0.5">
+                  {[
+                    sugerencia.categoria && `📂 ${sugerencia.categoria}`,
+                    sugerencia.negocio_nombre && `🏢 ${sugerencia.negocio_nombre}`,
+                    sugerencia.cuenta_nombre && `💳 ${sugerencia.cuenta_nombre}`,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={aplicarSugerencia}
+                className="flex-1 h-8 rounded-lg bg-cyan-500 text-white text-[11px] font-bold"
+              >
+                ✓ Aplicar
+              </button>
+              <button
+                type="button"
+                onClick={() => setSugDescartada(true)}
+                className="h-8 px-2.5 rounded-lg border border-zinc-700 text-zinc-400 text-[11px]"
+              >
+                Descartar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Fecha */}
