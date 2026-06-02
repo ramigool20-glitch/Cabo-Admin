@@ -21,6 +21,7 @@ export type Transaccion = {
   monto_mxn_equivalente?: number | null
   tipo_cambio_usado?: number | null
   atribuido_a?: string | null
+  split_grupo_id?: string | null
 }
 
 const tipoMeta = {
@@ -126,10 +127,13 @@ export function TransactionList({
                       <p className="text-xs text-zinc-500 truncate">
                         {t.negocios?.nombre ?? '—'} · {t.cuentas?.nombre ?? '—'}
                       </p>
-                      {((iaActivo && flagged.has(t.id)) || t.negocios?.tipo === 'casa') && (
+                      {((iaActivo && flagged.has(t.id)) || t.negocios?.tipo === 'casa' || t.split_grupo_id) && (
                         <div className="flex items-center gap-2 mt-1">
                           {iaActivo && flagged.has(t.id) && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-300 text-[9px] font-medium tracking-tight"><AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.5} /> Revisar</span>
+                          )}
+                          {t.split_grupo_id && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-cyan-500/10 text-cyan-300 text-[9px] font-medium tracking-tight">🔗 Split</span>
                           )}
                           {t.negocios?.tipo === 'casa' && (
                             <span className="text-[9px] tracking-tight">

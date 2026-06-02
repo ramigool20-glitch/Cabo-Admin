@@ -60,6 +60,11 @@ export function TransactionForm({
   // Para detector de duplicados
   const [montoStr, setMontoStr] = useState<string>(defaults.monto ?? '')
   const [fecha, setFecha] = useState<string>(defaults.fecha)
+  // Pago dividido en 2 cuentas (solo al crear)
+  const [splitActivo, setSplitActivo] = useState(false)
+  const [cuentaId2, setCuentaId2] = useState<string>('')
+  const [metodoPago2, setMetodoPago2] = useState<string>('')
+  const [monto1Str, setMonto1Str] = useState<string>('')
 
   const action = isEdit
     ? updateTransaccion.bind(null, defaults.id!)
@@ -73,6 +78,8 @@ export function TransactionForm({
   // Cuando cambia la cuenta, sugerimos el método de pago
   const onCuentaChange = (id: string) => {
     setCuentaId(id)
+    // Si la 2da cuenta del split queda igual, la liberamos
+    if (splitActivo && cuentaId2 === id) setCuentaId2('')
     const c = cuentas.find((x) => x.id === id)
     if (!c) return
     const sugerido =
@@ -82,6 +89,36 @@ export function TransactionForm({
     if (sugerido) setMetodoPago(sugerido)
     if (c.moneda === 'USD' || c.moneda === 'MXN') setMoneda(c.moneda as 'MXN' | 'USD')
   }
+
+  // Selección de cuenta 2 (split)
+  const onCuenta2Change = (id: string) => {
+    if (id === cuentaId) return // no puede ser la misma
+    setCuentaId2(id)
+    const c = cuentas.find((x) => x.id === id)
+    if (!c) return
+    const sugerido =
+      c.tipo === 'efectivo'
+        ? c.moneda === 'USD' ? 'efectivo_usd' : 'efectivo_mxn'
+        : metodoPagoDefault(c.tipo)
+    if (sugerido) setMetodoPago2(sugerido)
+  }
+
+  // Cálculo en vivo del split
+  const montoTotal = parseFloat(montoStr) || 0
+  const monto1 = parseFloat(monto1Str) || 0
+  const monto2 = Math.max(0, Number((montoTotal - monto1).toFixed(2)))
+  const splitOk =
+    splitActivo &&
+    montoTotal > 0 &&
+    monto1 > 0 &&
+    monto1 < montoTotal &&
+    !!cuentaId2 &&
+    cuentaId !== cuentaId2
+
+  // Si se desactiva el split o cambia el monto a 0, limpiar
+  useEffect(() => {
+    if (!splitActivo) { setCuentaId2(''); setMetodoPago2(''); setMonto1Str('') }
+  }, [splitActivo])
 
   // Si el negocio es Casa, sugerimos solo categorías de casa
   const negocioSel = negocios.find((n) => n.id === negocioId)
@@ -157,9 +194,9 @@ export function TransactionForm({
             value={montoStr}
             onChange={(e) => setMontoStr(e.target.value)}
             placeholder="0.00"
-            className="flex-1 h-14 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-2xl font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="flex-1 min-w-0 h-14 px-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-2xl font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+          <div className="shrink-0 grid grid-cols-2 gap-0.5 p-1 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
             <input type="hidden" name="moneda" value={moneda} />
             {(['MXN', 'USD'] as const).map((m) => (
               <button
@@ -167,7 +204,7 @@ export function TransactionForm({
                 type="button"
                 onClick={() => setMoneda(m)}
                 className={cn(
-                  'h-12 w-14 rounded-lg text-sm font-bold transition-colors',
+                  'h-12 w-12 rounded-lg text-xs font-bold transition-colors',
                   moneda === m
                     ? 'bg-[var(--bg-card)] text-white shadow'
                     : 'text-zinc-500'
@@ -219,28 +256,157 @@ export function TransactionForm({
         </div>
       </div>
 
-      {/* Cuenta */}
+      {/* Cuenta (1 si hay split) */}
       <div className="space-y-2">
-        <label className="text-sm font-medium">Cuenta</label>
+        <label className="text-sm font-medium">
+          {splitActivo ? 'Cuenta 1' : 'Cuenta'}
+        </label>
         <input type="hidden" name="cuenta_id" value={cuentaId} />
         <div className="flex flex-wrap gap-1.5">
-          {cuentas.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => onCuentaChange(c.id)}
-              className={cn(
-                'h-9 px-3 rounded-full text-sm border transition-colors',
-                cuentaId === c.id
-                  ? 'border-emerald-600 bg-emerald-600 text-white'
-                  : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-300'
-              )}
-            >
-              {c.nombre}
-            </button>
-          ))}
+          {cuentas.map((c) => {
+            const usadaEnSplit = splitActivo && cuentaId2 === c.id
+            return (
+              <button
+                key={c.id}
+                type="button"
+                disabled={usadaEnSplit}
+                onClick={() => onCuentaChange(c.id)}
+                className={cn(
+                  'h-9 px-3 rounded-full text-sm border transition-colors',
+                  cuentaId === c.id
+                    ? 'border-emerald-600 bg-emerald-600 text-white'
+                    : usadaEnSplit
+                      ? 'border-zinc-800 bg-zinc-900 text-zinc-600 cursor-not-allowed'
+                      : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-300'
+                )}
+              >
+                {c.nombre}
+                {usadaEnSplit && ' (cuenta 2)'}
+              </button>
+            )
+          })}
         </div>
       </div>
+
+      {/* Toggle "Pago dividido en 2 cuentas" — solo al crear */}
+      {!isEdit && (
+        <div className="space-y-2">
+          <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={splitActivo}
+              onChange={(e) => setSplitActivo(e.target.checked)}
+              className="h-4 w-4 accent-emerald-500"
+            />
+            <span className="text-sm font-medium text-zinc-300">
+              💳 Pago dividido en 2 cuentas
+              <span className="ml-1 text-[11px] text-zinc-500">(efectivo + tarjeta, etc.)</span>
+            </span>
+          </label>
+          {splitActivo && (
+            <input type="hidden" name="split_activo" value="1" />
+          )}
+        </div>
+      )}
+
+      {/* Bloque split: cuenta 2 + montos */}
+      {!isEdit && splitActivo && (
+        <div className="card-glow border-cyan-500/40 bg-cyan-500/5 p-3 space-y-3">
+          <p className="text-xs font-bold text-cyan-200 inline-flex items-center gap-1.5">
+            💳 División del pago — total {moneda} {montoTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+
+          {/* Montos por cuenta */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="label-caps">$ Cuenta 1</label>
+              <input
+                name="monto_1"
+                type="text"
+                inputMode="decimal"
+                value={monto1Str}
+                onChange={(e) => setMonto1Str(e.target.value)}
+                placeholder="0.00"
+                className="input-base w-full h-10 text-sm tabular-nums font-bold"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="label-caps">$ Cuenta 2 (auto)</label>
+              <div className="h-10 flex items-center px-3 rounded-xl border border-[var(--border-subtle)] bg-black/30 text-sm tabular-nums font-bold text-cyan-200">
+                {monto2.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+
+          {/* Validación visible */}
+          {montoTotal <= 0 && (
+            <p className="text-[11px] text-amber-300">⚠️ Captura primero el Monto total arriba.</p>
+          )}
+          {montoTotal > 0 && monto1 <= 0 && (
+            <p className="text-[11px] text-amber-300">Escribe cuánto se pagó con la cuenta 1.</p>
+          )}
+          {montoTotal > 0 && monto1 >= montoTotal && (
+            <p className="text-[11px] text-rose-400">El monto de cuenta 1 debe ser menor al total.</p>
+          )}
+
+          {/* Selector Cuenta 2 */}
+          <div className="space-y-1.5">
+            <label className="label-caps">Cuenta 2</label>
+            <input type="hidden" name="cuenta_id_2" value={cuentaId2} />
+            <div className="flex flex-wrap gap-1.5">
+              {cuentas.map((c) => {
+                const usadaEn1 = cuentaId === c.id
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={usadaEn1}
+                    onClick={() => onCuenta2Change(c.id)}
+                    className={cn(
+                      'h-9 px-3 rounded-full text-sm border transition-colors',
+                      cuentaId2 === c.id
+                        ? 'border-cyan-500 bg-cyan-500 text-white'
+                        : usadaEn1
+                          ? 'border-zinc-800 bg-zinc-900 text-zinc-600 cursor-not-allowed'
+                          : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-300'
+                    )}
+                  >
+                    {c.nombre}
+                    {usadaEn1 && ' (cuenta 1)'}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Método de pago de la cuenta 2 (opcional) */}
+          <div className="space-y-1.5">
+            <label className="label-caps">Método cuenta 2 (opcional)</label>
+            <input type="hidden" name="metodo_pago_2" value={metodoPago2} />
+            <div className="flex flex-wrap gap-1.5">
+              {METODOS_PAGO.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setMetodoPago2(metodoPago2 === m.value ? '' : m.value)}
+                  className={cn(
+                    'h-8 px-3 rounded-full text-[11px] border transition-colors',
+                    metodoPago2 === m.value
+                      ? 'border-cyan-500 bg-cyan-500/20 text-cyan-200'
+                      : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-400'
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-[11px] text-zinc-500">
+            Se crean 2 transacciones (una por cuenta) ligadas con un mismo grupo. Editar/eliminar es independiente por cuenta.
+          </p>
+        </div>
+      )}
 
       {/* Atribución (solo cuando es Casa) */}
       {esCasa && socios.length > 0 && (
@@ -416,13 +582,13 @@ export function TransactionForm({
         </button>
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || (splitActivo && !splitOk)}
           className={cn(
             'flex-[2] h-12 rounded-xl text-white font-semibold disabled:opacity-50',
             tipo === 'gasto' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
           )}
         >
-          {pending ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Guardar'}
+          {pending ? 'Guardando…' : isEdit ? 'Guardar cambios' : splitActivo ? 'Guardar (2 transacciones)' : 'Guardar'}
         </button>
       </div>
 

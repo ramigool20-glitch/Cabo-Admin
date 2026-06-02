@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 export const FLASH_MESSAGES: Record<string, { variant: 'success' | 'error' | 'info' | 'warning'; title: string; description?: string }> = {
   // Transacciones
   tx_creada:        { variant: 'success', title: 'Transacción guardada' },
+  tx_split_creada:  { variant: 'success', title: 'Pago dividido guardado', description: 'Se crearon 2 transacciones ligadas (una por cuenta).' },
   tx_actualizada:   { variant: 'success', title: 'Cambios guardados' },
   tx_eliminada:     { variant: 'info',    title: 'Transacción eliminada' },
 

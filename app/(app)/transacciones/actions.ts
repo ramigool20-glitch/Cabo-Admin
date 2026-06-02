@@ -1,5 +1,6 @@
 'use server'
 
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -8,6 +9,17 @@ import { aMxnEquivalente } from '@/lib/fx/server'
 import { registrarHistorial } from '@/lib/historial'
 import { sincronizarTxASubTabla } from '@/lib/sync-ads-ventas'
 import { vigilarMovimiento } from '@/lib/ai/observaciones'
+
+const MetodoPagoEnum = z.enum([
+  'stripe', 'mp_terminal', 'mp_transferencia', 'mp_link',
+  'efectivo_mxn', 'efectivo_usd', 'transferencia_bancaria',
+  'tarjeta', 'domiciliado', 'otro',
+])
+const SplitSchema = z.object({
+  cuenta_id_2: z.string().uuid('Selecciona la cuenta 2'),
+  metodo_pago_2: MetodoPagoEnum.optional().nullable(),
+  monto_1: z.coerce.number().positive('El monto de la cuenta 1 debe ser mayor a 0'),
+})
 
 const TransaccionSchema = z.object({
   tipo: z.enum(['ingreso', 'gasto']),
@@ -63,53 +75,161 @@ export async function createTransaccion(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
+  // ¿Pago dividido en 2 cuentas?
+  const splitActivo = formData.get('split_activo') === '1'
+  let splitData: z.infer<typeof SplitSchema> | null = null
+  if (splitActivo) {
+    const sp = SplitSchema.safeParse({
+      cuenta_id_2: formData.get('cuenta_id_2'),
+      metodo_pago_2: formData.get('metodo_pago_2') || null,
+      monto_1: formData.get('monto_1'),
+    })
+    if (!sp.success) {
+      return { error: 'Split inválido', fieldErrors: sp.error.flatten().fieldErrors }
+    }
+    if (sp.data.cuenta_id_2 === parsed.data.cuenta_id) {
+      return { error: 'Las dos cuentas del split deben ser distintas' }
+    }
+    if (sp.data.monto_1 >= parsed.data.monto) {
+      return { error: 'El monto de la cuenta 1 debe ser menor al total' }
+    }
+    splitData = sp.data
+  }
+
   // Calcular equivalente en MXN según el tipo de cambio del día de la transacción
   const fx = await aMxnEquivalente(parsed.data.monto, parsed.data.moneda, parsed.data.fecha)
 
-  const insertData = {
-    ...parsed.data,
-    monto_mxn_equivalente: fx.monto_mxn_equivalente,
-    tipo_cambio_usado: fx.tipo_cambio_usado,
-    metodo_captura: 'manual' as const,
-    capturado_por: user.id,
-  }
+  if (!splitData) {
+    // ── Flujo normal: una sola transacción ───────────────────────────
+    const insertData = {
+      ...parsed.data,
+      monto_mxn_equivalente: fx.monto_mxn_equivalente,
+      tipo_cambio_usado: fx.tipo_cambio_usado,
+      metodo_captura: 'manual' as const,
+      capturado_por: user.id,
+    }
 
-  const { data: nuevaTx, error } = await supabase
-    .from('transacciones')
-    .insert(insertData)
-    .select('id')
-    .single()
+    const { data: nuevaTx, error } = await supabase
+      .from('transacciones')
+      .insert(insertData)
+      .select('id')
+      .single()
 
-  if (error) return { error: error.message }
+    if (error) return { error: error.message }
 
-  // Registrar en historial
-  if (nuevaTx?.id) {
-    await registrarHistorial(nuevaTx.id, 'creada', user.id, null, insertData)
-    // Sincronizar a gastos_ads/ventas si la categoría/concepto aplica
-    await sincronizarTxASubTabla(supabase, {
-      txId: nuevaTx.id,
+    // Registrar en historial
+    if (nuevaTx?.id) {
+      await registrarHistorial(nuevaTx.id, 'creada', user.id, null, insertData)
+      await sincronizarTxASubTabla(supabase, {
+        txId: nuevaTx.id,
+        tipo: parsed.data.tipo,
+        negocio_id: parsed.data.negocio_id,
+        monto: parsed.data.monto,
+        moneda: parsed.data.moneda,
+        fecha: parsed.data.fecha,
+        categoria: parsed.data.categoria ?? null,
+        concepto: parsed.data.concepto ?? null,
+        user_id: user.id,
+        fx,
+      })
+      await vigilarMovimiento({
+        id: nuevaTx.id,
+        tipo: parsed.data.tipo,
+        monto: parsed.data.monto,
+        moneda: parsed.data.moneda,
+        fecha: parsed.data.fecha,
+        concepto: parsed.data.concepto ?? null,
+        categoria: parsed.data.categoria ?? null,
+        cuenta_id: parsed.data.cuenta_id ?? null,
+      })
+    }
+  } else {
+    // ── Flujo split: dos transacciones con split_grupo_id en común ───
+    const grupoId = randomUUID()
+    const monto1 = splitData.monto_1
+    const monto2 = Number((parsed.data.monto - monto1).toFixed(2))
+    const rate = fx.tipo_cambio_usado
+    const mxn1 = Number((parsed.data.moneda === 'USD' ? monto1 * rate : monto1).toFixed(2))
+    const mxn2 = Number((parsed.data.moneda === 'USD' ? monto2 * rate : monto2).toFixed(2))
+
+    const conceptoBase = parsed.data.concepto ?? null
+    const conceptoSufijo = conceptoBase ? `${conceptoBase} · split` : 'Pago dividido'
+
+    const filaComun = {
       tipo: parsed.data.tipo,
+      moneda: parsed.data.moneda,
+      fecha: parsed.data.fecha,
       negocio_id: parsed.data.negocio_id,
-      monto: parsed.data.monto,
-      moneda: parsed.data.moneda,
-      fecha: parsed.data.fecha,
       categoria: parsed.data.categoria ?? null,
-      concepto: parsed.data.concepto ?? null,
-      user_id: user.id,
-      fx,
-    })
+      notas: parsed.data.notas ?? null,
+      atribuido_a: parsed.data.atribuido_a ?? null,
+      tipo_cambio_usado: rate,
+      metodo_captura: 'manual' as const,
+      capturado_por: user.id,
+      split_grupo_id: grupoId,
+    }
 
-    // Vigilancia en cada movimiento (duplicado / monto anómalo) → Auditor
-    await vigilarMovimiento({
-      id: nuevaTx.id,
-      tipo: parsed.data.tipo,
-      monto: parsed.data.monto,
-      moneda: parsed.data.moneda,
-      fecha: parsed.data.fecha,
-      concepto: parsed.data.concepto ?? null,
-      categoria: parsed.data.categoria ?? null,
-      cuenta_id: parsed.data.cuenta_id ?? null,
-    })
+    const filas = [
+      {
+        ...filaComun,
+        monto: monto1,
+        monto_mxn_equivalente: mxn1,
+        cuenta_id: parsed.data.cuenta_id,
+        metodo_pago: parsed.data.metodo_pago ?? null,
+        concepto: `${conceptoSufijo} 1/2`,
+      },
+      {
+        ...filaComun,
+        monto: monto2,
+        monto_mxn_equivalente: mxn2,
+        cuenta_id: splitData.cuenta_id_2,
+        metodo_pago: splitData.metodo_pago_2 ?? null,
+        concepto: `${conceptoSufijo} 2/2`,
+      },
+    ]
+
+    const { data: nuevas, error } = await supabase
+      .from('transacciones')
+      .insert(filas)
+      .select('id, monto, cuenta_id, metodo_pago')
+
+    if (error) {
+      // Si la columna split_grupo_id no existe aún en la DB
+      if (/split_grupo_id/.test(error.message)) {
+        return { error: 'Falta aplicar la migración 0034_split_pago.sql en Supabase' }
+      }
+      return { error: error.message }
+    }
+
+    for (const tx of nuevas ?? []) {
+      await registrarHistorial(tx.id, 'creada', user.id, null, { ...tx, split_grupo_id: grupoId })
+      await sincronizarTxASubTabla(supabase, {
+        txId: tx.id,
+        tipo: parsed.data.tipo,
+        negocio_id: parsed.data.negocio_id,
+        monto: Number(tx.monto),
+        moneda: parsed.data.moneda,
+        fecha: parsed.data.fecha,
+        categoria: parsed.data.categoria ?? null,
+        concepto: conceptoBase,
+        user_id: user.id,
+        fx: { ...fx, monto_mxn_equivalente: parsed.data.moneda === 'USD' ? Number(tx.monto) * rate : Number(tx.monto) },
+      })
+    }
+
+    // Auditor: vigilamos el TOTAL una sola vez (no cada split) para no spamear duplicados
+    if (nuevas?.[0]?.id) {
+      await vigilarMovimiento({
+        id: nuevas[0].id,
+        tipo: parsed.data.tipo,
+        monto: parsed.data.monto,
+        moneda: parsed.data.moneda,
+        fecha: parsed.data.fecha,
+        concepto: conceptoBase,
+        categoria: parsed.data.categoria ?? null,
+        cuenta_id: parsed.data.cuenta_id ?? null,
+      })
+    }
   }
 
   revalidatePath('/transacciones')
@@ -120,7 +240,7 @@ export async function createTransaccion(
   revalidatePath(`/negocios/${parsed.data.negocio_id}/ads`)
   revalidatePath(`/negocios/${parsed.data.negocio_id}/ventas`)
   revalidatePath('/casa')
-  flashOk('/transacciones', 'tx_creada')
+  flashOk('/transacciones', splitActivo ? 'tx_split_creada' : 'tx_creada')
 }
 
 export async function updateTransaccion(
