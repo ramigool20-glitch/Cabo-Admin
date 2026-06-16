@@ -13,7 +13,7 @@ export default async function ConfigPage() {
     admin.from('cuentas').select('id, nombre').eq('activo', true).order('nombre'),
     admin.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
     admin.from('profiles').select('id, nombre').eq('activo', true).order('nombre'),
-    admin.from('integraciones_mp').select('id, nombre, activa, cobros_count, ultimo_sync').order('created_at', { ascending: false }),
+    admin.from('integraciones_mp').select('id, nombre, activa, cobros_count, ultimo_sync, saldo_disponible, saldo_pendiente, saldo_total, saldo_moneda, saldo_actualizado_at, saldo_error').order('created_at', { ascending: false }),
     admin.from('whatsapp_autorizados').select('id, numero, nombre, activo').order('created_at', { ascending: false }),
   ])
   const prodUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cabo-admin.vercel.app'

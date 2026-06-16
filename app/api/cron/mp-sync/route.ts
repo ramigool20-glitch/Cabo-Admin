@@ -5,7 +5,7 @@
 import { NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { sincronizarPagosMP } from '@/lib/integraciones/mercadopago'
+import { sincronizarPagosMP, refrescarSaldoIntegracion } from '@/lib/integraciones/mercadopago'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -25,12 +25,24 @@ export async function GET(req: Request) {
   }
 
   let totalCreadas = 0
+  let saldosOk = 0
   const errores: string[] = []
   for (const i of integraciones) {
     const r = await sincronizarPagosMP(i.id)
     totalCreadas += r.creadas
-    if (r.error) errores.push(`${i.id}: ${r.error}`)
+    if (r.error) errores.push(`sync ${i.id}: ${r.error}`)
+
+    // Refrescar saldo de cada cuenta MP. Best-effort, errores quedan en BD.
+    const s = await refrescarSaldoIntegracion(i.id)
+    if (s.ok) saldosOk++
+    else if (s.error) errores.push(`saldo ${i.id}: ${s.error}`)
   }
 
-  return NextResponse.json({ ok: true, integraciones: integraciones.length, creadas: totalCreadas, errores })
+  return NextResponse.json({
+    ok: true,
+    integraciones: integraciones.length,
+    creadas: totalCreadas,
+    saldos_ok: saldosOk,
+    errores,
+  })
 }

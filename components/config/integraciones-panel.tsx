@@ -1,7 +1,8 @@
 'use client'
 
 import { useActionState, useEffect, useState, useTransition } from 'react'
-import { Loader2, Plus, X, RefreshCw, Trash2, CreditCard, MessageCircle, Save, ExternalLink } from 'lucide-react'
+import { Loader2, Plus, X, RefreshCw, Trash2, CreditCard, MessageCircle, Save, ExternalLink, Wallet, AlertCircle } from 'lucide-react'
+import { formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import {
   agregarIntegracionMP, sincronizarMPAhora, eliminarIntegracionMP,
@@ -11,7 +12,19 @@ import {
 type Cuenta = { id: string; nombre: string }
 type Negocio = { id: string; nombre: string }
 type Socio = { id: string; nombre: string }
-type IntegMP = { id: string; nombre: string; activa: boolean; cobros_count: number; ultimo_sync: string | null }
+type IntegMP = {
+  id: string
+  nombre: string
+  activa: boolean
+  cobros_count: number
+  ultimo_sync: string | null
+  saldo_disponible: number | null
+  saldo_pendiente: number | null
+  saldo_total: number | null
+  saldo_moneda: string | null
+  saldo_actualizado_at: string | null
+  saldo_error: string | null
+}
 type NumWA = { id: string; numero: string; nombre: string | null; activo: boolean }
 
 export function IntegracionesPanel({
@@ -69,7 +82,30 @@ export function IntegracionesPanel({
 
 function IntegMPRow({ integ, prodUrl }: { integ: IntegMP; prodUrl: string }) {
   const [pending, start] = useTransition()
+  const [saldoPending, setSaldoPending] = useState(false)
   const webhookUrl = `${prodUrl}/api/webhooks/mercadopago?integ=${integ.id}`
+
+  const refrescarSaldo = async () => {
+    setSaldoPending(true)
+    try {
+      const res = await fetch('/api/integraciones/mp/refresh-saldo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ integ_id: integ.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error')
+      toast.success('Saldo actualizado')
+      // refresh página para que se vea el nuevo saldo
+      if (typeof window !== 'undefined') window.location.reload()
+    } catch (e) {
+      toast.error('No se pudo obtener saldo', e instanceof Error ? e.message : 'Error')
+    } finally {
+      setSaldoPending(false)
+    }
+  }
+
+  const moneda = (integ.saldo_moneda === 'USD' ? 'USD' : 'MXN') as 'MXN' | 'USD'
 
   return (
     <div className="card p-3 space-y-2">
@@ -91,7 +127,7 @@ function IntegMPRow({ integ, prodUrl }: { integ: IntegMP; prodUrl: string }) {
             })}
             disabled={pending}
             className="h-8 w-8 rounded-md border border-cyan-500/40 text-cyan-300 inline-flex items-center justify-center"
-            title="Sincronizar ahora"
+            title="Sincronizar cobros"
           >
             {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           </button>
@@ -108,6 +144,52 @@ function IntegMPRow({ integ, prodUrl }: { integ: IntegMP; prodUrl: string }) {
           </button>
         </div>
       </div>
+
+      {/* Saldo en tiempo real */}
+      <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-3">
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-1.5">
+            <Wallet className="h-3.5 w-3.5 text-emerald-300" />
+            <span className="text-[10px] text-emerald-200 uppercase tracking-wider font-semibold">Saldo MP</span>
+          </div>
+          <button
+            type="button"
+            onClick={refrescarSaldo}
+            disabled={saldoPending}
+            className="text-[10px] text-emerald-300 inline-flex items-center gap-1"
+          >
+            {saldoPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            Refrescar
+          </button>
+        </div>
+        {integ.saldo_disponible !== null ? (
+          <>
+            <p className="text-2xl font-black text-emerald-300 tabular-nums">
+              {formatMoney(Number(integ.saldo_disponible), moneda)}
+            </p>
+            {integ.saldo_pendiente !== null && integ.saldo_pendiente > 0 && (
+              <p className="text-[11px] text-amber-300/80 tabular-nums">
+                + {formatMoney(Number(integ.saldo_pendiente), moneda)} pendiente (2-3 días)
+              </p>
+            )}
+            {integ.saldo_actualizado_at && (
+              <p className="text-[9px] text-zinc-500 mt-0.5">
+                Actualizado {integ.saldo_actualizado_at.slice(0, 16).replace('T', ' ')}
+              </p>
+            )}
+          </>
+        ) : integ.saldo_error ? (
+          <div className="flex items-start gap-1.5">
+            <AlertCircle className="h-3.5 w-3.5 text-rose-400 mt-0.5 shrink-0" />
+            <p className="text-[11px] text-rose-300">
+              No se pudo obtener saldo. MP respondió: <span className="font-mono">{integ.saldo_error}</span>
+            </p>
+          </div>
+        ) : (
+          <p className="text-[11px] text-zinc-500">Aún sin actualizar. Toca "Refrescar".</p>
+        )}
+      </div>
+
       {/* URL del webhook a configurar en MP */}
       <div className="rounded-md bg-black/30 border border-[var(--border-subtle)] p-2">
         <p className="text-[9px] text-zinc-500 uppercase tracking-wider mb-0.5">Webhook URL (pégala en MP → Notificaciones)</p>

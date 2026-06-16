@@ -37,14 +37,26 @@ export type CuentaMovsSummary = {
   gastos_usd: number
 }
 
+/** Saldo real reportado por la API de Mercado Pago (si la cuenta está integrada). */
+export type SaldoMpReal = {
+  integ_id: string
+  disponible: number | null
+  pendiente: number | null
+  moneda: 'MXN' | 'USD'
+  actualizado_at: string | null
+  error: string | null
+}
+
 export function CuentaCard({
   cuenta,
   movs,
   fxRate,
+  saldoMpReal = null,
 }: {
   cuenta: Cuenta
   movs: CuentaMovsSummary
   fxRate: number | null
+  saldoMpReal?: SaldoMpReal | null
 }) {
   const tieneSaldoInicial = cuenta.saldo_inicial_locked
 
@@ -57,7 +69,7 @@ export function CuentaCard({
     return <CapturarInicialCard cuenta={cuenta} />
   }
 
-  return <CuentaActivaCard cuenta={cuenta} movs={movs} saldoMxn={saldoMxn} saldoUsd={saldoUsd} totalEquivMxn={totalEquivMxn} fxRate={fxRate} />
+  return <CuentaActivaCard cuenta={cuenta} movs={movs} saldoMxn={saldoMxn} saldoUsd={saldoUsd} totalEquivMxn={totalEquivMxn} fxRate={fxRate} saldoMpReal={saldoMpReal} />
 }
 
 function CapturarInicialCard({ cuenta }: { cuenta: Cuenta }) {
@@ -186,6 +198,7 @@ function CuentaActivaCard({
   saldoUsd,
   totalEquivMxn,
   fxRate,
+  saldoMpReal,
 }: {
   cuenta: Cuenta
   movs: CuentaMovsSummary
@@ -193,6 +206,7 @@ function CuentaActivaCard({
   saldoUsd: number
   totalEquivMxn: number
   fxRate: number | null
+  saldoMpReal: SaldoMpReal | null
 }) {
   const [showDetalle, setShowDetalle] = useState(false)
   const [showAjuste, setShowAjuste] = useState(false)
@@ -275,6 +289,14 @@ function CuentaActivaCard({
           </p>
         )}
       </div>
+
+      {/* Saldo real reportado por MP (si la cuenta tiene integración) */}
+      {saldoMpReal && (
+        <SaldoMpComparativo
+          saldoMpReal={saldoMpReal}
+          saldoCalculado={cuenta.moneda === 'USD' ? saldoUsd : saldoMxn}
+        />
+      )}
 
       {/* Toggle detalle */}
       <button
@@ -504,5 +526,92 @@ function AjusteForm({ cuenta, onClose }: { cuenta: Cuenta; onClose: () => void }
         Registrar ajuste
       </button>
     </form>
+  )
+}
+
+/**
+ * Bloque que compara el saldo CALCULADO por la app vs el saldo REAL que reporta
+ * la API de Mercado Pago. Si la diferencia es mayor a $50, muestra link a la
+ * pantalla de "movimientos no capturados" para conciliar.
+ */
+function SaldoMpComparativo({
+  saldoMpReal,
+  saldoCalculado,
+}: {
+  saldoMpReal: SaldoMpReal
+  saldoCalculado: number
+}) {
+  if (saldoMpReal.error) {
+    return (
+      <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-2.5 flex items-start gap-2">
+        <AlertCircle className="h-3.5 w-3.5 text-rose-400 mt-0.5 shrink-0" />
+        <div className="leading-tight">
+          <p className="text-[10px] text-rose-200 uppercase font-bold tracking-wider">Saldo MP no disponible</p>
+          <p className="text-[11px] text-rose-300/80 font-mono">{saldoMpReal.error}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (saldoMpReal.disponible === null) {
+    return (
+      <div className="rounded-lg border border-zinc-700 bg-zinc-900/40 p-2.5">
+        <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Saldo MP</p>
+        <p className="text-[11px] text-zinc-400">Aún sin sincronizar. El cron lo trae cada hora.</p>
+      </div>
+    )
+  }
+
+  const real = Number(saldoMpReal.disponible)
+  const diferencia = Number((saldoCalculado - real).toFixed(2))
+  const hayDiferencia = Math.abs(diferencia) > 50
+
+  return (
+    <div className={cn(
+      'rounded-lg border p-2.5 space-y-1',
+      hayDiferencia ? 'border-amber-500/40 bg-amber-500/5' : 'border-emerald-500/20 bg-emerald-500/5'
+    )}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] uppercase font-bold tracking-wider text-emerald-200">
+          Saldo real MP
+        </p>
+        {saldoMpReal.actualizado_at && (
+          <p className="text-[9px] text-zinc-500 tabular-nums">
+            {saldoMpReal.actualizado_at.slice(11, 16)} hrs
+          </p>
+        )}
+      </div>
+      <div className="flex items-baseline justify-between">
+        <span className="text-[10px] text-zinc-500">Disponible</span>
+        <span className="text-base font-black tabular-nums text-emerald-300">
+          {formatMoney(real, saldoMpReal.moneda)}
+        </span>
+      </div>
+      {saldoMpReal.pendiente !== null && saldoMpReal.pendiente > 0 && (
+        <div className="flex items-baseline justify-between">
+          <span className="text-[10px] text-zinc-500">Pendiente</span>
+          <span className="text-xs tabular-nums text-amber-300">
+            +{formatMoney(Number(saldoMpReal.pendiente), saldoMpReal.moneda)}
+          </span>
+        </div>
+      )}
+      {hayDiferencia && (
+        <a
+          href={`/cashflow/diferencias/${saldoMpReal.integ_id}`}
+          className="flex items-center justify-between gap-2 pt-1.5 mt-1 border-t border-amber-500/30 text-[11px] text-amber-200 font-medium"
+        >
+          <span className="inline-flex items-center gap-1">
+            <AlertCircle className="h-3 w-3" />
+            App: {formatMoney(saldoCalculado, saldoMpReal.moneda)} · diferencia {formatMoney(Math.abs(diferencia), saldoMpReal.moneda)}
+          </span>
+          <span className="text-amber-300">Ver →</span>
+        </a>
+      )}
+      {!hayDiferencia && (
+        <p className="text-[10px] text-emerald-300/80 pt-0.5">
+          ✓ Cuadra con el saldo calculado (diferencia ≤ $50)
+        </p>
+      )}
+    </div>
   )
 }

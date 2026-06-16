@@ -16,6 +16,8 @@ export type Transaccion = {
   fecha: string
   concepto: string | null
   categoria: string | null
+  negocio_id?: string | null
+  metodo_captura?: string | null
   negocios: { nombre: string; tipo?: string | null } | null
   cuentas: { nombre: string } | null
   monto_mxn_equivalente?: number | null
@@ -133,8 +135,17 @@ export function TransactionList({
                       <p className="text-xs text-zinc-500 truncate">
                         {t.negocios?.nombre ?? '—'} · {t.cuentas?.nombre ?? '—'}
                       </p>
-                      {((iaActivo && flagged.has(t.id)) || t.negocios?.tipo === 'casa' || t.split_grupo_id) && (
+                      {(() => {
+                        const faltaCategoria = t.metodo_captura === 'api' && (!t.negocio_id || !t.categoria)
+                        const tieneChips = (iaActivo && flagged.has(t.id)) || t.negocios?.tipo === 'casa' || t.split_grupo_id || faltaCategoria
+                        if (!tieneChips) return null
+                        return (
                         <div className="flex items-center gap-2 mt-1">
+                          {faltaCategoria && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-300 text-[9px] font-medium tracking-tight">
+                              <AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.5} /> Falta categoría
+                            </span>
+                          )}
                           {iaActivo && flagged.has(t.id) && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-300 text-[9px] font-medium tracking-tight"><AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.5} /> Revisar</span>
                           )}
@@ -149,7 +160,8 @@ export function TransactionList({
                             </span>
                           )}
                         </div>
-                      )}
+                        )
+                      })()}
                     </div>
                     <div className="text-right shrink-0">
                       <p className={cn('text-sm font-semibold tabular-nums', meta.color)}>

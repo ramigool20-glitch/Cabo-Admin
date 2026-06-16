@@ -30,8 +30,8 @@ export default async function TransaccionesPage(
   // Defensive: si migración 0012 no aplicada, retry sin atribuido_a
   function buildQuery(includeAtribuido: boolean) {
     const cols = includeAtribuido
-      ? 'id, tipo, monto, moneda, fecha, concepto, categoria, negocio_id, cuenta_id, monto_mxn_equivalente, tipo_cambio_usado, atribuido_a, split_grupo_id, foto_url, negocios(nombre, tipo), cuentas(nombre)'
-      : 'id, tipo, monto, moneda, fecha, concepto, categoria, negocio_id, cuenta_id, monto_mxn_equivalente, tipo_cambio_usado, split_grupo_id, foto_url, negocios(nombre, tipo), cuentas(nombre)'
+      ? 'id, tipo, monto, moneda, fecha, concepto, categoria, negocio_id, cuenta_id, monto_mxn_equivalente, tipo_cambio_usado, atribuido_a, split_grupo_id, foto_url, metodo_captura, negocios(nombre, tipo), cuentas(nombre)'
+      : 'id, tipo, monto, moneda, fecha, concepto, categoria, negocio_id, cuenta_id, monto_mxn_equivalente, tipo_cambio_usado, split_grupo_id, foto_url, metodo_captura, negocios(nombre, tipo), cuentas(nombre)'
     let q = supabase
       .from('transacciones')
       .select(cols)

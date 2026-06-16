@@ -47,6 +47,29 @@ export default async function CashFlowPage() {
     admin.from('eventos').select('monto_total, moneda, fecha_evento, estado, comision_porcentaje, eventos_pagos(monto)').in('estado', ['reservado', 'confirmado']),
   ])
 
+  // Saldos en tiempo real de cuentas MP integradas (best-effort)
+  let saldosMpPorCuenta: Map<string, { integ_id: string; disponible: number | null; pendiente: number | null; moneda: 'MXN' | 'USD'; actualizado_at: string | null; error: string | null }> = new Map()
+  try {
+    const { data: integsMp } = await admin
+      .from('integraciones_mp')
+      .select('id, cuenta_id, saldo_disponible, saldo_pendiente, saldo_moneda, saldo_actualizado_at, saldo_error')
+      .eq('activa', true)
+    for (const i of integsMp ?? []) {
+      if (!i.cuenta_id) continue
+      saldosMpPorCuenta.set(i.cuenta_id as string, {
+        integ_id: i.id as string,
+        disponible: i.saldo_disponible === null ? null : Number(i.saldo_disponible),
+        pendiente: i.saldo_pendiente === null ? null : Number(i.saldo_pendiente),
+        moneda: (i.saldo_moneda === 'USD' ? 'USD' : 'MXN') as 'MXN' | 'USD',
+        actualizado_at: i.saldo_actualizado_at as string | null,
+        error: i.saldo_error as string | null,
+      })
+    }
+  } catch {
+    // Si la tabla aún no tiene las columnas de saldo, no rompemos el render
+    saldosMpPorCuenta = new Map()
+  }
+
   const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
   const cuentasArr = (cuentas ?? []) as unknown as CuentaConSaldoInicial[]
   const txArr = (txAll ?? []) as unknown as TxParaSaldo[]
@@ -324,6 +347,7 @@ export default async function CashFlowPage() {
           <div className="space-y-2">
             {capturadas.map((c) => {
               const cuenta = cuentasArr.find((x) => x.id === c.cuenta_id)!
+              const saldoMpReal = saldosMpPorCuenta.get(c.cuenta_id) ?? null
               return (
                 <CuentaCard
                   key={c.cuenta_id}
@@ -335,6 +359,7 @@ export default async function CashFlowPage() {
                   }}
                   movs={{ ingresos_mxn: c.ingresos_mxn, ingresos_usd: c.ingresos_usd, gastos_mxn: c.gastos_mxn, gastos_usd: c.gastos_usd }}
                   fxRate={fxRate}
+                  saldoMpReal={saldoMpReal}
                 />
               )
             })}

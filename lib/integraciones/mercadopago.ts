@@ -5,6 +5,11 @@
  */
 import { createAdminClient } from '@/lib/supabase/admin'
 import { aMxnEquivalente } from '@/lib/fx/server'
+import { sugerirCategorizacion } from '@/lib/ai/sugerir-categorizacion'
+import {
+  crearPendienteCategorizacion,
+  enviarPushCategorizacion,
+} from '@/lib/integraciones/pregunta-categorizacion'
 
 type MPPayment = {
   id: number
@@ -98,6 +103,26 @@ export async function procesarPagoMP(
   const concepto = pago.description
     || `Cobro MP Point${pago.payment_method_id ? ` (${pago.payment_method_id})` : ''}`
 
+  // Categorización híbrida: consulta histórico+IA para sugerir negocio/categoría
+  // según el concepto del cobro. 3 niveles de confianza:
+  //   alta   → aplica la sugerencia, push silencioso
+  //   media  → aplica la sugerencia pero pide verificar, push normal
+  //   baja   → deja en blanco, push con botones para responder en 1 tap
+  const sug = await sugerirCategorizacion(admin, {
+    concepto,
+    tipo: 'ingreso',
+    monto: pago.transaction_amount,
+  })
+
+  const confianza = sug?.confianza ?? 'baja'
+
+  const negocio_id =
+    confianza === 'baja'
+      ? null
+      : sug?.negocio_id ?? integ.negocio_default_id
+  const categoria =
+    confianza === 'baja' ? null : sug?.categoria ?? null
+
   // Crear la transacción de ingreso
   const { data: tx, error: txErr } = await admin
     .from('transacciones')
@@ -108,9 +133,9 @@ export async function procesarPagoMP(
       monto_mxn_equivalente: fx.monto_mxn_equivalente,
       tipo_cambio_usado: fx.tipo_cambio_usado,
       fecha,
-      negocio_id: integ.negocio_default_id,
+      negocio_id,
       cuenta_id: integ.cuenta_id,
-      categoria: 'ventas',
+      categoria,
       concepto,
       metodo_pago: 'mp_terminal',
       metodo_captura: 'api',
@@ -137,7 +162,170 @@ export async function procesarPagoMP(
     .update({ ultimo_sync: new Date().toISOString(), cobros_count: (integ.cobros_count ?? 0) + 1 })
     .eq('id', integracionId)
 
+  // Sistema híbrido: pregunta / push según confianza. Best-effort, no rompe el flujo.
+  if (tx?.id) {
+    const txResumen = {
+      id: tx.id,
+      monto: pago.transaction_amount,
+      moneda,
+      concepto,
+      fecha,
+    }
+    const integResumen = {
+      id: integracionId,
+      nombre: integ.nombre,
+      cuenta_id: integ.cuenta_id,
+      negocio_default_id: integ.negocio_default_id,
+    }
+    try {
+      if (confianza === 'baja') {
+        // Sin histórico — pregunta abierta, push con CTA
+        await crearPendienteCategorizacion(admin, txResumen, sug, integResumen)
+        await enviarPushCategorizacion(admin, txResumen, sug, integResumen, 'alta')
+      } else if (confianza === 'media') {
+        // Aplicó sugerencia pero conviene verificar
+        await crearPendienteCategorizacion(admin, txResumen, sug, integResumen)
+        await enviarPushCategorizacion(admin, txResumen, sug, integResumen, 'media')
+      } else {
+        // Confianza alta — push silencioso de "ya quedó"
+        await enviarPushCategorizacion(admin, txResumen, sug, integResumen, 'baja')
+      }
+    } catch (e) {
+      console.error('procesarPagoMP: push/pendiente falló', e)
+    }
+  }
+
   return { ok: true, creada: true }
+}
+
+/**
+ * Obtiene el saldo de la cuenta MP con el access token. Devuelve
+ * { disponible, pendiente, total, moneda } en la moneda principal de la cuenta.
+ *
+ * MP no expone uniformemente este endpoint. Probamos en orden:
+ *   1) GET /v1/account/balance               (formato actual recomendado)
+ *   2) GET /users/{mp_user_id}/mercadopago_account/balance (legacy)
+ *   3) GET /users/me (algunos campos legacy: `mercadopago_balance`)
+ *
+ * Si todos fallan, devuelve { error } y dejamos el último error en la BD para
+ * verlo en UI.
+ */
+export async function obtenerSaldoMP(
+  accessToken: string,
+  mpUserId?: string | null,
+): Promise<{
+  ok: boolean
+  disponible?: number
+  pendiente?: number
+  total?: number
+  moneda?: string
+  error?: string
+}> {
+  const intentos: { url: string; pick: (j: Record<string, unknown>) => { disponible?: number; pendiente?: number; moneda?: string } | null }[] = [
+    {
+      url: 'https://api.mercadopago.com/v1/account/balance',
+      pick: (j) => {
+        // Formato común: { available_balance, unavailable_balance, total_amount, currency_id }
+        if (typeof j.available_balance === 'number') {
+          return {
+            disponible: j.available_balance as number,
+            pendiente: (j.unavailable_balance as number | undefined) ?? 0,
+            moneda: (j.currency_id as string | undefined) ?? 'MXN',
+          }
+        }
+        return null
+      },
+    },
+    {
+      url: mpUserId
+        ? `https://api.mercadopago.com/users/${mpUserId}/mercadopago_account/balance`
+        : '',
+      pick: (j) => {
+        // Formato legacy: { available_balance, unavailable_balance, total_amount }
+        if (typeof j.available_balance === 'number') {
+          return {
+            disponible: j.available_balance as number,
+            pendiente: (j.unavailable_balance as number | undefined) ?? 0,
+            moneda: (j.currency_id as string | undefined) ?? 'MXN',
+          }
+        }
+        return null
+      },
+    },
+  ]
+
+  let ultimoError = ''
+  for (const intento of intentos) {
+    if (!intento.url) continue
+    try {
+      const res = await fetch(intento.url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (!res.ok) {
+        ultimoError = `${intento.url.split('?')[0]} → ${res.status}`
+        continue
+      }
+      const data = await res.json() as Record<string, unknown>
+      const picked = intento.pick(data)
+      if (picked && typeof picked.disponible === 'number') {
+        const disp = picked.disponible
+        const pend = picked.pendiente ?? 0
+        return {
+          ok: true,
+          disponible: disp,
+          pendiente: pend,
+          total: Number((disp + pend).toFixed(2)),
+          moneda: picked.moneda ?? 'MXN',
+        }
+      }
+      ultimoError = `${intento.url.split('?')[0]} → respuesta sin balance`
+    } catch (e) {
+      ultimoError = e instanceof Error ? e.message : 'fetch error'
+    }
+  }
+
+  return { ok: false, error: ultimoError || 'No se pudo obtener saldo' }
+}
+
+/**
+ * Refresca el saldo guardado en BD para una integración. Si MP no respondió,
+ * registra el error en saldo_error para diagnóstico.
+ */
+export async function refrescarSaldoIntegracion(integracionId: string): Promise<{ ok: boolean; error?: string }> {
+  const admin = createAdminClient()
+  const { data: integ } = await admin
+    .from('integraciones_mp')
+    .select('id, access_token, mp_user_id, activa')
+    .eq('id', integracionId)
+    .single()
+  if (!integ || !integ.activa) return { ok: false, error: 'Integración no activa' }
+
+  const r = await obtenerSaldoMP(integ.access_token, integ.mp_user_id)
+
+  if (!r.ok) {
+    await admin
+      .from('integraciones_mp')
+      .update({
+        saldo_error: r.error ?? 'desconocido',
+        saldo_actualizado_at: new Date().toISOString(),
+      })
+      .eq('id', integracionId)
+    return { ok: false, error: r.error }
+  }
+
+  await admin
+    .from('integraciones_mp')
+    .update({
+      saldo_disponible: r.disponible,
+      saldo_pendiente: r.pendiente,
+      saldo_total: r.total,
+      saldo_moneda: r.moneda,
+      saldo_actualizado_at: new Date().toISOString(),
+      saldo_error: null,
+    })
+    .eq('id', integracionId)
+
+  return { ok: true }
 }
 
 /**

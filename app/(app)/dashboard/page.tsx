@@ -18,6 +18,7 @@ import { FxMiniWidget } from '@/components/dashboard/fx-mini-widget'
 import { CashflowForecastCard } from '@/components/dashboard/cashflow-forecast-card'
 import { proyectarCashFlow } from '@/lib/cashflow/forecast'
 import { ResumenSemanalCard, type ResumenSemanalRow } from '@/components/dashboard/resumen-semanal-card'
+import { CobrosPendientesCard } from '@/components/dashboard/cobros-pendientes-card'
 
 type SearchParams = { rango?: string; desde?: string; hasta?: string }
 
@@ -146,6 +147,23 @@ export default async function DashboardPage(
       .gte('fecha', previoDesde)
       .lte('fecha', previoHasta),
   ])
+
+  // Cobros MP entrados automático sin categorizar (negocio o categoría faltantes)
+  const { data: cobrosPendRows } = await admin
+    .from('transacciones')
+    .select('id, monto, moneda, concepto, fecha, cuentas(nombre)')
+    .eq('metodo_captura', 'api')
+    .or('negocio_id.is.null,categoria.is.null')
+    .order('fecha', { ascending: false })
+    .limit(20)
+  const cobrosPendientes = (cobrosPendRows ?? []).map((r) => ({
+    id: r.id as string,
+    monto: Number(r.monto),
+    moneda: r.moneda as 'MXN' | 'USD',
+    concepto: r.concepto as string | null,
+    fecha: r.fecha as string,
+    cuenta_nombre: (r.cuentas as unknown as { nombre: string } | null)?.nombre ?? null,
+  }))
 
   // === Próximos pagos a Patricia (enfermera) — sábados y quincenas ===
   type PagoPatricia = { etiqueta: string; fecha: string; monto: number; emoji: string; nota?: string }
@@ -527,6 +545,9 @@ export default async function DashboardPage(
           </div>
           <ChevronRight className="h-4 w-4 text-zinc-400" />
         </Link>
+
+        {/* Cobros MP sin categorizar — al inicio para que destaque */}
+        <CobrosPendientesCard pendientes={cobrosPendientes} />
 
         {/* FX widget */}
         <FxMiniWidget rateHoy={fxRateHoy} historial={fxHistorial ?? []} />
