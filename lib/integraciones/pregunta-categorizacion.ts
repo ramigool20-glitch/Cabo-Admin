@@ -53,9 +53,12 @@ export async function crearPendienteCategorizacion(
   integ: IntegMP,
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
   try {
-    const pregunta = sug?.confianza === 'media'
-      ? `¿El cobro de ${formatMoney(tx.monto, tx.moneda)} en ${integ.nombre} es de "${sug.negocio_nombre ?? '—'}"?`
-      : `¿De qué fue el cobro de ${formatMoney(tx.monto, tx.moneda)} en ${integ.nombre}?`
+    // Si hay sugerencia con negocio, preguntamos para confirmar; si no, pedimos
+    // que se asigne desde cero.
+    const monto = formatMoney(tx.monto, tx.moneda)
+    const pregunta = sug?.negocio_nombre
+      ? `Cobro de ${monto} en ${integ.nombre} — ¿es de "${sug.negocio_nombre}"?`
+      : `¿De qué fue el cobro de ${monto} en ${integ.nombre}?`
 
     const contexto = JSON.stringify({
       tipo: 'mp_categorizar',
@@ -73,10 +76,13 @@ export async function crearPendienteCategorizacion(
         : null,
     })
 
+    // Prioridad: baja confianza = alta prioridad (verdaderamente sin categorizar).
+    // Media/alta confianza = media prioridad (ya hay sugerencia, solo confirmar).
+    const prioridad = !sug || sug.confianza === 'baja' ? 'alta' : 'media'
     const { data, error } = await admin.from('auditor_pendientes').insert({
       pregunta,
       contexto,
-      prioridad: sug?.confianza === 'media' ? 'media' : 'alta',
+      prioridad,
       estado: 'abierta',
     }).select('id').single()
 

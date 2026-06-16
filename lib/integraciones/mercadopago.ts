@@ -222,16 +222,15 @@ export async function procesarPagoMP(
       negocio_default_id: integ.negocio_default_id,
     }
 
-    let urgencia: 'alta' | 'media' | 'baja' = 'baja'
-    let crearPend = false
-    if (confianza === 'baja') { urgencia = 'alta'; crearPend = true }
-    else if (confianza === 'media') { urgencia = 'media'; crearPend = true }
-    else { urgencia = 'baja'; crearPend = false }
+    // Política: SIEMPRE creamos pendiente para cobros MP, incluso si la IA tuvo
+    // confianza alta. Razón: la IA puede confundirse con histórico genérico
+    // (ej. "venta presencial" → match con "ventas" de Cabo Pharmacy online),
+    // y queremos que el usuario verifique al menos hasta tener histórico real
+    // de captura=api. La urgencia del push se ajusta según la confianza.
+    const urgencia: 'alta' | 'media' | 'baja' =
+      confianza === 'baja' ? 'alta' : confianza === 'media' ? 'media' : 'baja'
 
-    let pendRes: { ok: boolean; error?: string; id?: string } | null = null
-    if (crearPend) {
-      pendRes = await crearPendienteCategorizacion(admin, txResumen, sug, integResumen)
-    }
+    const pendRes = await crearPendienteCategorizacion(admin, txResumen, sug, integResumen)
     const pushRes = await enviarPushCategorizacion(admin, txResumen, sug, integResumen, urgencia)
 
     // Loggea resultado de push/pendiente (no usa el helper logWebhook para evitar
