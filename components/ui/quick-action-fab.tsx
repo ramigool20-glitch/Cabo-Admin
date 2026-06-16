@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Plus, X, MessageCircle, Receipt, CreditCard, Calendar, CheckSquare, PartyPopper, AlertCircle,
+  Plus, X, MessageCircle, Receipt, CreditCard, Calendar, CheckSquare, PartyPopper, AlertCircle, ShoppingBag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const ACCIONES = [
   { href: '/chat',              label: 'Captura IA',     icon: MessageCircle, color: 'from-cyan-500 to-blue-500' },
+  { href: '/transacciones/venta', label: 'Vender productos', icon: ShoppingBag, color: 'from-emerald-500 to-cyan-500' },
   { href: '/transacciones/nueva', label: 'Transacción',  icon: Receipt,        color: 'from-emerald-500 to-teal-500' },
   { href: '/cobros',            label: 'Cobro Stripe',   icon: CreditCard,     color: 'from-purple-500 to-pink-500' },
   { href: '/tareas/nueva',      label: 'Tarea',          icon: CheckSquare,    color: 'from-amber-500 to-orange-500' },

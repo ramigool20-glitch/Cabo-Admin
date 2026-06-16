@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { TZ } from '@/lib/fechas'
 import { formatInTimeZone } from 'date-fns-tz'
 import { TransactionForm } from '@/components/transacciones/transaction-form'
+import { VentaItemsResumen, type VentaItemRow } from '@/components/transacciones/venta-items-resumen'
 
 export default async function EditarTransaccionPage(
   props: { params: Promise<{ id: string }> }
@@ -18,11 +19,17 @@ export default async function EditarTransaccionPage(
   // Defensive: si atribuido_a no existe, reintenta sin
   const baseCols = 'id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado, foto_url'
   let tRes = await supabase.from('transacciones')
-    .select(`${baseCols}, atribuido_a`)
+    .select(`${baseCols}, atribuido_a, ganancia_estimada_mxn, costo_total_mxn, tiene_items`)
     .eq('id', id)
     .maybeSingle()
-  if (tRes.error && /atribuido_a/.test(tRes.error.message ?? '')) {
-    tRes = await supabase.from('transacciones').select(baseCols).eq('id', id).maybeSingle()
+  if (tRes.error && /(atribuido_a|tiene_items|ganancia_estimada_mxn|costo_total_mxn)/.test(tRes.error.message ?? '')) {
+    // Sin columnas extra de 0043
+    tRes = await supabase.from('transacciones')
+      .select(`${baseCols}, atribuido_a`)
+      .eq('id', id).maybeSingle()
+    if (tRes.error && /atribuido_a/.test(tRes.error.message ?? '')) {
+      tRes = await supabase.from('transacciones').select(baseCols).eq('id', id).maybeSingle()
+    }
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const t: any = tRes.data
@@ -56,6 +63,31 @@ export default async function EditarTransaccionPage(
   if (t.foto_url) {
     const { data: signed } = await admin.storage.from('recibos').createSignedUrl(t.foto_url, 60 * 60 * 8)
     fotoExistenteUrl = signed?.signedUrl ?? null
+  }
+
+  // Venta items (defensive: tabla puede no existir si 0043 no aplicada)
+  let ventaItems: VentaItemRow[] = []
+  try {
+    const { data } = await admin
+      .from('venta_items')
+      .select('id, nombre_snapshot, codigo_barras_snapshot, categoria_snapshot, cantidad, precio_unitario_mxn, costo_unitario_snapshot_mxn, descuento_pct, descuento_mxn, subtotal_mxn, ganancia_mxn')
+      .eq('transaccion_id', id)
+      .order('created_at')
+    ventaItems = ((data ?? []) as unknown as Array<Record<string, unknown>>).map(r => ({
+      id: r.id as string,
+      nombre_snapshot: r.nombre_snapshot as string,
+      codigo_barras_snapshot: (r.codigo_barras_snapshot as string | null) ?? null,
+      categoria_snapshot: (r.categoria_snapshot as string | null) ?? null,
+      cantidad: Number(r.cantidad ?? 0),
+      precio_unitario_mxn: Number(r.precio_unitario_mxn ?? 0),
+      costo_unitario_snapshot_mxn: r.costo_unitario_snapshot_mxn != null ? Number(r.costo_unitario_snapshot_mxn) : null,
+      descuento_pct: Number(r.descuento_pct ?? 0),
+      descuento_mxn: Number(r.descuento_mxn ?? 0),
+      subtotal_mxn: Number(r.subtotal_mxn ?? 0),
+      ganancia_mxn: r.ganancia_mxn != null ? Number(r.ganancia_mxn) : null,
+    }))
+  } catch {
+    ventaItems = []
   }
 
   // Historial (defensive: tabla puede no existir)
@@ -99,6 +131,15 @@ export default async function EditarTransaccionPage(
         <h1 className="text-2xl font-black heading-gradient">Editar transacción</h1>
         <p className="text-xs text-zinc-500">Cambia cualquier campo. Los cambios quedan registrados en el historial.</p>
       </header>
+
+      {/* Resumen de items vendidos (solo si la tx tiene productos) */}
+      {ventaItems.length > 0 && (
+        <VentaItemsResumen
+          items={ventaItems}
+          gananciaTotal={t.ganancia_estimada_mxn != null ? Number(t.ganancia_estimada_mxn) : null}
+          costoTotal={t.costo_total_mxn != null ? Number(t.costo_total_mxn) : null}
+        />
+      )}
 
       {editable ? (
         <TransactionForm

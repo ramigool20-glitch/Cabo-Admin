@@ -191,21 +191,24 @@ export default async function InventarioPage(
           <div className="grid grid-cols-3 gap-2">
             <KpiCard
               label="Costo total"
-              value={formatMoney(costoTotalInventario, 'MXN')}
+              value={fmtCompacto(costoTotalInventario)}
               sub={`${productosConCosto.length} c/costo`}
               tone="cyan"
+              compact
             />
             <KpiCard
-              label="Ganancia esperada"
-              value={formatMoney(gananciaEsperadaMxn, 'MXN')}
+              label="Ganancia"
+              value={fmtCompacto(gananciaEsperadaMxn)}
               sub="Si vendes todo"
               tone="emerald"
+              compact
             />
             <KpiCard
-              label="Margen promedio"
-              value={`${margenPromedio.toFixed(1)}%`}
-              sub="Ponderado por valor"
+              label="Margen"
+              value={`${margenPromedio.toFixed(0)}%`}
+              sub="Promedio"
               tone="emerald"
+              compact
             />
           </div>
         )}
@@ -240,13 +243,21 @@ export default async function InventarioPage(
   )
 }
 
+/** Formato compacto sin decimales para KPIs con poco espacio.
+ *  $199,406.41 → "$199,406"   $1,234,567 → "$1.2M" */
+function fmtCompacto(n: number): string {
+  if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  return '$' + Math.round(n).toLocaleString('es-MX')
+}
+
 function KpiCard({
-  label, value, sub, tone, icon, href,
+  label, value, sub, tone, icon, href, compact = false,
 }: {
   label: string; value: string; sub?: string
   tone: 'emerald' | 'cyan' | 'amber' | 'rose'
   icon?: React.ReactNode
   href?: string
+  compact?: boolean
 }) {
   const tones = {
     emerald: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-200',
@@ -260,18 +271,22 @@ function KpiCard({
     amber:   'text-amber-300',
     rose:    'text-rose-300',
   }
-  const className = `rounded-xl border p-3 backdrop-blur-sm ${tones[tone]} ${href ? 'active:scale-[0.97] hover:brightness-110 transition-all' : ''}`
+  const className = `rounded-xl border p-3 backdrop-blur-sm overflow-hidden min-w-0 ${tones[tone]} ${href ? 'active:scale-[0.97] hover:brightness-110 transition-all' : ''}`
+  // compact = más chico (cuando hay 3 en una fila apretada). Sin compact = grande (2-col estándar).
+  const valueSize = compact
+    ? 'text-base sm:text-lg'   // ~16-18px, cabe "$199,406" sin cortar
+    : 'text-xl'                // ~20px, fila de 2/4 cards
   const content = (
-    <>
-      <p className="text-[10px] uppercase tracking-wider font-bold inline-flex items-center gap-1">
+    <div className="flex flex-col min-w-0">
+      <p className="text-[10px] uppercase tracking-wider font-bold inline-flex items-center gap-1 truncate">
         {icon}
-        {label}
+        <span className="truncate">{label}</span>
       </p>
-      <p className={`text-xl font-black tabular-nums leading-tight ${valueTones[tone]}`}>
+      <p className={`${valueSize} font-black tabular-nums leading-tight truncate ${valueTones[tone]}`}>
         {value}
       </p>
-      {sub && <p className="text-[9px] text-zinc-500">{sub}</p>}
-    </>
+      {sub && <p className="text-[9px] text-zinc-500 truncate">{sub}</p>}
+    </div>
   )
   if (href) return <Link href={href} className={`block ${className}`}>{content}</Link>
   return <div className={className}>{content}</div>
