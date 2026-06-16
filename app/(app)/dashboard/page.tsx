@@ -20,6 +20,7 @@ import { proyectarCashFlow } from '@/lib/cashflow/forecast'
 import { ResumenSemanalCard, type ResumenSemanalRow } from '@/components/dashboard/resumen-semanal-card'
 import { CobrosPendientesCard } from '@/components/dashboard/cobros-pendientes-card'
 import { InventarioCard, type InventarioResumen } from '@/components/dashboard/inventario-card'
+import { GananciaCard, GananciaEmpty, type GananciaResumen } from '@/components/dashboard/ganancia-card'
 
 type SearchParams = { rango?: string; desde?: string; hasta?: string }
 
@@ -222,6 +223,104 @@ export default async function DashboardPage(
     }
   } catch {
     // tabla aún no existe
+  }
+
+  // === Sprint 8: ganancia REAL del periodo (transacciones con venta_items) ===
+  let gananciaResumen: GananciaResumen | null = null
+  let ventasCountTotal = 0   // si es 0 mostramos empty state
+  try {
+    // 1. Total ventas del periodo actual
+    const { data: ventasActual } = await admin
+      .from('transacciones')
+      .select('id, monto, ganancia_estimada_mxn, costo_total_mxn')
+      .eq('tiene_items', true)
+      .eq('tipo', 'ingreso')
+      .gte('fecha', r.desde)
+      .lte('fecha', r.hasta)
+    const va = (ventasActual ?? []) as Array<{ id: string; monto: number; ganancia_estimada_mxn: number | null; costo_total_mxn: number | null }>
+    ventasCountTotal = va.length
+
+    if (va.length > 0) {
+      const ingresos = va.reduce((s, t) => s + Number(t.monto ?? 0), 0)
+      const ganancia = va.reduce((s, t) => s + Number(t.ganancia_estimada_mxn ?? 0), 0)
+      const costo = va.reduce((s, t) => s + Number(t.costo_total_mxn ?? 0), 0)
+      const margen = ingresos > 0 ? (ganancia / ingresos) * 100 : 0
+
+      // 2. Periodo anterior — mismo ancho del rango actual desplazado
+      const dDesde = new Date(r.desde + 'T00:00:00')
+      const dHasta = new Date(r.hasta + 'T23:59:59')
+      const diasRango = Math.max(1, Math.round((dHasta.getTime() - dDesde.getTime()) / 86_400_000))
+      const desdeAnterior = new Date(dDesde.getTime() - (diasRango * 86_400_000)).toISOString().slice(0, 10)
+      const hastaAnterior = new Date(dDesde.getTime() - 86_400_000).toISOString().slice(0, 10)
+
+      const { data: ventasAnterior } = await admin
+        .from('transacciones')
+        .select('monto, ganancia_estimada_mxn')
+        .eq('tiene_items', true)
+        .eq('tipo', 'ingreso')
+        .gte('fecha', desdeAnterior)
+        .lte('fecha', hastaAnterior)
+      const vaAnt = (ventasAnterior ?? []) as Array<{ monto: number; ganancia_estimada_mxn: number | null }>
+      const gananciaAnt = vaAnt.reduce((s, t) => s + Number(t.ganancia_estimada_mxn ?? 0), 0)
+      const ingresosAnt = vaAnt.reduce((s, t) => s + Number(t.monto ?? 0), 0)
+      const margenAnt = ingresosAnt > 0 ? (gananciaAnt / ingresosAnt) * 100 : 0
+
+      // 3. Top 3 productos por ganancia (suma de venta_items en el periodo)
+      const txIds = va.map(t => t.id)
+      let topProductos: Array<{ nombre: string; ganancia_mxn: number; unidades: number }> = []
+      if (txIds.length > 0) {
+        const { data: items } = await admin
+          .from('venta_items')
+          .select('nombre_snapshot, ganancia_mxn, cantidad')
+          .in('transaccion_id', txIds)
+        const agg = new Map<string, { ganancia: number; unidades: number }>()
+        for (const it of (items ?? []) as Array<{ nombre_snapshot: string; ganancia_mxn: number | null; cantidad: number }>) {
+          const key = it.nombre_snapshot
+          const prev = agg.get(key) ?? { ganancia: 0, unidades: 0 }
+          agg.set(key, {
+            ganancia: prev.ganancia + Number(it.ganancia_mxn ?? 0),
+            unidades: prev.unidades + Number(it.cantidad ?? 0),
+          })
+        }
+        topProductos = Array.from(agg.entries())
+          .map(([nombre, v]) => ({ nombre, ganancia_mxn: v.ganancia, unidades: v.unidades }))
+          .filter(p => p.ganancia_mxn > 0)
+          .sort((a, b) => b.ganancia_mxn - a.ganancia_mxn)
+          .slice(0, 3)
+      }
+
+      const totalUnidades = topProductos.reduce((s, p) => s + p.unidades, 0)
+      // Si top no cubre todo, hacemos query rápida para total real de unidades
+      let unidadesReal = totalUnidades
+      if (topProductos.length === 3) {
+        const { data: allItems } = await admin
+          .from('venta_items')
+          .select('cantidad')
+          .in('transaccion_id', txIds)
+        unidadesReal = (allItems ?? []).reduce((s, i) => s + Number(i.cantidad ?? 0), 0)
+      }
+
+      const labelPeriodo = rangoId === 'mes_actual' ? 'Este mes'
+        : rangoId === 'ultimos_30' ? 'Últimos 30 días'
+        : rangoId === 'ultimos_7' ? 'Últimos 7 días'
+        : 'Periodo'
+
+      gananciaResumen = {
+        ingresos_mxn: ingresos,
+        costo_mxn: costo,
+        ganancia_mxn: ganancia,
+        margen_pct: margen,
+        ventas_count: va.length,
+        unidades_vendidas: unidadesReal,
+        ganancia_anterior_mxn: vaAnt.length > 0 ? gananciaAnt : null,
+        margen_anterior_pct: vaAnt.length > 0 ? margenAnt : null,
+        top_productos: topProductos,
+        periodo_label: labelPeriodo,
+      }
+    }
+  } catch {
+    // tabla venta_items aún no existe (migración 0043 sin aplicar)
+    gananciaResumen = null
   }
 
   // === Próximos pagos a Patricia (enfermera) — sábados y quincenas ===
@@ -610,6 +709,14 @@ export default async function DashboardPage(
 
         {/* Resumen del inventario de farmacia */}
         {inventarioResumen && <InventarioCard resumen={inventarioResumen} />}
+
+        {/* Ganancia REAL del periodo (Sprint 8) — solo si hay ventas con items */}
+        {gananciaResumen ? (
+          <GananciaCard resumen={gananciaResumen} />
+        ) : (
+          // Empty state SOLO si hay inventario configurado (sino confunde)
+          inventarioResumen && inventarioResumen.total > 0 && <GananciaEmpty />
+        )}
 
         {/* FX widget */}
         <FxMiniWidget rateHoy={fxRateHoy} historial={fxHistorial ?? []} />
