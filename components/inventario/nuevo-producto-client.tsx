@@ -11,6 +11,7 @@ const EMOJI_CAT: Record<string, string> = {
   GENERICO: '💊', PATENTE: '🏥', OTC: '🩹',
   'Cuidado Personal': '🧴', Bebidas: '🥤',
   'Departamento de bebe': '👶', Antiácido: '🌿',
+  Choco: '🍫',
 }
 
 export function NuevoProductoClient({ categorias }: { categorias: string[] }) {

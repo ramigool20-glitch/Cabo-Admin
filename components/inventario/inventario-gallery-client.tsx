@@ -31,6 +31,7 @@ const EMOJI_CAT: Record<string, string> = {
   Bebidas: '🥤',
   'Departamento de bebe': '👶',
   Antiácido: '🌿',
+  Choco: '🍫',
 }
 
 export function InventarioGalleryClient({
