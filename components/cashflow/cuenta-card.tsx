@@ -542,6 +542,19 @@ function SaldoMpComparativo({
   saldoCalculado: number
 }) {
   if (saldoMpReal.error) {
+    // 403 / 404 son errores conocidos del endpoint MP que aún no expone saldo
+    // públicamente. Lo mostramos suave como nota informativa, no como error rojo.
+    const es403o404 = /\b(403|404)\b/.test(saldoMpReal.error)
+    if (es403o404) {
+      return (
+        <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/30 p-2 flex items-center gap-1.5">
+          <span className="text-[14px]">🔗</span>
+          <p className="text-[10px] text-zinc-400 leading-tight">
+            Saldo MP en vivo pendiente — endpoint no expuesto aún por MP. El saldo calculado abajo está al día por polling.
+          </p>
+        </div>
+      )
+    }
     return (
       <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-2.5 flex items-start gap-2">
         <AlertCircle className="h-3.5 w-3.5 text-rose-400 mt-0.5 shrink-0" />
