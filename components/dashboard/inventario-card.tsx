@@ -13,6 +13,10 @@ export type InventarioResumen = {
   valor_usd: number
   bajo_stock: number
   agotados: number
+  // Solo presentes si hay productos con costo_mxn cargado
+  costo_mxn?: number
+  ganancia_esperada_mxn?: number
+  productos_con_costo?: number
 }
 
 export function InventarioCard({ resumen }: { resumen: InventarioResumen }) {
@@ -38,7 +42,7 @@ export function InventarioCard({ resumen }: { resumen: InventarioResumen }) {
 
         {/* Valor total destacado */}
         <div className="mb-3">
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Valor del inventario</p>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Valor de venta</p>
           <p className="text-2xl font-black text-emerald-300 tabular-nums leading-tight">
             {formatMoney(resumen.valor_mxn, 'MXN')}
           </p>
@@ -46,6 +50,31 @@ export function InventarioCard({ resumen }: { resumen: InventarioResumen }) {
             ≈ {formatMoney(resumen.valor_usd, 'USD')}
           </p>
         </div>
+
+        {/* Ganancia esperada (solo si hay costos cargados) */}
+        {resumen.ganancia_esperada_mxn != null && (
+          <div className="mb-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">
+                  Ganancia esperada
+                </p>
+                <p className="text-lg font-black text-cyan-300 tabular-nums leading-tight">
+                  {formatMoney(resumen.ganancia_esperada_mxn, 'MXN')}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] text-zinc-500">Costo total</p>
+                <p className="text-sm font-bold text-zinc-300 tabular-nums">
+                  {formatMoney(resumen.costo_mxn ?? 0, 'MXN')}
+                </p>
+                <p className="text-[9px] text-zinc-500">
+                  {resumen.productos_con_costo}/{resumen.total} con costo
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Stats secundarios */}
         <div className="grid grid-cols-3 gap-1.5 text-center">

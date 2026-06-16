@@ -81,6 +81,18 @@ const ActualizarProductoSchema = z.object({
   unidad_stock: z.string().max(20).optional(),
   stock_minimo: z.coerce.number().int().min(0).optional(),
   notas: z.string().max(500).nullable().optional(),
+  // Campos 0041 (Pulpos)
+  sku: z.string().max(60).nullable().optional(),
+  marca: z.string().max(80).nullable().optional(),
+  ubicacion: z.string().max(80).nullable().optional(),
+  descripcion: z.string().max(1000).nullable().optional(),
+  costo_mxn: z.coerce.number().min(0).nullable().optional(),
+  cobra_iva: z.boolean().optional(),
+  requiere_receta: z.boolean().optional(),
+  lote: z.string().max(60).nullable().optional(),
+  fecha_caducidad: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  clave_sat: z.string().max(20).nullable().optional(),
+  vende_pos: z.boolean().optional(),
 })
 
 export async function actualizarProducto(input: z.infer<typeof ActualizarProductoSchema>): Promise<ActionState> {

@@ -28,25 +28,39 @@ export default async function InventarioPage(
     .maybeSingle()
   const rate = fxRate ? Number(fxRate.mid_rate ?? fxRate.rate_compra) : 17
 
-  // Defensive: si la migración 0040 (foto_url) aún no se aplicó, hacemos retry sin esa columna
+  // Defensive: si las migraciones 0040 (foto_url) o 0041 (campos Pulpos) aún
+  // no se aplican, hacemos retry con menos columnas. La app sigue funcionando.
   const baseCols = 'id, nombre, precio_mxn, stock, unidad_stock, categoria, codigo_barras, stock_minimo, activo'
+  const colsFoto = `${baseCols}, foto_url`
+  const colsExt = `${colsFoto}, sku, marca, ubicacion, descripcion, costo_mxn, cobra_iva, requiere_receta, lote, fecha_caducidad, clave_sat, vende_pos`
   let rows: Array<Record<string, unknown>> = []
   let fotoUrlActiva = true
-  const respWith = await admin
+  let extendidoActivo = true
+  const r1 = await admin
     .from('inventario_productos')
-    .select(`${baseCols}, foto_url`)
+    .select(colsExt)
     .eq('activo', true)
     .order('nombre')
-  if (respWith.error && /foto_url/i.test(respWith.error.message ?? '')) {
-    fotoUrlActiva = false
-    const respWithout = await admin
+  if (r1.error) {
+    extendidoActivo = false
+    const r2 = await admin
       .from('inventario_productos')
-      .select(baseCols)
+      .select(colsFoto)
       .eq('activo', true)
       .order('nombre')
-    rows = (respWithout.data ?? []) as unknown as Array<Record<string, unknown>>
+    if (r2.error && /foto_url/i.test(r2.error.message ?? '')) {
+      fotoUrlActiva = false
+      const r3 = await admin
+        .from('inventario_productos')
+        .select(baseCols)
+        .eq('activo', true)
+        .order('nombre')
+      rows = (r3.data ?? []) as unknown as Array<Record<string, unknown>>
+    } else {
+      rows = (r2.data ?? []) as unknown as Array<Record<string, unknown>>
+    }
   } else {
-    rows = (respWith.data ?? []) as unknown as Array<Record<string, unknown>>
+    rows = (r1.data ?? []) as unknown as Array<Record<string, unknown>>
   }
 
   // Generar signed URLs para fotos (8h) si está activa la columna
@@ -54,6 +68,10 @@ export default async function InventarioPage(
     id: string; nombre: string; precio_mxn: number; stock: number; unidad_stock: string
     categoria: string | null; codigo_barras: string | null; stock_minimo: number
     foto_path: string | null; foto_signed_url: string | null
+    sku: string | null; marca: string | null; ubicacion: string | null
+    descripcion: string | null; costo_mxn: number | null; cobra_iva: boolean
+    requiere_receta: boolean; lote: string | null; fecha_caducidad: string | null
+    clave_sat: string | null; vende_pos: boolean
   }
   const fotoPaths: string[] = []
   if (fotoUrlActiva) {
@@ -81,6 +99,17 @@ export default async function InventarioPage(
     stock_minimo: Number(r.stock_minimo ?? 3),
     foto_path: (r.foto_url as string | null) ?? null,
     foto_signed_url: r.foto_url ? signedUrlByPath.get(r.foto_url as string) ?? null : null,
+    sku: (r.sku as string | null) ?? null,
+    marca: (r.marca as string | null) ?? null,
+    ubicacion: (r.ubicacion as string | null) ?? null,
+    descripcion: (r.descripcion as string | null) ?? null,
+    costo_mxn: r.costo_mxn != null ? Number(r.costo_mxn) : null,
+    cobra_iva: r.cobra_iva !== false,
+    requiere_receta: r.requiere_receta === true,
+    lote: (r.lote as string | null) ?? null,
+    fecha_caducidad: (r.fecha_caducidad as string | null) ?? null,
+    clave_sat: (r.clave_sat as string | null) ?? null,
+    vende_pos: r.vende_pos !== false,
   }))
 
   // KPIs
@@ -89,6 +118,12 @@ export default async function InventarioPage(
   const valorInventarioUsd = valorInventarioMxn / rate
   const enBajoStock = productos.filter(p => p.stock <= p.stock_minimo && p.stock > 0).length
   const enCero = productos.filter(p => p.stock === 0).length
+  // Margen / ganancia esperada — solo cuenta productos con costo
+  const productosConCosto = productos.filter(p => p.costo_mxn != null && p.costo_mxn > 0)
+  const costoTotalInventario = productosConCosto.reduce((s, p) => s + (p.costo_mxn ?? 0) * p.stock, 0)
+  const valorConCosto = productosConCosto.reduce((s, p) => s + p.precio_mxn * p.stock, 0)
+  const gananciaEsperadaMxn = valorConCosto - costoTotalInventario
+  const margenPromedio = valorConCosto > 0 ? (gananciaEsperadaMxn / valorConCosto) * 100 : 0
   const categorias = Array.from(new Set(productos.map(p => p.categoria).filter(Boolean) as string[])).sort()
 
   const vista: 'grid' | 'lista' = sp.vista === 'lista' ? 'lista' : 'grid'
@@ -128,7 +163,7 @@ export default async function InventarioPage(
             tone="emerald"
           />
           <KpiCard
-            label="Valor total"
+            label="Valor venta"
             value={formatMoney(valorInventarioMxn, 'MXN')}
             sub={`≈ ${formatMoney(valorInventarioUsd, 'USD')}`}
             tone="cyan"
@@ -150,6 +185,30 @@ export default async function InventarioPage(
             href="/inventario?agotados=1"
           />
         </div>
+
+        {/* KPIs de ganancia (solo si hay productos con costo) */}
+        {productosConCosto.length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            <KpiCard
+              label="Costo total"
+              value={formatMoney(costoTotalInventario, 'MXN')}
+              sub={`${productosConCosto.length} c/costo`}
+              tone="cyan"
+            />
+            <KpiCard
+              label="Ganancia esperada"
+              value={formatMoney(gananciaEsperadaMxn, 'MXN')}
+              sub="Si vendes todo"
+              tone="emerald"
+            />
+            <KpiCard
+              label="Margen promedio"
+              value={`${margenPromedio.toFixed(1)}%`}
+              sub="Ponderado por valor"
+              tone="emerald"
+            />
+          </div>
+        )}
       </header>
 
       {!fotoUrlActiva && (
@@ -168,6 +227,7 @@ export default async function InventarioPage(
         categorias={categorias}
         rate={rate}
         fotoUrlActiva={fotoUrlActiva}
+        extendidoActivo={extendidoActivo}
         filtroInicial={{
           categoria: sp.categoria ?? '',
           q: sp.q ?? '',

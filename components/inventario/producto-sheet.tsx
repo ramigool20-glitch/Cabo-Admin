@@ -50,12 +50,29 @@ export function ProductoSheet({
   const [codigo, setCodigo] = useState(producto.codigo_barras ?? '')
   const [unidad, setUnidad] = useState(producto.unidad_stock)
   const [foto, setFoto] = useState<string | null>(producto.foto_signed_url)
+  // Campos 0041
+  const [costo, setCosto] = useState(producto.costo_mxn != null ? String(producto.costo_mxn) : '')
+  const [marca, setMarca] = useState(producto.marca ?? '')
+  const [ubicacion, setUbicacion] = useState(producto.ubicacion ?? '')
+  const [lote, setLote] = useState(producto.lote ?? '')
+  const [fechaCaducidad, setFechaCaducidad] = useState(producto.fecha_caducidad ?? '')
+  const [sku, setSku] = useState(producto.sku ?? '')
+  const [claveSat, setClaveSat] = useState(producto.clave_sat ?? '')
+  const [requiereReceta, setRequiereReceta] = useState(producto.requiere_receta === true)
+  const [cobraIva, setCobraIva] = useState(producto.cobra_iva !== false)
   const [editing, setEditing] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
   const fotoInputRef = useRef<HTMLInputElement | null>(null)
 
-  const usd = Number(precio) / rate
+  const precioNum = Number(precio) || 0
+  const costoNum = Number(costo) || 0
+  const usd = precioNum / rate
+  // Margen: si tiene costo, calcula
+  const tieneCosto = costoNum > 0
+  const gananciaUnidad = precioNum - costoNum
+  const margenPct = tieneCosto && precioNum > 0 ? (gananciaUnidad / precioNum) * 100 : 0
+  const gananciaInventario = gananciaUnidad * stockActual
 
   // Cerrar con Esc
   useEffect(() => {
@@ -382,28 +399,131 @@ export function ProductoSheet({
             </div>
           </Section>
 
-          {/* Detalles secundarios (expandible) */}
-          <details className="group rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
-            <summary className="cursor-pointer px-4 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-zinc-200">
-              Más datos (código de barras, unidad)
-            </summary>
-            <div className="px-4 pb-4 space-y-3">
+          {/* Costo y margen */}
+          <Section title="Costo y ganancia">
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Código de barras</label>
+                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Costo MXN</label>
                 <input
                   type="text"
-                  value={codigo}
-                  onChange={(e) => setCodigo(e.target.value)}
+                  inputMode="decimal"
+                  value={costo}
+                  onChange={(e) => setCosto(e.target.value)}
                   onBlur={() => {
-                    if (codigo !== (producto.codigo_barras ?? '')) {
-                      guardarCampo({ producto_id: producto.id, codigo_barras: codigo || null })
+                    const n = Number(costo)
+                    if (costo === '' && producto.costo_mxn != null) {
+                      guardarCampo({ producto_id: producto.id, costo_mxn: null })
+                    } else if (!isNaN(n) && n !== (producto.costo_mxn ?? -1)) {
+                      guardarCampo({ producto_id: producto.id, costo_mxn: n })
                     }
                   }}
-                  className="w-full mt-1 h-10 px-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm font-mono"
+                  placeholder="0.00"
+                  className="w-full mt-1 h-11 px-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] text-base font-bold tabular-nums"
                 />
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Unidad de stock</label>
+                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Margen</label>
+                <div className={cn(
+                  'mt-1 h-11 px-3 rounded-lg flex items-center justify-end font-bold tabular-nums',
+                  !tieneCosto && 'bg-zinc-900 text-zinc-600',
+                  tieneCosto && margenPct >= 30 && 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30',
+                  tieneCosto && margenPct >= 10 && margenPct < 30 && 'bg-amber-500/10 text-amber-300 border border-amber-500/30',
+                  tieneCosto && margenPct < 10 && 'bg-rose-500/10 text-rose-300 border border-rose-500/30',
+                )}>
+                  {tieneCosto ? `${margenPct.toFixed(1)}%` : '—'}
+                </div>
+              </div>
+            </div>
+            {tieneCosto && (
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="rounded-lg bg-zinc-900/40 border border-zinc-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-zinc-500 font-semibold">Ganancia/unidad</p>
+                  <p className="text-base font-black text-emerald-300 tabular-nums">
+                    {formatMoney(gananciaUnidad, 'MXN')}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-zinc-900/40 border border-zinc-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-zinc-500 font-semibold">Ganancia total</p>
+                  <p className="text-base font-black text-cyan-300 tabular-nums">
+                    {formatMoney(gananciaInventario, 'MXN')}
+                  </p>
+                  <p className="text-[9px] text-zinc-500">{stockActual} u en stock</p>
+                </div>
+              </div>
+            )}
+          </Section>
+
+          {/* Datos avanzados (expandible) */}
+          <details className="group rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
+            <summary className="cursor-pointer px-4 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-zinc-200">
+              Datos avanzados
+            </summary>
+            <div className="px-4 pb-4 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Código de barras</label>
+                  <input
+                    type="text"
+                    value={codigo}
+                    onChange={(e) => setCodigo(e.target.value)}
+                    onBlur={() => {
+                      if (codigo !== (producto.codigo_barras ?? '')) {
+                        guardarCampo({ producto_id: producto.id, codigo_barras: codigo || null })
+                      }
+                    }}
+                    className="w-full mt-1 h-10 px-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">SKU</label>
+                  <input
+                    type="text"
+                    value={sku}
+                    onChange={(e) => setSku(e.target.value)}
+                    onBlur={() => {
+                      if (sku !== (producto.sku ?? '')) {
+                        guardarCampo({ producto_id: producto.id, sku: sku || null })
+                      }
+                    }}
+                    className="w-full mt-1 h-10 px-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Marca</label>
+                  <input
+                    type="text"
+                    value={marca}
+                    onChange={(e) => setMarca(e.target.value)}
+                    onBlur={() => {
+                      if (marca !== (producto.marca ?? '')) {
+                        guardarCampo({ producto_id: producto.id, marca: marca || null })
+                      }
+                    }}
+                    className="w-full mt-1 h-10 px-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Ubicación</label>
+                  <input
+                    type="text"
+                    value={ubicacion}
+                    onChange={(e) => setUbicacion(e.target.value)}
+                    onBlur={() => {
+                      if (ubicacion !== (producto.ubicacion ?? '')) {
+                        guardarCampo({ producto_id: producto.id, ubicacion: ubicacion || null })
+                      }
+                    }}
+                    placeholder="Estante 3B"
+                    className="w-full mt-1 h-10 px-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Unidad de venta</label>
                 <input
                   type="text"
                   value={unidad}
@@ -416,6 +536,81 @@ export function ProductoSheet({
                   className="w-full mt-1 h-10 px-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm"
                   placeholder="unidad, caja, frasco..."
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Lote</label>
+                  <input
+                    type="text"
+                    value={lote}
+                    onChange={(e) => setLote(e.target.value)}
+                    onBlur={() => {
+                      if (lote !== (producto.lote ?? '')) {
+                        guardarCampo({ producto_id: producto.id, lote: lote || null })
+                      }
+                    }}
+                    className="w-full mt-1 h-10 px-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Caducidad</label>
+                  <input
+                    type="date"
+                    value={fechaCaducidad}
+                    onChange={(e) => setFechaCaducidad(e.target.value)}
+                    onBlur={() => {
+                      if (fechaCaducidad !== (producto.fecha_caducidad ?? '')) {
+                        guardarCampo({ producto_id: producto.id, fecha_caducidad: fechaCaducidad || null })
+                      }
+                    }}
+                    className="w-full mt-1 h-10 px-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Clave SAT</label>
+                <input
+                  type="text"
+                  value={claveSat}
+                  onChange={(e) => setClaveSat(e.target.value)}
+                  onBlur={() => {
+                    if (claveSat !== (producto.clave_sat ?? '')) {
+                      guardarCampo({ producto_id: producto.id, clave_sat: claveSat || null })
+                    }
+                  }}
+                  placeholder="Para CFDI"
+                  className="w-full mt-1 h-10 px-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm font-mono"
+                />
+              </div>
+
+              {/* Toggles */}
+              <div className="flex flex-col gap-2 pt-2">
+                <label className="flex items-center justify-between gap-2 cursor-pointer">
+                  <span className="text-sm text-zinc-200">🩺 Requiere receta médica</span>
+                  <input
+                    type="checkbox"
+                    checked={requiereReceta}
+                    onChange={(e) => {
+                      setRequiereReceta(e.target.checked)
+                      guardarCampo({ producto_id: producto.id, requiere_receta: e.target.checked })
+                    }}
+                    className="h-5 w-5 accent-purple-500"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2 cursor-pointer">
+                  <span className="text-sm text-zinc-200">📊 Cobra IVA</span>
+                  <input
+                    type="checkbox"
+                    checked={cobraIva}
+                    onChange={(e) => {
+                      setCobraIva(e.target.checked)
+                      guardarCampo({ producto_id: producto.id, cobra_iva: e.target.checked })
+                    }}
+                    className="h-5 w-5 accent-emerald-500"
+                  />
+                </label>
               </div>
             </div>
           </details>

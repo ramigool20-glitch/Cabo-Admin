@@ -21,6 +21,18 @@ export type Producto = {
   stock_minimo: number
   foto_path: string | null
   foto_signed_url: string | null
+  // Campos 0041 — opcionales, pueden ser null si la migración no se aplicó
+  sku?: string | null
+  marca?: string | null
+  ubicacion?: string | null
+  descripcion?: string | null
+  costo_mxn?: number | null
+  cobra_iva?: boolean
+  requiere_receta?: boolean
+  lote?: string | null
+  fecha_caducidad?: string | null
+  clave_sat?: string | null
+  vende_pos?: boolean
 }
 
 const EMOJI_CAT: Record<string, string> = {
@@ -39,12 +51,14 @@ export function InventarioGalleryClient({
   categorias,
   rate,
   fotoUrlActiva,
+  extendidoActivo = true,
   filtroInicial,
 }: {
   productos: Producto[]
   categorias: string[]
   rate: number
   fotoUrlActiva: boolean
+  extendidoActivo?: boolean
   filtroInicial: { categoria: string; q: string; bajoStock: boolean; agotados: boolean; vista: 'grid' | 'lista' }
 }) {
   const [q, setQ] = useState(filtroInicial.q)
@@ -229,6 +243,43 @@ function stockClasses(stock: number, minimo: number) {
   return { pill: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40', dot: 'bg-emerald-500' }
 }
 
+/** Devuelve días hasta caducidad, o null si no aplica. Negativo si ya caducó. */
+function diasACaducidad(fecha?: string | null): number | null {
+  if (!fecha) return null
+  const f = new Date(fecha + 'T00:00:00')
+  if (isNaN(f.getTime())) return null
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+  return Math.floor((f.getTime() - hoy.getTime()) / 86_400_000)
+}
+
+function CaducidadBadge({ dias }: { dias: number }) {
+  if (dias < 0) return (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 px-1.5 h-5 text-[9px] font-bold text-rose-200 backdrop-blur">
+      ⚠ vencido
+    </span>
+  )
+  if (dias <= 30) return (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-rose-500/15 border border-rose-500/30 px-1.5 h-5 text-[9px] font-bold text-rose-200 backdrop-blur">
+      ⏰ {dias}d
+    </span>
+  )
+  if (dias <= 90) return (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 h-5 text-[9px] font-bold text-amber-200 backdrop-blur">
+      ⏰ {dias}d
+    </span>
+  )
+  return null
+}
+
+function RxBadge() {
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 px-1.5 h-5 text-[9px] font-bold text-purple-200 backdrop-blur">
+      🩺 Rx
+    </span>
+  )
+}
+
 function ProductoCardGrid({ p, rate, onTap }: { p: Producto; rate: number; onTap: () => void }) {
   const usd = p.precio_mxn / rate
   const sc = stockClasses(p.stock, p.stock_minimo)
@@ -258,6 +309,16 @@ function ProductoCardGrid({ p, rate, onTap }: { p: Producto; rate: number; onTap
           <span className={cn('inline-block h-1.5 w-1.5 rounded-full', sc.dot)} />
           {p.stock}
         </div>
+        {/* Badges en esquina superior izquierda: Rx + caducidad */}
+        {(p.requiere_receta || p.fecha_caducidad) && (
+          <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
+            {p.requiere_receta && <RxBadge />}
+            {(() => {
+              const d = diasACaducidad(p.fecha_caducidad)
+              return d !== null ? <CaducidadBadge dias={d} /> : null
+            })()}
+          </div>
+        )}
       </div>
       {/* Info */}
       <div className="p-2.5 space-y-0.5">
@@ -283,7 +344,8 @@ function ProductoCardGrid({ p, rate, onTap }: { p: Producto; rate: number; onTap
 function ProductoCardLista({ p, rate, onTap }: { p: Producto; rate: number; onTap: () => void }) {
   const usd = p.precio_mxn / rate
   const sc = stockClasses(p.stock, p.stock_minimo)
-  const emoji = EMOJI_CAT[p.categoria ?? ''] ?? '📦'
+  const emoji = p.categoria === 'Choco' ? '📦' : (EMOJI_CAT[p.categoria ?? ''] ?? '📦')
+  const diasCad = diasACaducidad(p.fecha_caducidad)
   return (
     <li>
       <button
@@ -300,10 +362,15 @@ function ProductoCardLista({ p, rate, onTap }: { p: Producto; rate: number; onTa
           )}
         </div>
         <div className="flex-1 min-w-0 leading-tight">
-          <p className="text-sm font-semibold text-zinc-100 truncate">{p.nombre}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-sm font-semibold text-zinc-100 truncate">{p.nombre}</p>
+            {p.requiere_receta && <RxBadge />}
+            {diasCad !== null && <CaducidadBadge dias={diasCad} />}
+          </div>
           <p className="text-[10px] text-zinc-500 truncate">
             {p.categoria ?? '—'}
             {p.codigo_barras && ` · ${p.codigo_barras}`}
+            {p.ubicacion && ` · 📍 ${p.ubicacion}`}
           </p>
         </div>
         <div className="text-right shrink-0">

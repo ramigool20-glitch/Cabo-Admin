@@ -169,28 +169,55 @@ export default async function DashboardPage(
   // Resumen de inventario (defensivo: si la tabla aún no existe, salta)
   let inventarioResumen: InventarioResumen | null = null
   try {
-    const { data: invRows } = await admin
+    // Intento con costo_mxn (migración 0041); si falla, fallback sin esa col
+    const colsExt = 'precio_mxn, stock, stock_minimo, costo_mxn'
+    const colsBase = 'precio_mxn, stock, stock_minimo'
+    type InvRow = { precio_mxn?: number | null; stock?: number | null; stock_minimo?: number | null; costo_mxn?: number | null }
+    let invRows: InvRow[] | null = null
+    const r1 = await admin
       .from('inventario_productos')
-      .select('precio_mxn, stock, stock_minimo')
+      .select(colsExt)
       .eq('activo', true)
+    if (r1.error) {
+      const r2 = await admin
+        .from('inventario_productos')
+        .select(colsBase)
+        .eq('activo', true)
+      invRows = (r2.data ?? null) as unknown as InvRow[] | null
+    } else {
+      invRows = (r1.data ?? null) as unknown as InvRow[] | null
+    }
     if (invRows && invRows.length > 0) {
       let valorMxn = 0
+      let costoMxn = 0
+      let valorConCosto = 0
+      let conCosto = 0
       let bajo = 0
       let cero = 0
       for (const p of invRows) {
         const precio = Number(p.precio_mxn ?? 0)
         const stock = Number(p.stock ?? 0)
         const minimo = Number(p.stock_minimo ?? 3)
+        const costo = p.costo_mxn != null ? Number(p.costo_mxn) : null
         valorMxn += precio * stock
+        if (costo != null && costo > 0) {
+          costoMxn += costo * stock
+          valorConCosto += precio * stock
+          conCosto++
+        }
         if (stock === 0) cero++
         else if (stock <= minimo) bajo++
       }
+      const gananciaEsperada = valorConCosto - costoMxn
       inventarioResumen = {
         total: invRows.length,
         valor_mxn: valorMxn,
         valor_usd: valorMxn / (fxRateHoy ? Number(fxRateHoy.rate_compra) : 17),
         bajo_stock: bajo,
         agotados: cero,
+        costo_mxn: costoMxn > 0 ? costoMxn : undefined,
+        ganancia_esperada_mxn: conCosto > 0 ? gananciaEsperada : undefined,
+        productos_con_costo: conCosto,
       }
     }
   } catch {
