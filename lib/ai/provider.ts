@@ -1,15 +1,19 @@
 /**
  * Configura qué proveedor de IA usar: 'openai' o 'anthropic'.
- * Por default es 'openai'. Cambiar AI_PROVIDER en .env.local para alternar.
+ *
+ * Preferencia del proyecto: **Anthropic Claude** (los prompts están diseñados
+ * para Claude y los modelos 4.6/4.7 dan mejor calidad en captura por foto/voz,
+ * sugerencia de categorización y auditor IA).
+ *
+ * Para FORZAR OpenAI (degradado intencional), setear:
+ *   AI_PROVIDER=openai_forzado
+ * en el env. Cualquier otro valor (incluido 'openai' a secas) cae al default
+ * Claude si hay ANTHROPIC_API_KEY disponible.
  */
 export type AIProvider = 'openai' | 'anthropic'
 
 export function getAIProvider(): AIProvider {
-  const v = process.env.AI_PROVIDER?.toLowerCase().trim()
-  // Explícito gana
-  if (v === 'anthropic') return 'anthropic'
-  if (v === 'openai') return 'openai'
-  // Si no está seteado pero hay key de Anthropic, usa Claude (preferencia del proyecto)
+  if (process.env.AI_PROVIDER === 'openai_forzado') return 'openai'
   if (process.env.ANTHROPIC_API_KEY) return 'anthropic'
   return 'openai'
 }
