@@ -3,7 +3,8 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Trash2, Camera, X, Image as ImageIcon } from 'lucide-react'
+import Link from 'next/link'
+import { Trash2, Camera, X, Image as ImageIcon, ShoppingBag, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CATEGORIAS_GASTO, CATEGORIAS_INGRESO, CATEGORIAS_CASA, METODOS_PAGO, metodoPagoDefault } from '@/lib/categorias'
 import {
@@ -286,6 +287,28 @@ export function TransactionForm({
           Ingreso
         </button>
       </div>
+
+      {/* Banner "Vender productos" cuando es Ingreso (solo al crear, no al editar) */}
+      {!isEdit && tipo === 'ingreso' && (
+        <Link
+          href="/transacciones/venta"
+          className="flex items-center gap-3 rounded-xl border border-cyan-500/30 bg-gradient-to-r from-cyan-500/10 via-emerald-500/10 to-transparent p-3 hover:border-cyan-500/50 active:scale-[0.99] transition-all group"
+        >
+          <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-cyan-500/30 to-emerald-500/30 inline-flex items-center justify-center shrink-0">
+            <ShoppingBag className="h-5 w-5 text-cyan-300" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-zinc-100 leading-tight">
+              ¿Vendes productos del inventario?
+            </p>
+            <p className="text-[11px] text-zinc-400 mt-0.5 inline-flex items-center gap-1">
+              <TrendingUp className="h-3 w-3 text-emerald-400" />
+              Carrito con margen automático y stock que baja solo
+            </p>
+          </div>
+          <span className="text-cyan-300 text-xl group-hover:translate-x-0.5 transition-transform">→</span>
+        </Link>
+      )}
 
       {/* Monto + Moneda */}
       <div className="space-y-2">
