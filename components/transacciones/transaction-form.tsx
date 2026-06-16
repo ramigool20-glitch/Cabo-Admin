@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Trash2, Camera, X } from 'lucide-react'
+import { Trash2, Camera, X, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CATEGORIAS_GASTO, CATEGORIAS_INGRESO, CATEGORIAS_CASA, METODOS_PAGO, metodoPagoDefault } from '@/lib/categorias'
 import {
@@ -88,8 +88,13 @@ export function TransactionForm({
   const [sugDescartada, setSugDescartada] = useState(false)
 
   // Foto opcional de evidencia
-  const fotoInputRef = useRef<HTMLInputElement | null>(null)
-  const [fotoPreview, setFotoPreview] = useState<string | null>(null) // dataURL local de la foto nueva
+  // Usamos 2 inputs file separados: uno para cámara (capture=environment) y otro
+  // para galería/archivos (sin capture). El de galería es el "principal" con
+  // name="foto" para que el form lo envíe. Si el usuario captura desde la cámara,
+  // copiamos el archivo al input principal via DataTransfer.
+  const fotoInputRef = useRef<HTMLInputElement | null>(null) // galería — el que envía
+  const camInputRef = useRef<HTMLInputElement | null>(null)  // cámara — auxiliar
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null) // dataURL local
   const [quitarFotoExistente, setQuitarFotoExistente] = useState(false)
   const fotoVisible = fotoPreview ?? (quitarFotoExistente ? null : fotoExistenteUrl)
 
@@ -98,17 +103,37 @@ export function TransactionForm({
     if (file.size > 10 * 1024 * 1024) {
       toast.error('Foto muy grande', 'Máximo 10 MB')
       if (fotoInputRef.current) fotoInputRef.current.value = ''
+      if (camInputRef.current) camInputRef.current.value = ''
       return
     }
     const reader = new FileReader()
     reader.onload = () => setFotoPreview(typeof reader.result === 'string' ? reader.result : null)
     reader.readAsDataURL(file)
-    setQuitarFotoExistente(false) // si elige nueva, no marcar quitar
+    setQuitarFotoExistente(false)
+  }
+
+  // Cuando el usuario toma la foto desde la CÁMARA, copiamos el archivo al input
+  // principal (galería) para que el form submit lo envíe con name="foto".
+  const onCamCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null
+    if (!file) { onFotoChange(null); return }
+    if (fotoInputRef.current && typeof DataTransfer !== 'undefined') {
+      try {
+        const dt = new DataTransfer()
+        dt.items.add(file)
+        fotoInputRef.current.files = dt.files
+      } catch {
+        // Algunos browsers no permiten setear files. El handler de submit se
+        // encargará igual leyendo de e.target.files del input camera.
+      }
+    }
+    onFotoChange(file)
   }
 
   const quitarFoto = () => {
     setFotoPreview(null)
     if (fotoInputRef.current) fotoInputRef.current.value = ''
+    if (camInputRef.current) camInputRef.current.value = ''
     if (fotoExistenteUrl) setQuitarFotoExistente(true)
   }
 
@@ -659,6 +684,8 @@ export function TransactionForm({
       {/* Foto de evidencia (opcional) */}
       <div className="space-y-2">
         <label className="text-sm font-medium">Foto de evidencia <span className="text-zinc-500 font-normal">(opcional)</span></label>
+
+        {/* Input principal (galería/archivos) — el que envía con name="foto" */}
         <input
           ref={fotoInputRef}
           type="file"
@@ -666,6 +693,15 @@ export function TransactionForm({
           accept="image/*"
           className="hidden"
           onChange={(e) => onFotoChange(e.target.files?.[0] ?? null)}
+        />
+        {/* Input auxiliar (cámara) — capture fuerza abrir cámara en iOS */}
+        <input
+          ref={camInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={onCamCapture}
         />
         {quitarFotoExistente && <input type="hidden" name="foto_quitar" value="1" />}
 
@@ -687,24 +723,44 @@ export function TransactionForm({
             >
               <X className="h-4 w-4" />
             </button>
+            <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => camInputRef.current?.click()}
+                className="h-8 px-3 rounded-full bg-black/60 text-white text-xs inline-flex items-center gap-1.5 backdrop-blur"
+              >
+                <Camera className="h-3.5 w-3.5" />
+                Cámara
+              </button>
+              <button
+                type="button"
+                onClick={() => fotoInputRef.current?.click()}
+                className="h-8 px-3 rounded-full bg-black/60 text-white text-xs inline-flex items-center gap-1.5 backdrop-blur"
+              >
+                <ImageIcon className="h-3.5 w-3.5" />
+                Galería
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => camInputRef.current?.click()}
+              className="h-14 rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm text-zinc-300 inline-flex items-center justify-center gap-2 hover:border-emerald-500/40 hover:text-emerald-300"
+            >
+              <Camera className="h-4 w-4" />
+              Cámara
+            </button>
             <button
               type="button"
               onClick={() => fotoInputRef.current?.click()}
-              className="absolute bottom-2 right-2 h-8 px-3 rounded-full bg-black/60 text-white text-xs inline-flex items-center gap-1.5 backdrop-blur"
+              className="h-14 rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm text-zinc-300 inline-flex items-center justify-center gap-2 hover:border-cyan-500/40 hover:text-cyan-300"
             >
-              <Camera className="h-3.5 w-3.5" />
-              Cambiar
+              <ImageIcon className="h-4 w-4" />
+              Galería
             </button>
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => fotoInputRef.current?.click()}
-            className="w-full h-14 rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm text-zinc-400 inline-flex items-center justify-center gap-2 hover:text-zinc-200"
-          >
-            <Camera className="h-4 w-4" />
-            Tomar foto o elegir de galería
-          </button>
         )}
       </div>
 
