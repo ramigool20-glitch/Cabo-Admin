@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Camera, ScanLine, ExternalLink, Loader2 } from 'lucide-react'
+import { Camera, ScanLine, ExternalLink, Loader2, Sparkles } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { BarcodeScanner } from '@/components/inventario/barcode-scanner'
 
@@ -19,6 +19,14 @@ export function NuevoProductoClient({ categorias }: { categorias: string[] }) {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [yaExiste, setYaExiste] = useState<{ id: string; nombre: string } | null>(null)
+  const [sugiriendo, setSugiriendo] = useState(false)
+  const [sugerenciaIA, setSugerenciaIA] = useState<{
+    nombre: string | null
+    categoria_sugerida: string | null
+    precio_estimado_mxn: number | null
+    descripcion: string | null
+    confianza: 'alta' | 'media' | 'baja'
+  } | null>(null)
 
   // Form
   const [nombre, setNombre] = useState('')
@@ -27,19 +35,60 @@ export function NuevoProductoClient({ categorias }: { categorias: string[] }) {
   const [categoria, setCategoria] = useState('')
   const [codigoBarras, setCodigoBarras] = useState('')
 
+  const pedirSugerenciaIA = async (code: string) => {
+    setSugiriendo(true)
+    setSugerenciaIA(null)
+    try {
+      const r = await fetch('/api/ai/sugerir-producto-codigo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: code, categorias }),
+      })
+      const data = await r.json()
+      if (r.ok && data.sugerencia) {
+        setSugerenciaIA(data.sugerencia)
+        if (data.sugerencia.confianza !== 'baja') {
+          toast.success('IA identificó el producto', 'Tap "Usar sugerencia" para llenar')
+        }
+      }
+    } catch {
+      // silent fail — el usuario llena manual
+    } finally {
+      setSugiriendo(false)
+    }
+  }
+
+  const aplicarSugerencia = () => {
+    if (!sugerenciaIA) return
+    if (sugerenciaIA.nombre) setNombre(sugerenciaIA.nombre)
+    if (sugerenciaIA.precio_estimado_mxn != null) setPrecio(String(sugerenciaIA.precio_estimado_mxn))
+    // Solo aplica categoría si ya existe en la lista (no inventamos)
+    if (sugerenciaIA.categoria_sugerida && categorias.includes(sugerenciaIA.categoria_sugerida)) {
+      setCategoria(sugerenciaIA.categoria_sugerida)
+    }
+    setSugerenciaIA(null)
+    toast.success('Aplicado', 'Revisa precio y categoría antes de guardar')
+  }
+
   const onScanResult = async (code: string) => {
     setCodigoBarras(code)
     toast.success('Código escaneado', code)
     // Verificar si ya existe en BD
+    let yaExisteEnBd = false
     try {
       const res = await fetch(`/api/inventario/buscar-codigo?code=${encodeURIComponent(code)}`)
       if (res.ok) {
         const data = await res.json()
         if (data.producto) {
           setYaExiste(data.producto)
+          yaExisteEnBd = true
         }
       }
     } catch {}
+    // Si no existe, pedirle a IA que sugiera (best-effort, no bloquea)
+    if (!yaExisteEnBd) {
+      pedirSugerenciaIA(code)
+    }
   }
 
   const onGuardar = async () => {
@@ -92,6 +141,54 @@ export function NuevoProductoClient({ categorias }: { categorias: string[] }) {
           <span className="text-base font-bold text-emerald-300">Escanear código de barras</span>
           <span className="text-[11px] text-zinc-500">Con la cámara del teléfono</span>
         </button>
+
+        {/* Sugerencia IA */}
+        {sugiriendo && (
+          <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-3 flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />
+            <span className="text-sm text-cyan-200">Identificando producto con IA…</span>
+          </div>
+        )}
+        {sugerenciaIA && sugerenciaIA.nombre && !yaExiste && (
+          <div className="rounded-xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 via-emerald-500/5 to-transparent p-3 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4 text-cyan-300" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+                IA sugiere
+              </span>
+              <span className={`ml-auto text-[10px] font-bold rounded-full px-2 py-0.5 ${
+                sugerenciaIA.confianza === 'alta' ? 'bg-emerald-500/20 text-emerald-200' :
+                sugerenciaIA.confianza === 'media' ? 'bg-amber-500/20 text-amber-200' :
+                'bg-zinc-700/50 text-zinc-400'
+              }`}>
+                {sugerenciaIA.confianza}
+              </span>
+            </div>
+            <p className="text-sm font-bold text-zinc-100 leading-tight">{sugerenciaIA.nombre}</p>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              {sugerenciaIA.categoria_sugerida && (
+                <span className="rounded-md bg-zinc-800/60 px-2 py-0.5 text-zinc-300">
+                  {EMOJI_CAT[sugerenciaIA.categoria_sugerida] ?? '📦'} {sugerenciaIA.categoria_sugerida}
+                </span>
+              )}
+              {sugerenciaIA.precio_estimado_mxn != null && (
+                <span className="rounded-md bg-emerald-500/10 text-emerald-200 px-2 py-0.5 font-mono">
+                  ~${sugerenciaIA.precio_estimado_mxn.toLocaleString('es-MX')} MXN
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={aplicarSugerencia}
+              className="w-full h-9 rounded-lg bg-cyan-600 text-white text-xs font-bold active:scale-[0.98]"
+            >
+              Usar sugerencia
+            </button>
+            <p className="text-[10px] text-zinc-500 leading-tight">
+              Revisa y ajusta antes de guardar — la IA puede equivocarse en precios.
+            </p>
+          </div>
+        )}
 
         {/* Aviso si el código ya existe */}
         {yaExiste && (

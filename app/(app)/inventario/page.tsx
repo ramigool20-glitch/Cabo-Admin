@@ -7,6 +7,7 @@ import { Package, AlertTriangle, DollarSign, Sparkles, Plus } from 'lucide-react
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney } from '@/lib/utils'
 import { InventarioGalleryClient } from '@/components/inventario/inventario-gallery-client'
+import { PedidoSugeridoBtn } from '@/components/inventario/pedido-sugerido-btn'
 
 export const dynamic = 'force-dynamic'
 
@@ -106,13 +107,16 @@ export default async function InventarioPage(
               Cvu Pharmacy local · TC ${rate.toFixed(2)} MXN/USD
             </p>
           </div>
-          <Link
-            href="/inventario/nuevo"
-            className="h-10 px-3 rounded-full bg-emerald-600 text-white text-sm font-bold inline-flex items-center gap-1.5 shadow-lg shadow-emerald-500/30 active:scale-95 transition-transform"
-          >
-            <Plus className="h-4 w-4" />
-            Nuevo
-          </Link>
+          <div className="flex items-center gap-2">
+            <PedidoSugeridoBtn />
+            <Link
+              href="/inventario/nuevo"
+              className="h-10 px-3 rounded-full bg-emerald-600 text-white text-sm font-bold inline-flex items-center gap-1.5 shadow-lg shadow-emerald-500/30 active:scale-95 transition-transform"
+            >
+              <Plus className="h-4 w-4" />
+              Nuevo
+            </Link>
+          </div>
         </div>
 
         {/* KPIs en glassmorphism cards — los de Bajo stock y Agotados son links a filtros */}
