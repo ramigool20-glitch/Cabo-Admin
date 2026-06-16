@@ -19,6 +19,7 @@ import { CashflowForecastCard } from '@/components/dashboard/cashflow-forecast-c
 import { proyectarCashFlow } from '@/lib/cashflow/forecast'
 import { ResumenSemanalCard, type ResumenSemanalRow } from '@/components/dashboard/resumen-semanal-card'
 import { CobrosPendientesCard } from '@/components/dashboard/cobros-pendientes-card'
+import { InventarioCard, type InventarioResumen } from '@/components/dashboard/inventario-card'
 
 type SearchParams = { rango?: string; desde?: string; hasta?: string }
 
@@ -164,6 +165,37 @@ export default async function DashboardPage(
     fecha: r.fecha as string,
     cuenta_nombre: (r.cuentas as unknown as { nombre: string } | null)?.nombre ?? null,
   }))
+
+  // Resumen de inventario (defensivo: si la tabla aún no existe, salta)
+  let inventarioResumen: InventarioResumen | null = null
+  try {
+    const { data: invRows } = await admin
+      .from('inventario_productos')
+      .select('precio_mxn, stock, stock_minimo')
+      .eq('activo', true)
+    if (invRows && invRows.length > 0) {
+      let valorMxn = 0
+      let bajo = 0
+      let cero = 0
+      for (const p of invRows) {
+        const precio = Number(p.precio_mxn ?? 0)
+        const stock = Number(p.stock ?? 0)
+        const minimo = Number(p.stock_minimo ?? 3)
+        valorMxn += precio * stock
+        if (stock === 0) cero++
+        else if (stock <= minimo) bajo++
+      }
+      inventarioResumen = {
+        total: invRows.length,
+        valor_mxn: valorMxn,
+        valor_usd: valorMxn / (fxRateHoy ? Number(fxRateHoy.rate_compra) : 17),
+        bajo_stock: bajo,
+        agotados: cero,
+      }
+    }
+  } catch {
+    // tabla aún no existe
+  }
 
   // === Próximos pagos a Patricia (enfermera) — sábados y quincenas ===
   type PagoPatricia = { etiqueta: string; fecha: string; monto: number; emoji: string; nota?: string }
@@ -548,6 +580,9 @@ export default async function DashboardPage(
 
         {/* Cobros MP sin categorizar — al inicio para que destaque */}
         <CobrosPendientesCard pendientes={cobrosPendientes} />
+
+        {/* Resumen del inventario de farmacia */}
+        {inventarioResumen && <InventarioCard resumen={inventarioResumen} />}
 
         {/* FX widget */}
         <FxMiniWidget rateHoy={fxRateHoy} historial={fxHistorial ?? []} />

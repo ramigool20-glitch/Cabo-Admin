@@ -67,6 +67,7 @@ export async function ajustarStock(input: z.infer<typeof AjustarStockSchema>): P
   })
 
   revalidatePath('/inventario')
+  revalidatePath('/dashboard')
   return { ok: true }
 }
 
@@ -105,6 +106,7 @@ export async function actualizarProducto(input: z.infer<typeof ActualizarProduct
   if (error) return { error: error.message }
 
   revalidatePath('/inventario')
+  revalidatePath('/dashboard')
   return { ok: true }
 }
 
@@ -122,6 +124,7 @@ export async function eliminarProducto(producto_id: string): Promise<ActionState
   if (error) return { error: error.message }
 
   revalidatePath('/inventario')
+  revalidatePath('/dashboard')
   return { ok: true }
 }
 
@@ -172,6 +175,7 @@ export async function subirFotoProducto(formData: FormData): Promise<ActionState
     .createSignedUrl(path, 60 * 60 * 8)
 
   revalidatePath('/inventario')
+  revalidatePath('/dashboard')
   return { ok: true, foto_url: signed?.signedUrl ?? null }
 }
 
@@ -197,5 +201,6 @@ export async function quitarFotoProducto(producto_id: string): Promise<ActionSta
     .eq('id', producto_id)
 
   revalidatePath('/inventario')
+  revalidatePath('/dashboard')
   return { ok: true }
 }
