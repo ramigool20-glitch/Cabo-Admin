@@ -206,6 +206,7 @@ export async function procesarPagoMP(
     .eq('id', integracionId)
 
   // Sistema híbrido: pregunta / push según confianza. Best-effort, no rompe el flujo.
+  // Loggea errores en webhook_log con fuente 'pregunta_push_mp' para diagnóstico.
   if (tx?.id) {
     const txResumen = {
       id: tx.id,
@@ -220,21 +221,37 @@ export async function procesarPagoMP(
       cuenta_id: integ.cuenta_id,
       negocio_default_id: integ.negocio_default_id,
     }
+
+    let urgencia: 'alta' | 'media' | 'baja' = 'baja'
+    let crearPend = false
+    if (confianza === 'baja') { urgencia = 'alta'; crearPend = true }
+    else if (confianza === 'media') { urgencia = 'media'; crearPend = true }
+    else { urgencia = 'baja'; crearPend = false }
+
+    let pendRes: { ok: boolean; error?: string; id?: string } | null = null
+    if (crearPend) {
+      pendRes = await crearPendienteCategorizacion(admin, txResumen, sug, integResumen)
+    }
+    const pushRes = await enviarPushCategorizacion(admin, txResumen, sug, integResumen, urgencia)
+
+    // Loggea resultado de push/pendiente (no usa el helper logWebhook para evitar
+    // import circular; insert directo)
     try {
-      if (confianza === 'baja') {
-        // Sin histórico — pregunta abierta, push con CTA
-        await crearPendienteCategorizacion(admin, txResumen, sug, integResumen)
-        await enviarPushCategorizacion(admin, txResumen, sug, integResumen, 'alta')
-      } else if (confianza === 'media') {
-        // Aplicó sugerencia pero conviene verificar
-        await crearPendienteCategorizacion(admin, txResumen, sug, integResumen)
-        await enviarPushCategorizacion(admin, txResumen, sug, integResumen, 'media')
-      } else {
-        // Confianza alta — push silencioso de "ya quedó"
-        await enviarPushCategorizacion(admin, txResumen, sug, integResumen, 'baja')
-      }
-    } catch (e) {
-      console.error('procesarPagoMP: push/pendiente falló', e)
+      await admin.from('webhook_log').insert({
+        fuente: 'webhook_mp',
+        integracion_id: integracionId,
+        ok: (pendRes?.ok ?? true) && pushRes.ok,
+        payment_id: String(paymentId),
+        resultado: {
+          subtipo: 'push_pendiente',
+          confianza,
+          pendiente_creado: pendRes,
+          push: pushRes,
+        },
+        error: [pendRes?.error, pushRes.error].filter(Boolean).join(' | ') || null,
+      })
+    } catch {
+      // si webhook_log no existe aún, no rompemos
     }
   }
 
