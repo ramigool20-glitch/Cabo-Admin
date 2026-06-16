@@ -2,7 +2,8 @@
  * Inventario premium POS-style. Grid de cards con foto, precio, stock pill.
  * Tap en una card → sheet de detalle con edición inline + foto opcional.
  */
-import { Package, AlertTriangle, DollarSign, Sparkles } from 'lucide-react'
+import Link from 'next/link'
+import { Package, AlertTriangle, DollarSign, Sparkles, Plus } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatMoney } from '@/lib/utils'
 import { InventarioGalleryClient } from '@/components/inventario/inventario-gallery-client'
@@ -105,6 +106,13 @@ export default async function InventarioPage(
               Cvu Pharmacy local · TC ${rate.toFixed(2)} MXN/USD
             </p>
           </div>
+          <Link
+            href="/inventario/nuevo"
+            className="h-10 px-3 rounded-full bg-emerald-600 text-white text-sm font-bold inline-flex items-center gap-1.5 shadow-lg shadow-emerald-500/30 active:scale-95 transition-transform"
+          >
+            <Plus className="h-4 w-4" />
+            Nuevo
+          </Link>
         </div>
 
         {/* KPIs en glassmorphism cards */}
