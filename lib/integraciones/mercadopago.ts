@@ -374,14 +374,14 @@ export async function refrescarSaldoIntegracion(integracionId: string): Promise<
 /**
  * Poll de respaldo: busca pagos recientes de una integración (por si un webhook se perdió).
  */
-export async function sincronizarPagosMP(integracionId: string): Promise<{ creadas: number; error?: string }> {
+export async function sincronizarPagosMP(integracionId: string): Promise<{ creadas: number; vistos: number; detalles: string[]; error?: string }> {
   const admin = createAdminClient()
   const { data: integ } = await admin
     .from('integraciones_mp')
     .select('*')
     .eq('id', integracionId)
     .single()
-  if (!integ || !integ.activa) return { creadas: 0, error: 'Integración no activa' }
+  if (!integ || !integ.activa) return { creadas: 0, vistos: 0, detalles: [], error: 'Integración no activa' }
 
   // Pagos de las últimas 48h
   const desde = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
@@ -390,16 +390,18 @@ export async function sincronizarPagosMP(integracionId: string): Promise<{ cread
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${integ.access_token}` },
     })
-    if (!res.ok) return { creadas: 0, error: `MP search ${res.status}` }
+    if (!res.ok) return { creadas: 0, vistos: 0, detalles: [], error: `MP search ${res.status}` }
     const data = await res.json()
     const pagos = (data.results ?? []) as MPPayment[]
     let creadas = 0
+    const detalles: string[] = []
     for (const p of pagos) {
       const r = await procesarPagoMP(String(p.id), integracionId)
       if (r.creada) creadas++
+      detalles.push(`${p.id}:${p.status}:${r.creada ? 'NEW' : r.error ?? 'skip'}`)
     }
-    return { creadas }
+    return { creadas, vistos: pagos.length, detalles }
   } catch (e) {
-    return { creadas: 0, error: e instanceof Error ? e.message : 'Error MP' }
+    return { creadas: 0, vistos: 0, detalles: [], error: e instanceof Error ? e.message : 'Error MP' }
   }
 }

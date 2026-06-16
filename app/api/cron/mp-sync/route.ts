@@ -54,7 +54,7 @@ export async function GET(req: Request) {
       fuente: 'cron_mp_sync_one',
       integracion_id: i.id,
       ok: !r.error && !s.error,
-      resultado: { creadas: r.creadas, saldo_ok: s.ok },
+      resultado: { creadas: r.creadas, vistos: r.vistos, detalles: r.detalles, saldo_ok: s.ok },
       error: [r.error, s.error].filter(Boolean).join(' | ') || null,
       duracion_ms: Date.now() - tI,
     })
