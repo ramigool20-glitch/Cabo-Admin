@@ -10,6 +10,7 @@ import { ToastFlash } from '@/components/ui/toast-flash'
 import { PullToRefresh } from '@/components/ui/pull-to-refresh'
 import { EnfermeraGuard } from '@/components/nav/enfermera-guard'
 import { NurseBottomNav } from '@/components/clinica/nurse-bottom-nav'
+import { MpAutoSync } from '@/components/mp/auto-sync'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -80,6 +81,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="flex-1">{children}</main>
       </PullToRefresh>
       <QuickActionFab />
+      <MpAutoSync />
       <Toaster />
       <Suspense fallback={null}>
         <ToastFlash />

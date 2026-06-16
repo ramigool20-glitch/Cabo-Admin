@@ -1,21 +1,24 @@
-import { Bell, Users, Building2, History, Wand2, Plug } from 'lucide-react'
+import { Bell, Users, Building2, History, Wand2, Plug, Activity } from 'lucide-react'
 import Link from 'next/link'
 import { PushSection } from '@/components/config/push-section'
 import { HistorialNotificaciones } from '@/components/config/historial-notificaciones'
 import { DiagnosticoPush } from '@/components/config/diagnostico-push'
 import { BackfillFxButton } from '@/components/config/backfill-fx-button'
 import { IntegracionesPanel } from '@/components/config/integraciones-panel'
+import { WebhookLogCard, type WebhookLogRow } from '@/components/config/webhook-log-card'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export default async function ConfigPage() {
   const admin = createAdminClient()
-  const [{ data: cuentas }, { data: negocios }, { data: socios }, intgRes, numRes] = await Promise.all([
+  const [{ data: cuentas }, { data: negocios }, { data: socios }, intgRes, numRes, logRes] = await Promise.all([
     admin.from('cuentas').select('id, nombre').eq('activo', true).order('nombre'),
     admin.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
     admin.from('profiles').select('id, nombre').eq('activo', true).order('nombre'),
     admin.from('integraciones_mp').select('id, nombre, activa, cobros_count, ultimo_sync, saldo_disponible, saldo_pendiente, saldo_total, saldo_moneda, saldo_actualizado_at, saldo_error').order('created_at', { ascending: false }),
     admin.from('whatsapp_autorizados').select('id, numero, nombre, activo').order('created_at', { ascending: false }),
+    admin.from('webhook_log').select('id, fuente, ok, payment_id, payment_type, error, duracion_ms, resultado, created_at').order('created_at', { ascending: false }).limit(20),
   ])
+  const webhookLogRows: WebhookLogRow[] = (logRes?.data ?? []) as WebhookLogRow[]
   const prodUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cabo-admin.vercel.app'
 
   return (
@@ -49,6 +52,14 @@ export default async function ConfigPage() {
           numeros={numRes.data ?? []}
           prodUrl={prodUrl}
         />
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center gap-2 px-1">
+          <Activity className="h-4 w-4 text-cyan-400" />
+          <h2 className="text-sm font-semibold text-white">Diagnóstico de integraciones</h2>
+        </div>
+        <WebhookLogCard rows={webhookLogRows} />
       </section>
 
       <section className="space-y-2">
