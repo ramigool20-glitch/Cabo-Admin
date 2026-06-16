@@ -1,6 +1,7 @@
 /**
  * Card de inventario en el dashboard. Muestra resumen del valor total + alertas.
- * Click → /inventario. Botón rápido para crear producto nuevo.
+ * La card entera es link a /inventario. El botón "+" está posicionado absoluto
+ * encima y va a /inventario/nuevo (NO se puede anidar Links en Next.js).
  */
 import Link from 'next/link'
 import { Package, AlertTriangle, Plus } from 'lucide-react'
@@ -20,12 +21,12 @@ export function InventarioCard({ resumen }: { resumen: InventarioResumen }) {
   const hayAlertas = resumen.bajo_stock > 0 || resumen.agotados > 0
 
   return (
-    <Link
-      href="/inventario"
-      className="block group rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 via-cyan-500/5 to-transparent p-4 active:scale-[0.99] transition-all hover:border-emerald-500/40"
-    >
-      <div className="flex items-start justify-between mb-3">
-        <div className="inline-flex items-center gap-2">
+    <div className="relative">
+      <Link
+        href="/inventario"
+        className="block group rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 via-cyan-500/5 to-transparent p-4 active:scale-[0.99] transition-all hover:border-emerald-500/40"
+      >
+        <div className="flex items-start gap-2 mb-3 pr-12">
           <span className="h-9 w-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 inline-flex items-center justify-center">
             <Package className="h-5 w-5" />
           </span>
@@ -34,70 +35,72 @@ export function InventarioCard({ resumen }: { resumen: InventarioResumen }) {
             <p className="text-[10px] text-zinc-500">Cvu Pharmacy local</p>
           </div>
         </div>
-        <Link
-          href="/inventario/nuevo"
-          onClick={(e) => e.stopPropagation()}
-          className="h-8 w-8 rounded-full bg-emerald-600 text-white inline-flex items-center justify-center shadow-lg shadow-emerald-500/30"
-        >
-          <Plus className="h-4 w-4" />
-        </Link>
-      </div>
 
-      {/* Valor total destacado */}
-      <div className="mb-3">
-        <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Valor del inventario</p>
-        <p className="text-2xl font-black text-emerald-300 tabular-nums leading-tight">
-          {formatMoney(resumen.valor_mxn, 'MXN')}
-        </p>
-        <p className="text-[11px] text-cyan-300/80 tabular-nums">
-          ≈ {formatMoney(resumen.valor_usd, 'USD')}
-        </p>
-      </div>
+        {/* Valor total destacado */}
+        <div className="mb-3">
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Valor del inventario</p>
+          <p className="text-2xl font-black text-emerald-300 tabular-nums leading-tight">
+            {formatMoney(resumen.valor_mxn, 'MXN')}
+          </p>
+          <p className="text-[11px] text-cyan-300/80 tabular-nums">
+            ≈ {formatMoney(resumen.valor_usd, 'USD')}
+          </p>
+        </div>
 
-      {/* Stats secundarios */}
-      <div className="grid grid-cols-3 gap-1.5 text-center">
-        <div className="rounded-lg bg-zinc-900/40 border border-zinc-800 py-1.5">
-          <p className="text-base font-bold text-zinc-100 tabular-nums leading-none">{resumen.total}</p>
-          <p className="text-[9px] text-zinc-500 uppercase tracking-wider mt-0.5">Productos</p>
+        {/* Stats secundarios */}
+        <div className="grid grid-cols-3 gap-1.5 text-center">
+          <div className="rounded-lg bg-zinc-900/40 border border-zinc-800 py-1.5">
+            <p className="text-base font-bold text-zinc-100 tabular-nums leading-none">{resumen.total}</p>
+            <p className="text-[9px] text-zinc-500 uppercase tracking-wider mt-0.5">Productos</p>
+          </div>
+          <div className={cn(
+            'rounded-lg py-1.5 border',
+            resumen.bajo_stock > 0
+              ? 'bg-amber-500/10 border-amber-500/30'
+              : 'bg-zinc-900/40 border-zinc-800'
+          )}>
+            <p className={cn(
+              'text-base font-bold tabular-nums leading-none',
+              resumen.bajo_stock > 0 ? 'text-amber-300' : 'text-zinc-400'
+            )}>{resumen.bajo_stock}</p>
+            <p className={cn(
+              'text-[9px] uppercase tracking-wider mt-0.5',
+              resumen.bajo_stock > 0 ? 'text-amber-200/70' : 'text-zinc-500'
+            )}>Bajo stock</p>
+          </div>
+          <div className={cn(
+            'rounded-lg py-1.5 border',
+            resumen.agotados > 0
+              ? 'bg-rose-500/10 border-rose-500/30'
+              : 'bg-zinc-900/40 border-zinc-800'
+          )}>
+            <p className={cn(
+              'text-base font-bold tabular-nums leading-none',
+              resumen.agotados > 0 ? 'text-rose-300' : 'text-zinc-400'
+            )}>{resumen.agotados}</p>
+            <p className={cn(
+              'text-[9px] uppercase tracking-wider mt-0.5',
+              resumen.agotados > 0 ? 'text-rose-200/70' : 'text-zinc-500'
+            )}>Agotados</p>
+          </div>
         </div>
-        <div className={cn(
-          'rounded-lg py-1.5 border',
-          resumen.bajo_stock > 0
-            ? 'bg-amber-500/10 border-amber-500/30'
-            : 'bg-zinc-900/40 border-zinc-800'
-        )}>
-          <p className={cn(
-            'text-base font-bold tabular-nums leading-none',
-            resumen.bajo_stock > 0 ? 'text-amber-300' : 'text-zinc-400'
-          )}>{resumen.bajo_stock}</p>
-          <p className={cn(
-            'text-[9px] uppercase tracking-wider mt-0.5',
-            resumen.bajo_stock > 0 ? 'text-amber-200/70' : 'text-zinc-500'
-          )}>Bajo stock</p>
-        </div>
-        <div className={cn(
-          'rounded-lg py-1.5 border',
-          resumen.agotados > 0
-            ? 'bg-rose-500/10 border-rose-500/30'
-            : 'bg-zinc-900/40 border-zinc-800'
-        )}>
-          <p className={cn(
-            'text-base font-bold tabular-nums leading-none',
-            resumen.agotados > 0 ? 'text-rose-300' : 'text-zinc-400'
-          )}>{resumen.agotados}</p>
-          <p className={cn(
-            'text-[9px] uppercase tracking-wider mt-0.5',
-            resumen.agotados > 0 ? 'text-rose-200/70' : 'text-zinc-500'
-          )}>Agotados</p>
-        </div>
-      </div>
 
-      {hayAlertas && (
-        <p className="text-[10px] text-amber-300/80 mt-2 inline-flex items-center gap-1">
-          <AlertTriangle className="h-3 w-3" />
-          Hay productos que necesitan atención
-        </p>
-      )}
-    </Link>
+        {hayAlertas && (
+          <p className="text-[10px] text-amber-300/80 mt-2 inline-flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            Hay productos que necesitan atención
+          </p>
+        )}
+      </Link>
+
+      {/* Botón "+" flotante para crear producto, FUERA del Link principal */}
+      <Link
+        href="/inventario/nuevo"
+        className="absolute top-4 right-4 z-10 h-8 w-8 rounded-full bg-emerald-600 text-white inline-flex items-center justify-center shadow-lg shadow-emerald-500/30 hover:bg-emerald-500 active:scale-95 transition-all"
+        aria-label="Nuevo producto"
+      >
+        <Plus className="h-4 w-4" />
+      </Link>
+    </div>
   )
 }
