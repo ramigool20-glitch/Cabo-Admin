@@ -664,7 +664,6 @@ export function TransactionForm({
           type="file"
           name="foto"
           accept="image/*"
-          capture="environment"
           className="hidden"
           onChange={(e) => onFotoChange(e.target.files?.[0] ?? null)}
         />
@@ -704,7 +703,7 @@ export function TransactionForm({
             className="w-full h-14 rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm text-zinc-400 inline-flex items-center justify-center gap-2 hover:text-zinc-200"
           >
             <Camera className="h-4 w-4" />
-            Tomar o subir foto
+            Tomar foto o elegir de galería
           </button>
         )}
       </div>
