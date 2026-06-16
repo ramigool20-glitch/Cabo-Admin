@@ -328,16 +328,43 @@ function ProductoCardGrid({ p, rate, onTap }: { p: Producto; rate: number; onTap
         <p className="text-sm font-bold text-zinc-100 leading-tight line-clamp-2 min-h-[36px]">
           {p.nombre}
         </p>
-        <div className="flex items-baseline justify-between pt-1">
-          <p className="text-base font-black text-emerald-300 tabular-nums leading-none">
-            {formatMoney(p.precio_mxn, 'MXN')}
-          </p>
-          <p className="text-[10px] text-cyan-300/80 tabular-nums leading-none">
-            ≈{formatMoney(usd, 'USD')}
-          </p>
+        <div className="flex items-end justify-between pt-1.5 gap-2">
+          {/* Precio MXN principal */}
+          <div className="min-w-0 flex-1">
+            <p className="text-base font-black text-emerald-300 tabular-nums leading-none">
+              {formatMoney(p.precio_mxn, 'MXN')}
+            </p>
+            <p className="text-[8px] uppercase tracking-[0.15em] text-zinc-600 font-bold mt-0.5">MXN</p>
+          </div>
+          {/* Precio USD pill premium */}
+          <PrecioUsdPill usd={usd} />
         </div>
       </div>
     </button>
+  )
+}
+
+/** Pill premium para mostrar el precio USD con bandera + label */
+function PrecioUsdPill({ usd, size = 'md' }: { usd: number; size?: 'sm' | 'md' }) {
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 rounded-md border border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-blue-500/5 backdrop-blur-sm shrink-0',
+      size === 'sm' ? 'px-1.5 h-5' : 'px-2 h-7'
+    )}>
+      <span className={size === 'sm' ? 'text-[9px]' : 'text-[11px]'} aria-hidden>🇺🇸</span>
+      <div className="flex items-baseline gap-0.5 leading-none">
+        <span className={cn(
+          'font-black text-cyan-200 tabular-nums tracking-tight',
+          size === 'sm' ? 'text-[10px]' : 'text-xs'
+        )}>
+          ${usd.toFixed(2)}
+        </span>
+        <span className={cn(
+          'font-bold text-cyan-400/70 tracking-wider',
+          size === 'sm' ? 'text-[7px]' : 'text-[8px]'
+        )}>USD</span>
+      </div>
+    </span>
   )
 }
 
@@ -373,13 +400,11 @@ function ProductoCardLista({ p, rate, onTap }: { p: Producto; rate: number; onTa
             {p.ubicacion && ` · 📍 ${p.ubicacion}`}
           </p>
         </div>
-        <div className="text-right shrink-0">
+        <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
           <p className="text-sm font-bold text-emerald-300 tabular-nums leading-none">
             {formatMoney(p.precio_mxn, 'MXN')}
           </p>
-          <p className="text-[10px] text-cyan-300/80 tabular-nums">
-            ≈ {formatMoney(usd, 'USD')}
-          </p>
+          <PrecioUsdPill usd={usd} size="sm" />
         </div>
         <div className={cn(
           'inline-flex items-center justify-center gap-1 min-w-[52px] px-2 h-7 rounded-md border text-[11px] font-bold tabular-nums',
