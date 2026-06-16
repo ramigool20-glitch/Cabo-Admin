@@ -135,17 +135,23 @@ export function GananciaCard({ resumen }: { resumen: GananciaResumen }) {
         </div>
       )}
 
-      {/* CTA */}
-      <Link
-        href="/transacciones?categoria=Venta+de+productos"
-        className="flex items-center justify-between text-xs text-cyan-400 hover:text-cyan-300 pt-2 border-t border-zinc-800"
-      >
-        <span className="inline-flex items-center gap-1">
+      {/* CTAs */}
+      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-800">
+        <Link
+          href="/transacciones?categoria=Venta+de+productos"
+          className="flex items-center justify-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 h-9 rounded-lg bg-zinc-900/40 border border-zinc-800"
+        >
           <ShoppingBag className="h-3 w-3" />
-          Ver todas las ventas
-        </span>
-        <ChevronRight className="h-3 w-3" />
-      </Link>
+          Ventas
+        </Link>
+        <Link
+          href="/reportes/ganancia"
+          className="flex items-center justify-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 h-9 rounded-lg bg-zinc-900/40 border border-zinc-800"
+        >
+          <TrendingUp className="h-3 w-3" />
+          Reportes
+        </Link>
+      </div>
     </div>
   )
 }
