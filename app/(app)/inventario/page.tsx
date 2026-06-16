@@ -19,14 +19,15 @@ export default async function InventarioPage(
   const sp = await searchParams
   const admin = createAdminClient()
 
-  // FX rate del día para conversión USD
+  // FX rate del día — usa rate_compra para mantener consistencia con
+  // el resto de la app (header, dashboard, transacciones)
   const { data: fxRate } = await admin
     .from('fx_rates')
-    .select('mid_rate, rate_compra, fecha')
+    .select('rate_compra, fecha')
     .order('fecha', { ascending: false })
     .limit(1)
     .maybeSingle()
-  const rate = fxRate ? Number(fxRate.mid_rate ?? fxRate.rate_compra) : 17
+  const rate = fxRate ? Number(fxRate.rate_compra) : 17
 
   // Defensive: si las migraciones 0040 (foto_url) o 0041 (campos Pulpos) aún
   // no se aplican, hacemos retry con menos columnas. La app sigue funcionando.
