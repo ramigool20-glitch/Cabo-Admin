@@ -1,8 +1,9 @@
 'use client'
 
-import { useActionState, useEffect, useMemo, useState } from 'react'
+import { useActionState, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trash2 } from 'lucide-react'
+import Image from 'next/image'
+import { Trash2, Camera, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CATEGORIAS_GASTO, CATEGORIAS_INGRESO, CATEGORIAS_CASA, METODOS_PAGO, metodoPagoDefault } from '@/lib/categorias'
 import {
@@ -40,11 +41,14 @@ export function TransactionForm({
   cuentas,
   socios = [],
   defaults,
+  fotoExistenteUrl = null,
 }: {
   negocios: NegocioOpt[]
   cuentas: CuentaOpt[]
   socios?: SocioOpt[]
   defaults: TransaccionDefault
+  /** Signed URL de la foto ya guardada (al editar). Si es null no hay foto. */
+  fotoExistenteUrl?: string | null
 }) {
   const router = useRouter()
   const isEdit = !!defaults.id
@@ -82,6 +86,31 @@ export function TransactionForm({
   const [sugerencia, setSugerencia] = useState<SugerenciaIA | null>(null)
   const [sugLoading, setSugLoading] = useState(false)
   const [sugDescartada, setSugDescartada] = useState(false)
+
+  // Foto opcional de evidencia
+  const fotoInputRef = useRef<HTMLInputElement | null>(null)
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null) // dataURL local de la foto nueva
+  const [quitarFotoExistente, setQuitarFotoExistente] = useState(false)
+  const fotoVisible = fotoPreview ?? (quitarFotoExistente ? null : fotoExistenteUrl)
+
+  const onFotoChange = (file: File | null) => {
+    if (!file) { setFotoPreview(null); return }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Foto muy grande', 'Máximo 10 MB')
+      if (fotoInputRef.current) fotoInputRef.current.value = ''
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => setFotoPreview(typeof reader.result === 'string' ? reader.result : null)
+    reader.readAsDataURL(file)
+    setQuitarFotoExistente(false) // si elige nueva, no marcar quitar
+  }
+
+  const quitarFoto = () => {
+    setFotoPreview(null)
+    if (fotoInputRef.current) fotoInputRef.current.value = ''
+    if (fotoExistenteUrl) setQuitarFotoExistente(true)
+  }
 
   const action = isEdit
     ? updateTransaccion.bind(null, defaults.id!)
@@ -625,6 +654,59 @@ export function TransactionForm({
             <option key={m.value} value={m.value}>{m.label}</option>
           ))}
         </select>
+      </div>
+
+      {/* Foto de evidencia (opcional) */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Foto de evidencia <span className="text-zinc-500 font-normal">(opcional)</span></label>
+        <input
+          ref={fotoInputRef}
+          type="file"
+          name="foto"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => onFotoChange(e.target.files?.[0] ?? null)}
+        />
+        {quitarFotoExistente && <input type="hidden" name="foto_quitar" value="1" />}
+
+        {fotoVisible ? (
+          <div className="relative rounded-xl overflow-hidden border border-[var(--border-subtle)] bg-[var(--bg-input)]">
+            <Image
+              src={fotoVisible}
+              alt="Evidencia"
+              width={640}
+              height={480}
+              unoptimized
+              className="w-full h-auto max-h-64 object-contain"
+            />
+            <button
+              type="button"
+              onClick={quitarFoto}
+              aria-label="Quitar foto"
+              className="absolute top-2 right-2 h-8 w-8 rounded-full bg-black/60 text-white inline-flex items-center justify-center backdrop-blur"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => fotoInputRef.current?.click()}
+              className="absolute bottom-2 right-2 h-8 px-3 rounded-full bg-black/60 text-white text-xs inline-flex items-center gap-1.5 backdrop-blur"
+            >
+              <Camera className="h-3.5 w-3.5" />
+              Cambiar
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => fotoInputRef.current?.click()}
+            className="w-full h-14 rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-input)] text-sm text-zinc-400 inline-flex items-center justify-center gap-2 hover:text-zinc-200"
+          >
+            <Camera className="h-4 w-4" />
+            Tomar o subir foto
+          </button>
+        )}
       </div>
 
       {/* Más opciones (solo notas ahora) */}

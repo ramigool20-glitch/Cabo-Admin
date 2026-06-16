@@ -4,11 +4,29 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { flashOk } from '@/lib/flash'
 import { aMxnEquivalente } from '@/lib/fx/server'
 import { registrarHistorial } from '@/lib/historial'
 import { sincronizarTxASubTabla } from '@/lib/sync-ads-ventas'
 import { vigilarMovimiento } from '@/lib/ai/observaciones'
+
+// Sube una foto al bucket privado 'recibos'. Devuelve el storage path (no signed URL).
+async function subirFoto(file: File | null, userId: string): Promise<{ path?: string; error?: string }> {
+  if (!file || file.size === 0) return {}
+  if (file.size > 10 * 1024 * 1024) return { error: 'La foto pesa más de 10 MB' }
+  if (!file.type.startsWith('image/')) return { error: 'Solo imágenes' }
+  const ext = (file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+  const path = `tx/${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+  const buf = Buffer.from(await file.arrayBuffer())
+  const admin = createAdminClient()
+  const { error } = await admin.storage.from('recibos').upload(path, buf, {
+    contentType: file.type,
+    upsert: false,
+  })
+  if (error) return { error: 'Subida de foto: ' + error.message }
+  return { path }
+}
 
 const MetodoPagoEnum = z.enum([
   'stripe', 'mp_terminal', 'mp_transferencia', 'mp_link',
@@ -75,6 +93,12 @@ export async function createTransaccion(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
+  // Foto de evidencia (opcional)
+  const fotoFile = formData.get('foto') as File | null
+  const fotoUp = await subirFoto(fotoFile, user.id)
+  if (fotoUp.error) return { error: fotoUp.error }
+  const fotoPath = fotoUp.path ?? null
+
   // ¿Pago dividido en 2 cuentas?
   const splitActivo = formData.get('split_activo') === '1'
   let splitData: z.infer<typeof SplitSchema> | null = null
@@ -106,6 +130,7 @@ export async function createTransaccion(
       monto_mxn_equivalente: fx.monto_mxn_equivalente,
       tipo_cambio_usado: fx.tipo_cambio_usado,
       metodo_captura: 'manual' as const,
+      foto_url: fotoPath,
       capturado_por: user.id,
     }
 
@@ -165,6 +190,7 @@ export async function createTransaccion(
       atribuido_a: parsed.data.atribuido_a ?? null,
       tipo_cambio_usado: rate,
       metodo_captura: 'manual' as const,
+      foto_url: fotoPath,
       capturado_por: user.id,
       split_grupo_id: grupoId,
     }
@@ -257,20 +283,38 @@ export async function updateTransaccion(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
-  // Estado actual (para diff)
+  // Foto nueva opcional (al editar). Si manda `foto_quitar=1`, se borra la actual.
+  const fotoFile = formData.get('foto') as File | null
+  const fotoUp = await subirFoto(fotoFile, user.id)
+  if (fotoUp.error) return { error: fotoUp.error }
+  const quitarFoto = formData.get('foto_quitar') === '1'
+
+  // Estado actual (para diff y para conocer foto previa)
   const { data: antes } = await supabase
     .from('transacciones')
-    .select('tipo, monto, moneda, fecha, concepto, categoria, metodo_pago, notas, negocio_id, cuenta_id, atribuido_a, monto_mxn_equivalente, tipo_cambio_usado')
+    .select('tipo, monto, moneda, fecha, concepto, categoria, metodo_pago, notas, negocio_id, cuenta_id, atribuido_a, monto_mxn_equivalente, tipo_cambio_usado, foto_url')
     .eq('id', id)
     .maybeSingle()
 
   // Recalcular equivalente MXN porque pudo haber cambiado monto/moneda/fecha
   const fx = await aMxnEquivalente(parsed.data.monto, parsed.data.moneda, parsed.data.fecha)
 
-  const updateData = {
+  // foto_url final: nueva > quitar > mantener
+  const fotoUrlNueva = fotoUp.path ?? null
+  const fotoFinal = fotoUrlNueva ?? (quitarFoto ? null : antes?.foto_url ?? null)
+
+  const updateData: Record<string, unknown> = {
     ...parsed.data,
     monto_mxn_equivalente: fx.monto_mxn_equivalente,
     tipo_cambio_usado: fx.tipo_cambio_usado,
+    foto_url: fotoFinal,
+  }
+
+  // Si se quitó/reemplazó, intentamos borrar el archivo viejo del bucket (best-effort)
+  const fotoVieja = antes?.foto_url
+  if (fotoVieja && fotoVieja !== fotoFinal) {
+    const admin = createAdminClient()
+    admin.storage.from('recibos').remove([fotoVieja]).catch(() => {})
   }
 
   const { error } = await supabase.from('transacciones').update(updateData).eq('id', id)

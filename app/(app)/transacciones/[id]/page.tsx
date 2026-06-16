@@ -16,7 +16,7 @@ export default async function EditarTransaccionPage(
   const admin = createAdminClient()
 
   // Defensive: si atribuido_a no existe, reintenta sin
-  const baseCols = 'id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado'
+  const baseCols = 'id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado, foto_url'
   let tRes = await supabase.from('transacciones')
     .select(`${baseCols}, atribuido_a`)
     .eq('id', id)
@@ -43,6 +43,13 @@ export default async function EditarTransaccionPage(
     .map((p) => ({ id: p.id, nombre: p.nombre }))
 
   const editable = t.tipo === 'ingreso' || t.tipo === 'gasto'
+
+  // Si la transacción tiene foto guardada, generar signed URL para mostrarla en el form
+  let fotoExistenteUrl: string | null = null
+  if (t.foto_url) {
+    const { data: signed } = await admin.storage.from('recibos').createSignedUrl(t.foto_url, 60 * 60 * 8)
+    fotoExistenteUrl = signed?.signedUrl ?? null
+  }
 
   // Historial (defensive: tabla puede no existir)
   let historial: Array<{
@@ -107,6 +114,7 @@ export default async function EditarTransaccionPage(
             tipo_cambio_usado: t.tipo_cambio_usado,
             atribuido_a: t.atribuido_a,
           }}
+          fotoExistenteUrl={fotoExistenteUrl}
         />
       ) : (
         <div className="card border-amber-500/40 bg-amber-500/5 p-4 text-sm text-amber-300">

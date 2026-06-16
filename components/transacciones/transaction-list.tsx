@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowUpCircle, ArrowDownCircle, Gavel, ArrowLeftRight, ChevronRight, Sparkles, AlertTriangle } from 'lucide-react'
+import { ArrowUpCircle, ArrowDownCircle, Gavel, ArrowLeftRight, ChevronRight, Sparkles, AlertTriangle, Camera } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatMoney, cn } from '@/lib/utils'
 import { formatearFecha } from '@/lib/fechas'
@@ -22,6 +22,7 @@ export type Transaccion = {
   tipo_cambio_usado?: number | null
   atribuido_a?: string | null
   split_grupo_id?: string | null
+  foto_url?: string | null
 }
 
 const tipoMeta = {
@@ -119,9 +120,14 @@ export function TransactionList({
                   >
                     <Icon className={cn('h-9 w-9 shrink-0', meta.color)} strokeWidth={1.7} />
                     <div className="flex-1 min-w-0 leading-tight">
-                      <p className="text-sm font-medium truncate">
-                        {t.concepto || t.categoria || (
-                          <span className="text-zinc-400 italic">Sin concepto</span>
+                      <p className="text-sm font-medium truncate inline-flex items-center gap-1.5">
+                        <span className="truncate">
+                          {t.concepto || t.categoria || (
+                            <span className="text-zinc-400 italic">Sin concepto</span>
+                          )}
+                        </span>
+                        {t.foto_url && (
+                          <Camera className="h-3 w-3 text-cyan-400 shrink-0" strokeWidth={2.2} aria-label="Tiene foto" />
                         )}
                       </p>
                       <p className="text-xs text-zinc-500 truncate">
