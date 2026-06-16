@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation'
 import { X, Camera, Minus, Plus, Trash2, Loader2, Check } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
+import { comprimirFoto } from '@/lib/foto-compresion'
 import {
   ajustarStock,
   actualizarProducto,
@@ -108,9 +109,10 @@ export function ProductoSheet({
       return
     }
     setBusy(true)
+    const comprimida = await comprimirFoto(file)
     const fd = new FormData()
     fd.append('producto_id', producto.id)
-    fd.append('foto', file)
+    fd.append('foto', comprimida)
     const r = await subirFotoProducto(fd)
     setBusy(false)
     if (r.error) toast.error('No se subió', r.error)

@@ -45,11 +45,12 @@ export function InventarioGalleryClient({
   categorias: string[]
   rate: number
   fotoUrlActiva: boolean
-  filtroInicial: { categoria: string; q: string; bajoStock: boolean; vista: 'grid' | 'lista' }
+  filtroInicial: { categoria: string; q: string; bajoStock: boolean; agotados: boolean; vista: 'grid' | 'lista' }
 }) {
   const [q, setQ] = useState(filtroInicial.q)
   const [categoria, setCategoria] = useState(filtroInicial.categoria)
   const [bajoStock, setBajoStock] = useState(filtroInicial.bajoStock)
+  const [agotados, setAgotados] = useState(filtroInicial.agotados)
   const [vista, setVista] = useState<'grid' | 'lista'>(filtroInicial.vista)
   const [productoAbierto, setProductoAbierto] = useState<Producto | null>(null)
 
@@ -57,17 +58,18 @@ export function InventarioGalleryClient({
     const qn = q.trim().toLowerCase()
     return productos.filter(p => {
       if (categoria && p.categoria !== categoria) return false
-      if (bajoStock && p.stock > p.stock_minimo) return false
+      if (agotados && p.stock !== 0) return false
+      if (bajoStock && !agotados && (p.stock === 0 || p.stock > p.stock_minimo)) return false
       if (qn) {
         const en = (p.nombre + ' ' + (p.codigo_barras ?? '')).toLowerCase()
         if (!en.includes(qn)) return false
       }
       return true
     })
-  }, [productos, q, categoria, bajoStock])
+  }, [productos, q, categoria, bajoStock, agotados])
 
-  const limpiar = () => { setQ(''); setCategoria(''); setBajoStock(false) }
-  const hayFiltros = !!q || !!categoria || bajoStock
+  const limpiar = () => { setQ(''); setCategoria(''); setBajoStock(false); setAgotados(false) }
+  const hayFiltros = !!q || !!categoria || bajoStock || agotados
 
   return (
     <>
@@ -128,15 +130,24 @@ export function InventarioGalleryClient({
 
         {/* Toggle vista + bajo stock + clear */}
         <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <label className="inline-flex items-center gap-1.5 text-zinc-400">
               <input
                 type="checkbox"
                 checked={bajoStock}
-                onChange={(e) => setBajoStock(e.target.checked)}
+                onChange={(e) => { setBajoStock(e.target.checked); if (e.target.checked) setAgotados(false) }}
                 className="h-3.5 w-3.5 accent-amber-500"
               />
               Solo bajo stock
+            </label>
+            <label className="inline-flex items-center gap-1.5 text-zinc-400">
+              <input
+                type="checkbox"
+                checked={agotados}
+                onChange={(e) => { setAgotados(e.target.checked); if (e.target.checked) setBajoStock(false) }}
+                className="h-3.5 w-3.5 accent-rose-500"
+              />
+              Solo agotados
             </label>
             {hayFiltros && (
               <button onClick={limpiar} className="text-cyan-400 inline-flex items-center gap-1">

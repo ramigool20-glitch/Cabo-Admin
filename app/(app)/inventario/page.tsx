@@ -10,7 +10,7 @@ import { InventarioGalleryClient } from '@/components/inventario/inventario-gall
 
 export const dynamic = 'force-dynamic'
 
-type SearchParams = { categoria?: string; q?: string; bajo_stock?: string; vista?: string }
+type SearchParams = { categoria?: string; q?: string; bajo_stock?: string; agotados?: string; vista?: string }
 
 export default async function InventarioPage(
   { searchParams }: { searchParams: Promise<SearchParams> }
@@ -115,7 +115,7 @@ export default async function InventarioPage(
           </Link>
         </div>
 
-        {/* KPIs en glassmorphism cards */}
+        {/* KPIs en glassmorphism cards — los de Bajo stock y Agotados son links a filtros */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <KpiCard
             label="Productos"
@@ -132,16 +132,18 @@ export default async function InventarioPage(
           <KpiCard
             label="Bajo stock"
             value={enBajoStock.toString()}
-            sub={`≤ ${productos[0]?.stock_minimo ?? 3} unidades`}
+            sub="Tap para ver"
             tone="amber"
             icon={<AlertTriangle className="h-3 w-3" />}
+            href="/inventario?bajo_stock=1"
           />
           <KpiCard
             label="Agotados"
             value={enCero.toString()}
-            sub="Sin stock"
+            sub="Tap para ver"
             tone="rose"
             icon={<DollarSign className="h-3 w-3" />}
+            href="/inventario?agotados=1"
           />
         </div>
       </header>
@@ -166,6 +168,7 @@ export default async function InventarioPage(
           categoria: sp.categoria ?? '',
           q: sp.q ?? '',
           bajoStock: sp.bajo_stock === '1',
+          agotados: sp.agotados === '1',
           vista,
         }}
       />
@@ -174,11 +177,12 @@ export default async function InventarioPage(
 }
 
 function KpiCard({
-  label, value, sub, tone, icon,
+  label, value, sub, tone, icon, href,
 }: {
   label: string; value: string; sub?: string
   tone: 'emerald' | 'cyan' | 'amber' | 'rose'
   icon?: React.ReactNode
+  href?: string
 }) {
   const tones = {
     emerald: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-200',
@@ -192,8 +196,9 @@ function KpiCard({
     amber:   'text-amber-300',
     rose:    'text-rose-300',
   }
-  return (
-    <div className={`rounded-xl border p-3 backdrop-blur-sm ${tones[tone]}`}>
+  const className = `rounded-xl border p-3 backdrop-blur-sm ${tones[tone]} ${href ? 'active:scale-[0.97] hover:brightness-110 transition-all' : ''}`
+  const content = (
+    <>
       <p className="text-[10px] uppercase tracking-wider font-bold inline-flex items-center gap-1">
         {icon}
         {label}
@@ -202,6 +207,8 @@ function KpiCard({
         {value}
       </p>
       {sub && <p className="text-[9px] text-zinc-500">{sub}</p>}
-    </div>
+    </>
   )
+  if (href) return <Link href={href} className={`block ${className}`}>{content}</Link>
+  return <div className={className}>{content}</div>
 }

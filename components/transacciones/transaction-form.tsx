@@ -13,6 +13,7 @@ import {
   type ActionState,
 } from '@/app/(app)/transacciones/actions'
 import { toast } from '@/components/ui/toast'
+import { comprimirFoto } from '@/lib/foto-compresion'
 import { AvisoDuplicado } from '@/components/transacciones/aviso-duplicado'
 
 export type NegocioOpt = { id: string; nombre: string; tipo: string; moneda_principal: string }
@@ -98,7 +99,7 @@ export function TransactionForm({
   const [quitarFotoExistente, setQuitarFotoExistente] = useState(false)
   const fotoVisible = fotoPreview ?? (quitarFotoExistente ? null : fotoExistenteUrl)
 
-  const onFotoChange = (file: File | null) => {
+  const onFotoChange = async (file: File | null) => {
     if (!file) { setFotoPreview(null); return }
     if (file.size > 10 * 1024 * 1024) {
       toast.error('Foto muy grande', 'Máximo 10 MB')
@@ -106,28 +107,27 @@ export function TransactionForm({
       if (camInputRef.current) camInputRef.current.value = ''
       return
     }
+    // Comprime en cliente: 3-5 MB → ~300 KB sin pérdida visual notable.
+    const comprimida = await comprimirFoto(file)
+    if (comprimida !== file && fotoInputRef.current && typeof DataTransfer !== 'undefined') {
+      try {
+        const dt = new DataTransfer()
+        dt.items.add(comprimida)
+        fotoInputRef.current.files = dt.files
+      } catch { /* algunos browsers no permiten setear files */ }
+    }
     const reader = new FileReader()
     reader.onload = () => setFotoPreview(typeof reader.result === 'string' ? reader.result : null)
-    reader.readAsDataURL(file)
+    reader.readAsDataURL(comprimida)
     setQuitarFotoExistente(false)
   }
 
   // Cuando el usuario toma la foto desde la CÁMARA, copiamos el archivo al input
   // principal (galería) para que el form submit lo envíe con name="foto".
-  const onCamCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onCamCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null
-    if (!file) { onFotoChange(null); return }
-    if (fotoInputRef.current && typeof DataTransfer !== 'undefined') {
-      try {
-        const dt = new DataTransfer()
-        dt.items.add(file)
-        fotoInputRef.current.files = dt.files
-      } catch {
-        // Algunos browsers no permiten setear files. El handler de submit se
-        // encargará igual leyendo de e.target.files del input camera.
-      }
-    }
-    onFotoChange(file)
+    if (!file) { await onFotoChange(null); return }
+    await onFotoChange(file)
   }
 
   const quitarFoto = () => {

@@ -4,7 +4,7 @@
  * encima y va a /inventario/nuevo (NO se puede anidar Links en Next.js).
  */
 import Link from 'next/link'
-import { Package, AlertTriangle, Plus } from 'lucide-react'
+import { Package, AlertTriangle, Plus, ChevronRight } from 'lucide-react'
 import { formatMoney, cn } from '@/lib/utils'
 
 export type InventarioResumen = {
@@ -86,9 +86,9 @@ export function InventarioCard({ resumen }: { resumen: InventarioResumen }) {
         </div>
 
         {hayAlertas && (
-          <p className="text-[10px] text-amber-300/80 mt-2 inline-flex items-center gap-1">
+          <p className="text-[10px] text-amber-300/80 mt-2 inline-flex items-center gap-1 pr-32">
             <AlertTriangle className="h-3 w-3" />
-            Hay productos que necesitan atención
+            {resumen.agotados + resumen.bajo_stock} producto{resumen.agotados + resumen.bajo_stock === 1 ? '' : 's'} necesitan atención
           </p>
         )}
       </Link>
@@ -101,6 +101,18 @@ export function InventarioCard({ resumen }: { resumen: InventarioResumen }) {
       >
         <Plus className="h-4 w-4" />
       </Link>
+
+      {/* CTA "Ver críticos" — sibling Link, abajo a la derecha cuando hay alertas */}
+      {hayAlertas && (
+        <Link
+          href="/inventario?bajo_stock=1"
+          className="absolute bottom-4 right-4 z-10 inline-flex items-center gap-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 text-[10px] font-bold text-amber-200 hover:bg-amber-500/25 active:scale-95 transition-all"
+          aria-label="Ver productos críticos"
+        >
+          Ver críticos
+          <ChevronRight className="h-3 w-3" />
+        </Link>
+      )}
     </div>
   )
 }
