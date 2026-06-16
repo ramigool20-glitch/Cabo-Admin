@@ -24,7 +24,18 @@ const TIPO_EMOJI: Record<string, string> = {
   farmacia: '💊', consultorio: '🩺', pagina_digital: '🌐', general: '🏢',
 }
 
-const METODOS = ['efectivo', 'tarjeta', 'transferencia', 'mercado_pago'] as const
+// Valores válidos según constraint de transacciones.metodo_pago
+const METODOS = [
+  { value: 'efectivo_mxn',          label: '💵 Efectivo MXN' },
+  { value: 'efectivo_usd',          label: '💵 Efectivo USD' },
+  { value: 'tarjeta',               label: '💳 Tarjeta' },
+  { value: 'transferencia_bancaria',label: '🏦 Transferencia' },
+  { value: 'mp_terminal',           label: '📱 Mercado Pago (terminal)' },
+  { value: 'mp_transferencia',      label: '📱 MP transferencia' },
+  { value: 'mp_link',               label: '🔗 MP link' },
+  { value: 'stripe',                label: '💳 Stripe' },
+  { value: 'otro',                  label: '📦 Otro' },
+] as const
 
 export function VentaProductosClient({
   negocios,
@@ -39,7 +50,7 @@ export function VentaProductosClient({
   const [cuentaId, setCuentaId] = useState(
     cuentas.find(c => c.moneda === 'MXN')?.id ?? cuentas[0]?.id ?? ''
   )
-  const [metodoPago, setMetodoPago] = useState<string>('efectivo')
+  const [metodoPago, setMetodoPago] = useState<string>('efectivo_mxn')
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
   const [clienteNombre, setClienteNombre] = useState('')
   const [descuentoGlobal, setDescuentoGlobal] = useState(0)
@@ -113,21 +124,34 @@ export function VentaProductosClient({
     if (items.length === 0) return toast.error('Falta', 'Agrega al menos un producto')
 
     setGuardando(true)
-    const r = await crearVentaConItems({
-      fecha,
-      negocio_id: negocioId,
-      cuenta_id: cuentaId,
-      metodo_pago: metodoPago || null,
-      concepto: null,
-      cliente_nombre: clienteNombre.trim() || null,
-      notas: notas.trim() || null,
-      items,
-      descuento_global_pct: descuentoGlobal,
-      descontar_stock: descontarStock,
-    })
-    setGuardando(false)
-    if (r?.error) return toast.error('No se guardó', r.error)
-    // redirect ya pasó dentro del action
+    try {
+      const r = await crearVentaConItems({
+        fecha,
+        negocio_id: negocioId,
+        cuenta_id: cuentaId,
+        metodo_pago: metodoPago || null,
+        concepto: null,
+        cliente_nombre: clienteNombre.trim() || null,
+        notas: notas.trim() || null,
+        items,
+        descuento_global_pct: descuentoGlobal,
+        descontar_stock: descontarStock,
+      })
+      if (r?.error) {
+        setGuardando(false)
+        return toast.error('No se guardó', r.error)
+      }
+      // redirect ya pasó dentro del action — el try/catch evita que el
+      // throw del redirect aparezca como error en la consola
+    } catch (e) {
+      // Next.js usa throw para redirects (NEXT_REDIRECT). Si es eso, dejamos pasar.
+      // Otro error real → mostramos.
+      const msg = e instanceof Error ? e.message : ''
+      if (!msg.includes('NEXT_REDIRECT')) {
+        setGuardando(false)
+        toast.error('Error', msg || 'Error desconocido')
+      }
+    }
   }
 
   // Validaciones visibles
@@ -171,9 +195,9 @@ export function VentaProductosClient({
             <select
               value={metodoPago}
               onChange={e => setMetodoPago(e.target.value)}
-              className="input-base w-full h-10 px-2 text-sm capitalize"
+              className="input-base w-full h-10 px-2 text-sm"
             >
-              {METODOS.map(m => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
+              {METODOS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </Field>
           <Field label="Fecha">
