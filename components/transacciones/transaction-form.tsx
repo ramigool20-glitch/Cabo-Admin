@@ -16,7 +16,7 @@ import { toast } from '@/components/ui/toast'
 import { AvisoDuplicado } from '@/components/transacciones/aviso-duplicado'
 
 export type NegocioOpt = { id: string; nombre: string; tipo: string; moneda_principal: string }
-export type CuentaOpt  = { id: string; nombre: string; tipo: string | null; moneda: string }
+export type CuentaOpt  = { id: string; nombre: string; tipo: string | null; moneda: string; integracion_mp?: boolean }
 export type SocioOpt   = { id: string; nombre: string }
 
 export type TransaccionDefault = {
@@ -378,7 +378,7 @@ export function TransactionForm({
                 disabled={usadaEnSplit}
                 onClick={() => onCuentaChange(c.id)}
                 className={cn(
-                  'h-9 px-3 rounded-full text-sm border transition-colors',
+                  'h-9 px-3 rounded-full text-sm border transition-colors inline-flex items-center gap-1',
                   cuentaId === c.id
                     ? 'border-emerald-600 bg-emerald-600 text-white'
                     : usadaEnSplit
@@ -386,12 +386,22 @@ export function TransactionForm({
                       : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-zinc-300'
                 )}
               >
+                {c.integracion_mp && <span title="Integración MP activa">🔗</span>}
                 {c.nombre}
                 {usadaEnSplit && ' (cuenta 2)'}
               </button>
             )
           })}
         </div>
+        {(() => {
+          const cuentaSel = cuentas.find((x) => x.id === cuentaId)
+          if (!cuentaSel?.integracion_mp) return null
+          return (
+            <p className="text-[11px] text-cyan-300 inline-flex items-center gap-1">
+              🔗 Integración Mercado Pago activa — el saldo real se compara automáticamente con el calculado.
+            </p>
+          )
+        })()}
       </div>
 
       {/* Toggle "Pago dividido en 2 cuentas" — solo al crear */}

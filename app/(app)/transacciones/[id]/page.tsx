@@ -29,11 +29,18 @@ export default async function EditarTransaccionPage(
   if (!t) notFound()
 
   // Carga options para el form
-  const [{ data: negocios }, { data: cuentas }, { data: socios }] = await Promise.all([
+  const [{ data: negocios }, { data: cuentas }, { data: socios }, { data: integMp }] = await Promise.all([
     supabase.from('negocios').select('id, nombre, tipo, moneda_principal').eq('activo', true).order('nombre'),
     supabase.from('cuentas').select('id, nombre, tipo, moneda').eq('activo', true).order('nombre'),
     admin.from('profiles').select('id, nombre, role_id, roles(nombre)').eq('activo', true),
+    admin.from('integraciones_mp').select('cuenta_id').eq('activa', true),
   ])
+
+  const cuentasConIntegMp = new Set((integMp ?? []).map((r) => r.cuenta_id).filter(Boolean) as string[])
+  const cuentasOpts = (cuentas ?? []).map((c) => ({
+    ...c,
+    integracion_mp: cuentasConIntegMp.has(c.id),
+  }))
 
   const sociosFiltered = (socios ?? [])
     .filter((p) => {
@@ -96,7 +103,7 @@ export default async function EditarTransaccionPage(
       {editable ? (
         <TransactionForm
           negocios={negocios ?? []}
-          cuentas={cuentas ?? []}
+          cuentas={cuentasOpts}
           socios={sociosFiltered}
           defaults={{
             id: t.id,

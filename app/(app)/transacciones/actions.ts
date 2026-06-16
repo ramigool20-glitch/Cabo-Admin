@@ -10,6 +10,32 @@ import { aMxnEquivalente } from '@/lib/fx/server'
 import { registrarHistorial } from '@/lib/historial'
 import { sincronizarTxASubTabla } from '@/lib/sync-ads-ventas'
 import { vigilarMovimiento } from '@/lib/ai/observaciones'
+import { refrescarSaldoIntegracion } from '@/lib/integraciones/mercadopago'
+
+/**
+ * Si la cuenta_id tiene una integración MP activa, dispara un refresh del
+ * saldo MP en background. Esto mantiene el "watchdog" del cashflow (saldo
+ * real vs calculado) actualizado tras cualquier movimiento manual en
+ * cuentas integradas. Best-effort, nunca bloquea ni rompe.
+ */
+async function refrescarSaldoMpSiAplica(cuentaId: string | null | undefined): Promise<void> {
+  if (!cuentaId) return
+  try {
+    const admin = createAdminClient()
+    const { data: integ } = await admin
+      .from('integraciones_mp')
+      .select('id')
+      .eq('cuenta_id', cuentaId)
+      .eq('activa', true)
+      .maybeSingle()
+    if (integ?.id) {
+      // Fire-and-forget: no awaiteamos para no demorar la respuesta
+      refrescarSaldoIntegracion(integ.id).catch(() => {})
+    }
+  } catch {
+    // tabla no existe o algo, no rompemos el flujo principal
+  }
+}
 
 // Sube una foto al bucket privado 'recibos'. Devuelve el storage path (no signed URL).
 async function subirFoto(file: File | null, userId: string): Promise<{ path?: string; error?: string }> {
@@ -258,6 +284,10 @@ export async function createTransaccion(
     }
   }
 
+  // Watchdog: refresca saldo MP de la(s) cuenta(s) afectadas en background
+  await refrescarSaldoMpSiAplica(parsed.data.cuenta_id)
+  if (splitData) await refrescarSaldoMpSiAplica(splitData.cuenta_id_2)
+
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
   revalidatePath('/cashflow')
@@ -324,6 +354,13 @@ export async function updateTransaccion(
   // Registrar en historial
   await registrarHistorial(id, 'editada', user.id, antes ?? null, updateData)
 
+  // Watchdog: refrescar saldo MP en BG si cualquiera de las dos cuentas
+  // (antes o después de la edición) tiene integración.
+  await refrescarSaldoMpSiAplica(parsed.data.cuenta_id)
+  if (antes?.cuenta_id && antes.cuenta_id !== parsed.data.cuenta_id) {
+    await refrescarSaldoMpSiAplica(antes.cuenta_id as string)
+  }
+
   revalidatePath('/transacciones')
   revalidatePath(`/transacciones/${id}`)
   revalidatePath('/dashboard')
@@ -367,6 +404,9 @@ export async function deleteTransaccion(id: string) {
 
   const { error } = await supabase.from('transacciones').delete().eq('id', id)
   if (error) return { error: error.message }
+
+  // Watchdog: refrescar saldo MP de la cuenta borrada en BG
+  await refrescarSaldoMpSiAplica(antes?.cuenta_id as string | null | undefined)
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')

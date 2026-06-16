@@ -103,6 +103,49 @@ export async function procesarPagoMP(
   const concepto = pago.description
     || `Cobro MP Point${pago.payment_method_id ? ` (${pago.payment_method_id})` : ''}`
 
+  // ── Detección de duplicados: ¿el usuario ya capturó esto manualmente? ──
+  // Busca una tx no-api con mismo monto+cuenta+moneda+tipo dentro de ±2 días.
+  // Si existe, NO duplicamos: la enlazamos en mp_pagos_procesados y salimos.
+  const fechaMenos2 = new Date(new Date(fecha).getTime() - 2 * 86_400_000).toISOString().slice(0, 10)
+  const fechaMas2 = new Date(new Date(fecha).getTime() + 2 * 86_400_000).toISOString().slice(0, 10)
+  const { data: posibleDup } = await admin
+    .from('transacciones')
+    .select('id, fecha, concepto, metodo_captura')
+    .eq('cuenta_id', integ.cuenta_id)
+    .eq('tipo', 'ingreso')
+    .eq('monto', pago.transaction_amount)
+    .eq('moneda', moneda)
+    .neq('metodo_captura', 'api')          // sólo tx que NO vinieron de MP
+    .gte('fecha', fechaMenos2)
+    .lte('fecha', fechaMas2)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (posibleDup) {
+    // Enlazar como ya procesado para evitar duplicado y registrar la conexión
+    await admin.from('mp_pagos_procesados').insert({
+      mp_payment_id: paymentId,
+      integracion_id: integracionId,
+      transaccion_id: posibleDup.id,
+      monto: pago.transaction_amount,
+      moneda,
+      estado: pago.status,
+    })
+    // Actualizar la tx manual con datos de MP (para conciliación)
+    await admin
+      .from('transacciones')
+      .update({
+        notas: `${posibleDup.concepto ?? ''}\n[Coincide con MP payment ${paymentId}]`.trim(),
+      })
+      .eq('id', posibleDup.id)
+    await admin
+      .from('integraciones_mp')
+      .update({ ultimo_sync: new Date().toISOString() })
+      .eq('id', integracionId)
+    return { ok: true, creada: false }
+  }
+
   // Categorización híbrida: consulta histórico+IA para sugerir negocio/categoría
   // según el concepto del cobro. 3 niveles de confianza:
   //   alta   → aplica la sugerencia, push silencioso
