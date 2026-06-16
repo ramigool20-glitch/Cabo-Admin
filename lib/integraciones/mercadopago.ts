@@ -25,6 +25,17 @@ type MPPayment = {
     business_info?: { unit?: string; sub_unit?: string }
   }
   external_reference?: string | null
+  fee_details?: Array<{ amount: number; fee_payer?: string; type?: string }>
+  transaction_details?: {
+    net_received_amount?: number
+    total_paid_amount?: number
+    installment_amount?: number
+  }
+  /** ID del comercio que recibe (yo soy collector si == mp_user_id). */
+  collector_id?: number | string
+  /** Info del payer (yo soy payer si payer.id == mp_user_id → es gasto saliente). */
+  payer?: { id?: number | string; email?: string | null }
+  operation_type?: string
 }
 
 /**
@@ -98,6 +109,14 @@ export async function procesarPagoMP(
 
   const moneda = (pago.currency_id === 'USD' ? 'USD' : 'MXN') as 'MXN' | 'USD'
   const fecha = (pago.date_approved || pago.date_created).slice(0, 10)
+
+  // ── Detección de DIRECCIÓN del movimiento (ingreso vs gasto) ──────
+  // Si soy collector → es ingreso (alguien me pagó)
+  // Si soy payer → es gasto saliente (yo pagué a otro)
+  const miUserId = String(integ.mp_user_id ?? '')
+  const esIngreso = miUserId && String(pago.collector_id ?? '') === miUserId
+  const esGasto = miUserId && !esIngreso && String(pago.payer?.id ?? '') === miUserId
+  const tipoMov: 'ingreso' | 'gasto' = esGasto ? 'gasto' : 'ingreso'
   const fx = await aMxnEquivalente(pago.transaction_amount, moneda, fecha)
 
   const concepto = pago.description
@@ -112,7 +131,7 @@ export async function procesarPagoMP(
     .from('transacciones')
     .select('id, fecha, concepto, metodo_captura')
     .eq('cuenta_id', integ.cuenta_id)
-    .eq('tipo', 'ingreso')
+    .eq('tipo', tipoMov)
     .eq('monto', pago.transaction_amount)
     .eq('moneda', moneda)
     .neq('metodo_captura', 'api')          // sólo tx que NO vinieron de MP
@@ -153,7 +172,7 @@ export async function procesarPagoMP(
   //   baja   → deja en blanco, push con botones para responder en 1 tap
   const sug = await sugerirCategorizacion(admin, {
     concepto,
-    tipo: 'ingreso',
+    tipo: tipoMov,
     monto: pago.transaction_amount,
   })
 
@@ -166,11 +185,16 @@ export async function procesarPagoMP(
   const categoria =
     confianza === 'baja' ? null : sug?.categoria ?? null
 
-  // Crear la transacción de ingreso
+  // Concepto: si es gasto saliente, prefijar para que sea obvio
+  const conceptoFinal = tipoMov === 'gasto'
+    ? `Gasto MP: ${concepto}`
+    : concepto
+
+  // Crear la transacción
   const { data: tx, error: txErr } = await admin
     .from('transacciones')
     .insert({
-      tipo: 'ingreso',
+      tipo: tipoMov,
       monto: pago.transaction_amount,
       moneda,
       monto_mxn_equivalente: fx.monto_mxn_equivalente,
@@ -179,15 +203,56 @@ export async function procesarPagoMP(
       negocio_id,
       cuenta_id: integ.cuenta_id,
       categoria,
-      concepto,
+      concepto: conceptoFinal,
       metodo_pago: 'mp_terminal',
       metodo_captura: 'api',
-      notas: `Importado automático de Mercado Pago (payment ${paymentId})`,
+      notas: `Importado automático de Mercado Pago (payment ${paymentId}, op=${pago.operation_type ?? 'unknown'})`,
     })
     .select('id')
     .single()
 
   if (txErr) return { ok: false, creada: false, error: txErr.message }
+
+  // ── Comisión MP automática (solo para INGRESOS) ──────────────────
+  // MP devuelve fee_details[] con la comisión exacta. Creamos una tx
+  // de gasto por la misma cuenta con categoría 'comisiones'. El monto
+  // viene del payload, no es 4.06% hardcoded.
+  const totalFees = (pago.fee_details ?? []).reduce((sum, f) => sum + Number(f.amount || 0), 0)
+  const netoRecibido = pago.transaction_details?.net_received_amount ?? (pago.transaction_amount - totalFees)
+  let txComisionId: string | null = null
+  if (tipoMov === 'ingreso' && totalFees > 0 && tx?.id) {
+    const fxComision = await aMxnEquivalente(totalFees, moneda, fecha)
+    const { data: txCom } = await admin
+      .from('transacciones')
+      .insert({
+        tipo: 'gasto',
+        monto: Number(totalFees.toFixed(2)),
+        moneda,
+        monto_mxn_equivalente: fxComision.monto_mxn_equivalente,
+        tipo_cambio_usado: fxComision.tipo_cambio_usado,
+        fecha,
+        negocio_id, // mismo negocio que el cobro
+        cuenta_id: integ.cuenta_id, // misma cuenta
+        categoria: 'comisiones',
+        concepto: `Comisión MP — cobro #${String(paymentId).slice(-6)}`,
+        metodo_pago: 'mp_terminal',
+        metodo_captura: 'api',
+        notas: `Comisión Mercado Pago del cobro de ${moneda} ${pago.transaction_amount} (neto recibido: ${moneda} ${netoRecibido.toFixed(2)}). Tx asociada: ${tx.id}`,
+      })
+      .select('id')
+      .single()
+    txComisionId = txCom?.id ?? null
+
+    // Agregar a la tx principal una nota cruzada
+    if (txComisionId) {
+      await admin
+        .from('transacciones')
+        .update({
+          notas: `Importado automático de Mercado Pago (payment ${paymentId}). Bruto ${moneda} ${pago.transaction_amount}, comisión ${moneda} ${totalFees.toFixed(2)}, neto ${moneda} ${netoRecibido.toFixed(2)}. Comisión registrada como tx: ${txComisionId}`,
+        })
+        .eq('id', tx.id)
+    }
+  }
 
   // Registrar como procesado
   await admin.from('mp_pagos_procesados').insert({
@@ -214,6 +279,8 @@ export async function procesarPagoMP(
       moneda,
       concepto,
       fecha,
+      comision: totalFees > 0 ? Number(totalFees.toFixed(2)) : undefined,
+      neto: totalFees > 0 ? Number(netoRecibido.toFixed(2)) : undefined,
     }
     const integResumen = {
       id: integracionId,
@@ -403,23 +470,46 @@ export async function sincronizarPagosMP(integracionId: string): Promise<{ cread
   // NOTA: NO incluimos range=date_created porque MP excluye silenciosamente los
   // pagos tipo pos_payment (Terminal Point/NFC) con ese filtro. Sin range, MP
   // devuelve todos los tipos: bank_transfer, pos_payment, credit_card, etc.
+  //
+  // FASE C: hacemos múltiples búsquedas para capturar también movimientos
+  // salientes (money_transfer, withdraw, regular_payment desde payer).
+  // El default solo trae donde tú eres collector. Los siguientes capturan
+  // otros operation_types.
   const desde = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+  const baseUrl = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&begin_date=${desde}&end_date=NOW&limit=50`
+
+  const queries = [
+    { label: 'default', url: baseUrl },
+    { label: 'money_transfer', url: `${baseUrl}&operation_type=money_transfer` },
+    { label: 'withdraw', url: `${baseUrl}&operation_type=withdraw` },
+  ]
+
   try {
-    const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&begin_date=${desde}&end_date=NOW&limit=50`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${integ.access_token}` },
-    })
-    if (!res.ok) return { creadas: 0, vistos: 0, detalles: [], error: `MP search ${res.status}` }
-    const data = await res.json()
-    const pagos = (data.results ?? []) as MPPayment[]
     let creadas = 0
     const detalles: string[] = []
-    for (const p of pagos) {
-      const r = await procesarPagoMP(String(p.id), integracionId)
-      if (r.creada) creadas++
-      detalles.push(`${p.id}:${p.status}:${r.creada ? 'NEW' : r.error ?? 'skip'}`)
+    const idsVistos = new Set<string>() // dedup entre queries
+
+    for (const q of queries) {
+      const res = await fetch(q.url, {
+        headers: { Authorization: `Bearer ${integ.access_token}` },
+      })
+      if (!res.ok) {
+        detalles.push(`${q.label}:HTTP_${res.status}`)
+        continue
+      }
+      const data = await res.json()
+      const pagos = (data.results ?? []) as MPPayment[]
+      for (const p of pagos) {
+        const id = String(p.id)
+        if (idsVistos.has(id)) continue
+        idsVistos.add(id)
+        const r = await procesarPagoMP(id, integracionId)
+        if (r.creada) creadas++
+        detalles.push(`${q.label}:${id}:${p.status}:${r.creada ? 'NEW' : r.error ?? 'skip'}`)
+      }
     }
-    return { creadas, vistos: pagos.length, detalles }
+
+    return { creadas, vistos: idsVistos.size, detalles }
   } catch (e) {
     return { creadas: 0, vistos: 0, detalles: [], error: e instanceof Error ? e.message : 'Error MP' }
   }

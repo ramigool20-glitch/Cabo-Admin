@@ -29,6 +29,9 @@ type TxResumen = {
   moneda: 'MXN' | 'USD'
   concepto: string | null
   fecha: string
+  /** Comisión MP descontada al cobro (opcional, para mostrar neto en el push) */
+  comision?: number
+  neto?: number
 }
 
 type Urgencia = 'alta' | 'media' | 'baja'
@@ -105,22 +108,27 @@ export async function enviarPushCategorizacion(
     if (ids.length === 0) return { ok: true, enviados: 0, fallidos: 0, total: 0 }
 
     const monto = formatMoney(tx.monto, tx.moneda)
+    // Si hay comisión, agregamos el neto al título para que el usuario sepa
+    // cuánto realmente le va a quedar (después de la comisión MP).
+    const sufijoNeto = tx.comision && tx.comision > 0 && typeof tx.neto === 'number'
+      ? ` (neto ${formatMoney(tx.neto, tx.moneda)})`
+      : ''
 
     let title: string
     let body: string
 
     if (urgencia === 'baja') {
-      title = `💰 +${monto} en ${integ.nombre}`
+      title = `💰 +${monto}${sufijoNeto} en ${integ.nombre}`
       body = sug?.negocio_nombre
         ? `Lo metí como "${sug.negocio_nombre}" automáticamente. Toca si quieres revisar.`
         : 'Registrado. Toca para revisar.'
     } else if (urgencia === 'media') {
-      title = `💰 +${monto} en ${integ.nombre}`
+      title = `💰 +${monto}${sufijoNeto} en ${integ.nombre}`
       body = sug?.negocio_nombre
         ? `¿Es de "${sug.negocio_nombre}"? Toca para confirmar o cambiar.`
         : '¿De qué fue? Toca para asignar.'
     } else {
-      title = `❓ +${monto} en ${integ.nombre} sin categorizar`
+      title = `❓ +${monto}${sufijoNeto} en ${integ.nombre} sin categorizar`
       body = '¿De qué negocio fue? Toca para asignar de 1 tap.'
     }
 
