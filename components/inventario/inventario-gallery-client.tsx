@@ -232,7 +232,9 @@ function stockClasses(stock: number, minimo: number) {
 function ProductoCardGrid({ p, rate, onTap }: { p: Producto; rate: number; onTap: () => void }) {
   const usd = p.precio_mxn / rate
   const sc = stockClasses(p.stock, p.stock_minimo)
-  const emoji = EMOJI_CAT[p.categoria ?? ''] ?? '📦'
+  // Para Choco, el placeholder siempre es la caja (no el chocolate) — preferencia del usuario.
+  // El emoji de la categoría sigue saliendo en los chips de filtro.
+  const emoji = p.categoria === 'Choco' ? '📦' : (EMOJI_CAT[p.categoria ?? ''] ?? '📦')
 
   return (
     <button

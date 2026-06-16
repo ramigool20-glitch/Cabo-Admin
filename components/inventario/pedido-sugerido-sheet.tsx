@@ -136,8 +136,8 @@ export function PedidoSugeridoSheet({
         <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
           <Sparkles className="h-5 w-5 text-cyan-300" />
           <div className="flex-1">
-            <h2 className="text-base font-black text-zinc-100">Pedido sugerido por IA</h2>
-            <p className="text-[10px] text-zinc-500">Claude Sonnet · basado en stock + ventas 30d</p>
+            <h2 className="text-base font-black text-zinc-100">Pedido sugerido</h2>
+            <p className="text-[10px] text-zinc-500">Generado por IA · basado en stock + ventas 30d</p>
           </div>
           <button
             onClick={onClose}
