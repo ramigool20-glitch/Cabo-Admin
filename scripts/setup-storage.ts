@@ -21,6 +21,7 @@ const BUCKETS = [
   { name: 'audios',       allowedMimeTypes: ['audio/*'],         fileSizeLimit: 25 * 1024 * 1024 },
   { name: 'comprobantes', allowedMimeTypes: ['image/*', 'application/pdf'], fileSizeLimit: 10 * 1024 * 1024 },
   { name: 'evidencias',   allowedMimeTypes: ['image/*'],         fileSizeLimit: 10 * 1024 * 1024 },
+  { name: 'productos',    allowedMimeTypes: ['image/*'],         fileSizeLimit: 5 * 1024 * 1024 },
 ]
 
 async function main() {
