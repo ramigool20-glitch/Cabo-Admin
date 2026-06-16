@@ -383,10 +383,13 @@ export async function sincronizarPagosMP(integracionId: string): Promise<{ cread
     .single()
   if (!integ || !integ.activa) return { creadas: 0, vistos: 0, detalles: [], error: 'Integración no activa' }
 
-  // Pagos de las últimas 48h
+  // Pagos de las últimas 48h.
+  // NOTA: NO incluimos range=date_created porque MP excluye silenciosamente los
+  // pagos tipo pos_payment (Terminal Point/NFC) con ese filtro. Sin range, MP
+  // devuelve todos los tipos: bank_transfer, pos_payment, credit_card, etc.
   const desde = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
   try {
-    const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${desde}&end_date=NOW&limit=50`
+    const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&begin_date=${desde}&end_date=NOW&limit=50`
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${integ.access_token}` },
     })
