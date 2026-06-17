@@ -41,6 +41,7 @@ const HERRAMIENTAS = [
   { href: '/eventos',       label: 'Eventos',     icon: Calendar,        emoji: '🎉' },
   { href: '/clinica',       label: 'Clínica',     icon: Building2,       emoji: '🏥' },
   { href: '/inventario',    label: 'Inventario',  icon: Building2,       emoji: '📦' },
+  { href: '/inventario/costos', label: 'Costos faltantes IA', icon: Sparkles, emoji: '🤖' },
   { href: '/recurrentes',   label: 'Gastos Fijos', icon: Calendar,       emoji: '📅' },
   { href: '/por-pagar',     label: 'Por Pagar',   icon: AlertTriangle,   emoji: '💸' },
   { href: '/por-cobrar',    label: 'Por Cobrar',  icon: AlertTriangle,   emoji: '💰' },

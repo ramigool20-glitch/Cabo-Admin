@@ -21,6 +21,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { aMxnEquivalente } from '@/lib/fx/server'
 import { calcularItem, calcularTotalesVenta } from '@/lib/ventas/items'
+import { enviarPushAProfiles } from '@/lib/push/server'
 
 export type VentaActionState = { ok?: boolean; error?: string; id?: string }
 
@@ -187,7 +188,41 @@ export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Pr
   revalidatePath('/inventario')
   revalidatePath('/pos')
 
+  // 🔔 Notificación push a admin/socio cuando venta viene del POS
+  // (no_redirect=true significa que es desde el POS, no formulario manual)
   if (d.no_redirect) {
+    try {
+      const { data: admins } = await admin
+        .from('profiles')
+        .select('id, roles(nombre)')
+        .eq('activo', true)
+      const adminIds = (admins ?? [])
+        .filter(p => {
+          const r = (p.roles as unknown as { nombre: string } | null)?.nombre
+          return r === 'admin' || r === 'socio'
+        })
+        .map(p => p.id as string)
+        .filter(id => id !== user.id)  // No te notifiques a ti mismo si cobraste tú
+
+      if (adminIds.length > 0) {
+        const { data: cajeraProf } = await admin
+          .from('profiles').select('nombre').eq('id', user.id).single()
+        const nombreCajera = (cajeraProf?.nombre as string) ?? 'Cajera'
+        const fmtMonto = monedaCobro === 'USD'
+          ? `🇺🇸 $${montoTx.toFixed(2)} USD`
+          : `$${montoTx.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`
+
+        await enviarPushAProfiles(adminIds, {
+          title: '💰 Nueva venta en CVU',
+          body: `${nombreCajera} cobró ${fmtMonto} (${itemsCalculados.length} producto${itemsCalculados.length === 1 ? '' : 's'})`,
+          url: `/transacciones/${txId}`,
+          tag: `venta-pos-${txId}`,
+        })
+      }
+    } catch {
+      // Silent fail - la venta ya está registrada, push no es crítico
+    }
+
     return { ok: true, id: txId }
   }
   redirect(`/transacciones/${txId}`)
