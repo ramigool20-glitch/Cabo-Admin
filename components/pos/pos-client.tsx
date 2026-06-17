@@ -7,7 +7,7 @@
 
 import { useMemo, useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Search, Plus, Minus, Trash2, X, ShoppingBag, AlertTriangle, Pill, ScanLine, ChevronUp, LogOut, FileText } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, X, ShoppingBag, AlertTriangle, ScanLine, ChevronUp, LogOut, FileText } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { CobroSheet } from '@/components/pos/cobro-sheet'
@@ -183,31 +183,36 @@ export function PosClient({
 
   return (
     <div className="fixed inset-0 bg-[var(--bg-base)] flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
-      {/* Header compacto */}
-      <header className="border-b border-zinc-800 bg-zinc-950/90 backdrop-blur-md px-3 py-2 flex items-center gap-2 shrink-0">
-        <Pill className="h-5 w-5 text-emerald-400 shrink-0" />
-        <div className="min-w-0">
-          <p className="text-sm font-black text-zinc-100 leading-tight truncate">CVU Pharmacy POS</p>
-          <p className="text-[9px] text-zinc-500 leading-tight">
-            {userNombre} · {new Date().toLocaleDateString('es-MX')}
+      {/* Header premium con branding CVU Pharmacy */}
+      <header className="border-b border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 via-cyan-500/5 to-transparent backdrop-blur-md px-3 py-2.5 flex items-center gap-2.5 shrink-0">
+        {/* Logo cuadrado con gradiente + emoji */}
+        <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-emerald-500 via-emerald-400 to-cyan-500 shadow-lg shadow-emerald-500/40 inline-flex items-center justify-center shrink-0 ring-1 ring-white/20">
+          <span className="text-xl filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]">💊</span>
+        </div>
+        <div className="min-w-0 leading-tight">
+          <p className="text-base font-black text-zinc-100 truncate tracking-tight inline-flex items-center gap-1.5">
+            CVU <span className="text-emerald-300">Pharmacy</span>
+          </p>
+          <p className="text-[10px] text-zinc-500 truncate inline-flex items-center gap-1">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            {userNombre} · {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           <Link
             href="/pos/corte"
-            className="h-8 px-2 rounded-md bg-zinc-800/80 border border-zinc-700 text-zinc-200 text-[10px] font-bold inline-flex items-center gap-1 active:scale-95"
+            className="h-9 px-2.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-200 text-[11px] font-bold inline-flex items-center gap-1 active:scale-95 hover:bg-cyan-500/25 transition-colors"
             title="Corte de caja"
           >
-            <FileText className="h-3 w-3" />
+            <FileText className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Corte</span>
           </Link>
           <Link
             href="/login?logout=1"
-            className="h-8 px-2 rounded-md bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[10px] font-bold inline-flex items-center gap-1 active:scale-95"
+            className="h-9 px-2.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[11px] font-bold inline-flex items-center gap-1 active:scale-95 hover:bg-rose-500/25 transition-colors"
             title="Cerrar sesión"
             onClick={async (e) => {
               e.preventDefault()
-              // Sign out client-side via Supabase
               const { createBrowserClient } = await import('@supabase/ssr')
               const supa = createBrowserClient(
                 process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -217,7 +222,7 @@ export function PosClient({
               window.location.href = '/login'
             }}
           >
-            <LogOut className="h-3 w-3" />
+            <LogOut className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Salir</span>
           </Link>
         </div>
