@@ -20,6 +20,7 @@ import { CobroSheet } from '@/components/pos/cobro-sheet'
 import { CvuLogo } from '@/components/pos/cvu-logo'
 import { BarcodeScanner } from '@/components/inventario/barcode-scanner'
 import { calcularItem, calcularTotalesVenta, type VentaItemInput } from '@/lib/ventas/items'
+import { useRealtimeProductos } from '@/lib/pos/use-realtime-productos'
 
 type Negocio = { id: string; nombre: string; tipo: string } | null
 type Cuenta = { id: string; nombre: string; moneda: string; tipo: string }
@@ -56,7 +57,7 @@ const nuevoTicket = (n: number): Ticket => ({
 export function PosClient({
   negocio,
   cuentas,
-  productos,
+  productos: productosIniciales,
   categorias,
   rate,
   userNombre,
@@ -70,6 +71,25 @@ export function PosClient({
   userNombre: string
   esCajera: boolean
 }) {
+  // Productos en estado local para que Realtime los pueda actualizar en vivo
+  const [productos, setProductos] = useState<Producto[]>(productosIniciales)
+  // Si el server da una nueva versión inicial (ej. tras recarga), sincronizar
+  useEffect(() => { setProductos(productosIniciales) }, [productosIniciales])
+
+  // Realtime: escucha cambios en inventario_productos y los aplica al catálogo
+  const [realtimeActivo, setRealtimeActivo] = useState(true)
+  useRealtimeProductos(setProductos, (tipo, nombre) => {
+    if (tipo === 'update') {
+      toast.success('🔄 Catálogo actualizado', nombre.slice(0, 40))
+    } else if (tipo === 'insert') {
+      toast.success('✨ Nuevo producto', nombre.slice(0, 40))
+    } else if (tipo === 'delete') {
+      toast.error('Producto retirado', nombre.slice(0, 40))
+    }
+  })
+  // Si nunca falla la suscripción, dejamos el indicador encendido.
+  // (El listener interno ya remueve al unmount.)
+  useEffect(() => { setRealtimeActivo(true) }, [])
   // ── TEMA ───────────────────────────────────────────────
   // Default: claro para cajera (Tania), oscuro para admin
   const [tema, setTema] = useState<'light' | 'dark'>(esCajera ? 'light' : 'dark')
@@ -326,6 +346,24 @@ export function PosClient({
           </>
         )}
         <div className="ml-auto flex items-center gap-1.5">
+          {/* Indicador Realtime — punto verde pulsante */}
+          {realtimeActivo && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1 h-7 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider"
+              style={{
+                background: tema === 'light' ? '#dcfce7' : 'rgba(16,185,129,0.15)',
+                color: tema === 'light' ? '#166534' : '#34d399',
+                border: `1px solid ${tema === 'light' ? '#bbf7d0' : 'rgba(16,185,129,0.3)'}`,
+              }}
+              title="Conectado en tiempo real con el servidor"
+            >
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: tema === 'light' ? '#16a34a' : '#10b981' }}></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: tema === 'light' ? '#16a34a' : '#10b981' }}></span>
+              </span>
+              Live
+            </span>
+          )}
           {/* Toggle tema */}
           <button
             type="button"
