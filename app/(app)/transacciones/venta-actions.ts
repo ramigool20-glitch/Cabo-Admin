@@ -46,6 +46,8 @@ const VentaSchema = z.object({
   items: z.array(ItemSchema).min(1).max(100),
   descuento_global_pct: z.coerce.number().min(0).max(100).default(0),
   descontar_stock: z.boolean().default(true),
+  // POS: no redirige al detalle, devuelve id para mostrar éxito inline
+  no_redirect: z.boolean().optional(),
 })
 
 export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Promise<VentaActionState> {
@@ -165,5 +167,10 @@ export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Pr
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
   revalidatePath('/inventario')
+  revalidatePath('/pos')
+
+  if (d.no_redirect) {
+    return { ok: true, id: txId }
+  }
   redirect(`/transacciones/${txId}`)
 }

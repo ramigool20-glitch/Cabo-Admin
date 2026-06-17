@@ -42,7 +42,9 @@ export async function updateSession(request: NextRequest) {
     // Imagen pública de cotizaciones (UUID en URL es la "clave"):
     // habilita compartir el link con el cliente sin que tenga que
     // estar autenticado en Cabo Admin.
-    /^\/api\/cotizaciones\/[a-f0-9-]{36}\/imagen$/i.test(pathname)
+    /^\/api\/cotizaciones\/[a-f0-9-]{36}\/imagen$/i.test(pathname) ||
+    // Ticket de POS (igual patrón: UUID es la "clave")
+    /^\/api\/pos\/ticket\/[a-f0-9-]{36}\/imagen$/i.test(pathname)
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()
