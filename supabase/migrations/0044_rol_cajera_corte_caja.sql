@@ -2,7 +2,12 @@
 -- 0044: Rol cajera + Tabla cortes_caja (POS-4 + POS-5)
 -- =============================================================
 
--- 1. Asegurar que existe el rol "cajera"
+-- 1. Ampliar check constraint para aceptar 'cajera'
+alter table roles drop constraint if exists roles_nombre_check;
+alter table roles add constraint roles_nombre_check
+  check (nombre in ('admin', 'socio', 'colaborador', 'lector', 'enfermera', 'cajera'));
+
+-- 2. Asegurar que existe el rol "cajera"
 insert into roles (nombre, descripcion)
   values ('cajera', 'Cajera del POS — solo acceso a /pos')
   on conflict (nombre) do nothing;
