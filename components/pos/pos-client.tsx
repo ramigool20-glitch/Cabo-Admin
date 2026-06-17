@@ -21,6 +21,8 @@ import { CvuLogo } from '@/components/pos/cvu-logo'
 import { BarcodeScanner } from '@/components/inventario/barcode-scanner'
 import { calcularItem, calcularTotalesVenta, type VentaItemInput } from '@/lib/ventas/items'
 import { useRealtimeProductos } from '@/lib/pos/use-realtime-productos'
+import { usePosConnection } from '@/lib/pos/use-pos-connection'
+import { crearVentaConItems } from '@/app/(app)/transacciones/venta-actions'
 
 type Negocio = { id: string; nombre: string; tipo: string } | null
 type Cuenta = { id: string; nombre: string; moneda: string; tipo: string }
@@ -88,8 +90,17 @@ export function PosClient({
     }
   })
   // Si nunca falla la suscripción, dejamos el indicador encendido.
-  // (El listener interno ya remueve al unmount.)
   useEffect(() => { setRealtimeActivo(true) }, [])
+
+  // POS-7 Offline: estado de conexión + cola pendiente + auto-sync
+  const conn = usePosConnection(crearVentaConItems, (r) => {
+    if (r.exitosas > 0) {
+      toast.success(`✓ ${r.exitosas} venta${r.exitosas === 1 ? '' : 's'} sincronizada${r.exitosas === 1 ? '' : 's'}`, '')
+    }
+    if (r.fallidas > 0) {
+      toast.error(`${r.fallidas} venta${r.fallidas === 1 ? '' : 's'} con error`, 'Revisa la cola')
+    }
+  })
   // ── TEMA ───────────────────────────────────────────────
   // Default: claro para cajera (Tania), oscuro para admin
   const [tema, setTema] = useState<'light' | 'dark'>(esCajera ? 'light' : 'dark')
@@ -346,24 +357,15 @@ export function PosClient({
           </>
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          {/* Indicador Realtime — punto verde pulsante */}
-          {realtimeActivo && (
-            <span
-              className="hidden sm:inline-flex items-center gap-1 h-7 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider"
-              style={{
-                background: tema === 'light' ? '#dcfce7' : 'rgba(16,185,129,0.15)',
-                color: tema === 'light' ? '#166534' : '#34d399',
-                border: `1px solid ${tema === 'light' ? '#bbf7d0' : 'rgba(16,185,129,0.3)'}`,
-              }}
-              title="Conectado en tiempo real con el servidor"
-            >
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: tema === 'light' ? '#16a34a' : '#10b981' }}></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: tema === 'light' ? '#16a34a' : '#10b981' }}></span>
-              </span>
-              Live
-            </span>
-          )}
+          {/* Indicador estado de conexión (online/offline + cola) */}
+          <ConnectionBadge
+            online={conn.online}
+            colaSize={conn.colaSize}
+            sincronizando={conn.sincronizando}
+            onSync={conn.sync}
+            tema={tema}
+            realtimeActivo={realtimeActivo}
+          />
           {/* Toggle tema */}
           <button
             type="button"
@@ -753,6 +755,7 @@ export function PosClient({
           negocioId={negocio.id}
           cuentas={cuentas}
           rate={rate}
+          onOfflineQueued={() => conn.refrescarCola()}
           onSuccess={() => {
             setItems([])
             setCobroOpen(false)
@@ -846,6 +849,91 @@ function CategoryChip({ activa, onClick, tema, T, children }: {
     >
       {children}
     </button>
+  )
+}
+
+function ConnectionBadge({
+  online, colaSize, sincronizando, onSync, tema,
+}: {
+  online: boolean
+  colaSize: number
+  sincronizando: boolean
+  onSync: () => void
+  tema: 'light' | 'dark'
+  realtimeActivo: boolean
+}) {
+  // 4 estados visuales:
+  // 1. Online + 0 pendientes → "● Live" verde
+  // 2. Online + sincronizando → "↻ Sync" cyan
+  // 3. Offline → "● Offline" rojo + (N) si hay pendientes
+  // 4. Online + N pendientes → "⏳ N pendientes (tap sync)" ámbar
+  if (sincronizando) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider"
+        style={{
+          background: tema === 'light' ? '#dbeafe' : 'rgba(6,182,212,0.15)',
+          color: tema === 'light' ? '#1e40af' : '#67e8f9',
+          border: `1px solid ${tema === 'light' ? '#bfdbfe' : 'rgba(6,182,212,0.3)'}`,
+        }}
+      >
+        <svg className="h-2.5 w-2.5 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" />
+          <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+        Sync
+      </span>
+    )
+  }
+  if (!online) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider"
+        style={{
+          background: tema === 'light' ? '#fee2e2' : 'rgba(244,63,94,0.15)',
+          color: tema === 'light' ? '#991b1b' : '#fca5a5',
+          border: `1px solid ${tema === 'light' ? '#fecaca' : 'rgba(244,63,94,0.3)'}`,
+        }}
+        title="Sin conexión — las ventas se guardan localmente"
+      >
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: tema === 'light' ? '#dc2626' : '#f87171' }} />
+        Offline {colaSize > 0 && `(${colaSize})`}
+      </span>
+    )
+  }
+  if (colaSize > 0) {
+    return (
+      <button
+        type="button"
+        onClick={onSync}
+        className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider hover:opacity-90 active:scale-95"
+        style={{
+          background: tema === 'light' ? '#fef3c7' : 'rgba(251,191,36,0.15)',
+          color: tema === 'light' ? '#92400e' : '#fbbf24',
+          border: `1px solid ${tema === 'light' ? '#fde68a' : 'rgba(251,191,36,0.3)'}`,
+        }}
+        title={`${colaSize} venta${colaSize === 1 ? '' : 's'} sin sincronizar — tap para reintentar`}
+      >
+        ⏳ {colaSize} pendiente{colaSize === 1 ? '' : 's'}
+      </button>
+    )
+  }
+  return (
+    <span
+      className="hidden sm:inline-flex items-center gap-1 h-7 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider"
+      style={{
+        background: tema === 'light' ? '#dcfce7' : 'rgba(16,185,129,0.15)',
+        color: tema === 'light' ? '#166534' : '#34d399',
+        border: `1px solid ${tema === 'light' ? '#bbf7d0' : 'rgba(16,185,129,0.3)'}`,
+      }}
+      title="Conectado en tiempo real"
+    >
+      <span className="relative flex h-1.5 w-1.5">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: tema === 'light' ? '#16a34a' : '#10b981' }}></span>
+        <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: tema === 'light' ? '#16a34a' : '#10b981' }}></span>
+      </span>
+      Live
+    </span>
   )
 }
 

@@ -13,6 +13,7 @@ import { X, Banknote, CreditCard, Smartphone, Loader2, CheckCircle2, Printer, Sh
 import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { crearVentaConItems } from '@/app/(app)/transacciones/venta-actions'
+import { agregarACola } from '@/lib/pos/offline-queue'
 import type { VentaItemInput } from '@/lib/ventas/items'
 
 type Cuenta = { id: string; nombre: string; moneda: string; tipo: string }
@@ -30,6 +31,7 @@ export function CobroSheet({
   cuentas,
   rate = 17,
   onSuccess,
+  onOfflineQueued,
 }: {
   open: boolean
   onClose: () => void
@@ -39,6 +41,7 @@ export function CobroSheet({
   cuentas: Cuenta[]
   rate?: number
   onSuccess: () => void
+  onOfflineQueued?: () => void
 }) {
   // Total en USD para mostrar siempre como referencia
   const totalUsd = totalMxn / rate
@@ -100,44 +103,66 @@ export function CobroSheet({
       return toast.error('Falta efectivo', `Recibido ${monedaSimbolo} ${recibidoNum} < total ${totalParaMetodo.toFixed(2)}`)
     }
     setCobrando(true)
-    try {
-      const conceptoLabel = metodo === 'efectivo' ? 'Efectivo MXN'
-        : metodo === 'efectivo_usd' ? 'Efectivo USD'
-        : metodo === 'mp' ? 'Mercado Pago' : 'Tarjeta'
-      const notasCambio = (metodo === 'efectivo' || metodo === 'efectivo_usd') && cambio > 0
-        ? `Recibido ${monedaSimbolo} ${recibidoNum} · cambio ${monedaSimbolo} ${cambio.toFixed(2)}` + (metodo === 'efectivo_usd' ? ` · TC ${rate.toFixed(2)}` : '')
-        : null
 
-      const r = await crearVentaConItems({
-        fecha: new Date().toISOString().slice(0, 10),
-        negocio_id: negocioId,
-        cuenta_id: cuentaId,
-        metodo_pago: metodoPagoBd(),
-        concepto: `POS · ${conceptoLabel}`,
-        cliente_nombre: null,
-        notas: notasCambio,
-        items,
-        descuento_global_pct: 0,
-        descontar_stock: true,
-        no_redirect: true,
-        moneda_cobro: metodo === 'efectivo_usd' ? 'USD' : 'MXN',
-      })
+    const conceptoLabel = metodo === 'efectivo' ? 'Efectivo MXN'
+      : metodo === 'efectivo_usd' ? 'Efectivo USD'
+      : metodo === 'mp' ? 'Mercado Pago' : 'Tarjeta'
+    const notasCambio = (metodo === 'efectivo' || metodo === 'efectivo_usd') && cambio > 0
+      ? `Recibido ${monedaSimbolo} ${recibidoNum} · cambio ${monedaSimbolo} ${cambio.toFixed(2)}` + (metodo === 'efectivo_usd' ? ` · TC ${rate.toFixed(2)}` : '')
+      : null
+
+    const input = {
+      fecha: new Date().toISOString().slice(0, 10),
+      negocio_id: negocioId,
+      cuenta_id: cuentaId,
+      metodo_pago: metodoPagoBd(),
+      concepto: `POS · ${conceptoLabel}`,
+      cliente_nombre: null,
+      notas: notasCambio,
+      items: items.map(i => ({
+        producto_id: i.producto_id,
+        nombre_snapshot: i.nombre_snapshot,
+        codigo_barras_snapshot: i.codigo_barras_snapshot ?? null,
+        categoria_snapshot: i.categoria_snapshot ?? null,
+        costo_unitario_snapshot_mxn: i.costo_unitario_snapshot_mxn,
+        cantidad: i.cantidad,
+        precio_unitario_mxn: i.precio_unitario_mxn,
+        descuento_pct: i.descuento_pct,
+      })),
+      descuento_global_pct: 0,
+      descontar_stock: true,
+      no_redirect: true,
+      moneda_cobro: (metodo === 'efectivo_usd' ? 'USD' : 'MXN') as 'MXN' | 'USD',
+    }
+
+    // 🌐 OFFLINE: encola y muestra éxito local (sync automático al volver online)
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      try {
+        agregarACola(input)
+        setVentaId('offline_' + Date.now())
+        toast.success('📡 Sin internet — encolado', 'Se sincronizará al recuperar conexión')
+        onOfflineQueued?.()
+      } catch (e) {
+        toast.error('No se pudo encolar', e instanceof Error ? e.message : '')
+      }
+      setCobrando(false)
+      return
+    }
+
+    // 🌐 ONLINE: cobro normal
+    try {
+      const r = await crearVentaConItems(input)
       if (r?.error) {
         setCobrando(false)
         return toast.error('No se cobró', r.error)
       }
-      // redirect del action no aplica acá → tomamos id directo
       if (r?.id) {
         setVentaId(r.id)
         toast.success('✓ Cobro registrado', '')
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : ''
-      // Si fue NEXT_REDIRECT, ignora (no aplica desde sheet)
       if (msg.includes('NEXT_REDIRECT')) {
-        // El action redirigió. Como estamos en sheet, mejor mostrar el éxito
-        // y dejar que el usuario imprima/cierre manualmente. El ID no lo
-        // tendremos pero igual cerramos limpio.
         toast.success('✓ Venta registrada', 'Revisa /transacciones')
         onSuccess()
         return
@@ -212,7 +237,11 @@ export function CobroSheet({
             // ─── ÉXITO ──────────────
             <div className="space-y-3 text-center">
               <CheckCircle2 className="h-16 w-16 text-emerald-400 mx-auto" />
-              <p className="text-sm text-zinc-300">Stock descontado · ganancia calculada</p>
+              <p className="text-sm text-zinc-300">
+                {ventaId.startsWith('offline_')
+                  ? '📡 Encolado offline · se sincronizará al recuperar internet'
+                  : 'Stock descontado · ganancia calculada'}
+              </p>
               {metodo === 'efectivo' && cambio > 0 && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
                   <p className="text-[10px] uppercase tracking-wider text-amber-200 font-bold">Cambio a entregar</p>
