@@ -70,15 +70,20 @@ export async function GET(
   const fmtFechaLarga = (d: Date) => d.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })
   const fmtMoney = (n: number) => '$' + Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  // QR code → data URL con link a la cotización
+  // QR code → data URL con link a la cotización (failsafe: sigue sin QR si falla)
   const origin = new URL(req.url).origin
   const cotUrl = `${origin}/cotizaciones/${id}`
-  const qrDataUrl = await QRCode.toDataURL(cotUrl, {
-    margin: 0,
-    width: 200,
-    color: { dark: '#0a0a0a', light: '#ffffff' },
-    errorCorrectionLevel: 'M',
-  })
+  let qrDataUrl: string | null = null
+  try {
+    qrDataUrl = await QRCode.toDataURL(cotUrl, {
+      margin: 0,
+      width: 200,
+      color: { dark: '#0a0a0a', light: '#ffffff' },
+      errorCorrectionLevel: 'M',
+    })
+  } catch (qrErr) {
+    console.error('[cotizaciones/imagen] QR generation failed:', qrErr)
+  }
 
   return new ImageResponse(
     (
@@ -214,14 +219,26 @@ export async function GET(
             </div>
           </div>
 
-          {/* QR */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qrDataUrl} width={88} height={88} alt="QR" style={{ borderRadius: 6 }} />
-            <div style={{ fontSize: 10, color: '#71717a', marginTop: 6, letterSpacing: '0.5px', textDecoration: 'underline' }}>
-              Ver online
+          {/* QR (opcional — si falló generación, mostramos placeholder con folio) */}
+          {qrDataUrl ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qrDataUrl} width={88} height={88} alt="QR" style={{ borderRadius: 6 }} />
+              <div style={{ fontSize: 10, color: '#71717a', marginTop: 6, letterSpacing: '0.5px', textDecoration: 'underline' }}>
+                Ver online
+              </div>
             </div>
-          </div>
+          ) : (
+            <div style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              width: 88, height: 88, border: '1px solid #e4e4e7', borderRadius: 6,
+            }}>
+              <div style={{ fontSize: 10, color: '#a1a1aa' }}>Folio</div>
+              <div style={{ fontSize: 11, color: '#0a0a0a', fontFamily: 'monospace', fontWeight: 700, textAlign: 'center', paddingTop: 4 }}>
+                {(cot.folio as string).split('-').slice(-1)[0]}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Sección Customer */}
@@ -386,7 +403,12 @@ export async function GET(
         </div>
       </div>
     ),
-    { width: WIDTH, height: HEIGHT },
+    {
+      width: WIDTH,
+      height: HEIGHT,
+      // Soporte explícito de emojis (Twitter Color Emoji rendering en server)
+      emoji: 'twemoji',
+    },
   )
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error desconocido'
