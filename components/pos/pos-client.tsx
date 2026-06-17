@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { Search, Plus, Minus, Trash2, Camera, X, ShoppingBag, AlertTriangle, Pill, ScanLine } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, X, ShoppingBag, AlertTriangle, Pill, ScanLine, ChevronUp } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { CobroSheet } from '@/components/pos/cobro-sheet'
@@ -47,6 +47,9 @@ export function PosClient({
   const [items, setItems] = useState<VentaItemInput[]>([])
   const [scannerOpen, setScannerOpen] = useState(false)
   const [cobroOpen, setCobroOpen] = useState(false)
+  // En mobile el ticket es un bottom-sheet (colapsado/expandido).
+  // En desktop md+ siempre se ve como sidebar.
+  const [mobileTicketOpen, setMobileTicketOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   // Focus input al cargar y al cerrar sheets (atajo /)
@@ -188,10 +191,10 @@ export function PosClient({
         </div>
       </header>
 
-      {/* Layout: productos a la izquierda (2/3), ticket a la derecha (1/3) */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Layout: mobile stack vertical (ticket es bottom-sheet), desktop side-by-side */}
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* COLUMNA IZQUIERDA: PRODUCTOS */}
-        <div className="flex-1 flex flex-col overflow-hidden border-r border-zinc-800">
+        <div className="flex-1 flex flex-col overflow-hidden md:border-r border-zinc-800">
           {/* Barra de búsqueda + scanner */}
           <div className="p-3 border-b border-zinc-800 bg-zinc-950/60 space-y-2">
             <div className="flex gap-2">
@@ -306,29 +309,65 @@ export function PosClient({
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: TICKET */}
-        <aside className="w-full max-w-sm sm:w-80 md:w-96 flex flex-col bg-zinc-950/40">
-          {/* Header del ticket */}
-          <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-black text-zinc-100">Ticket actual</p>
-              <p className="text-[10px] text-zinc-500">{items.length} item{items.length === 1 ? '' : 's'}</p>
+        {/* COLUMNA DERECHA: TICKET — desktop sidebar / mobile bottom-sheet */}
+        <aside
+          className={cn(
+            'flex flex-col bg-zinc-950 z-40 transition-all duration-300',
+            // Desktop: sidebar tradicional
+            'md:relative md:w-80 lg:w-96 md:translate-y-0 md:max-h-none',
+            // Mobile: fixed bottom-sheet, colapsado por default
+            'fixed inset-x-0 bottom-0 border-t border-emerald-500/30 rounded-t-2xl md:rounded-none md:border-t-0',
+            mobileTicketOpen ? 'max-h-[80dvh]' : 'max-h-[80px]',
+            // En desktop ignora mobileTicketOpen
+            'md:max-h-none md:border-emerald-500/30'
+          )}
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          {/* Header del ticket — en mobile sirve como handle para abrir/cerrar */}
+          <button
+            type="button"
+            onClick={() => setMobileTicketOpen(v => !v)}
+            className="md:cursor-default px-3 py-2 border-b border-zinc-800 flex items-center justify-between w-full text-left"
+          >
+            <div className="flex items-center gap-2 flex-1">
+              <div>
+                <p className="text-sm font-black text-zinc-100 leading-tight">Ticket {items.length > 0 && `(${items.length})`}</p>
+                <p className="text-[10px] text-zinc-500 leading-tight md:hidden">
+                  {items.length === 0 ? 'Tap para abrir' : `Total ${formatMoney(tot.subtotal, 'MXN')}`}
+                </p>
+                <p className="text-[10px] text-zinc-500 leading-tight hidden md:block">
+                  {items.length} item{items.length === 1 ? '' : 's'}
+                </p>
+              </div>
             </div>
-            {items.length > 0 && (
-              <button
-                type="button"
-                onClick={limpiarTodo}
-                className="h-7 px-2 rounded-md border border-rose-500/30 text-rose-300 text-[10px] font-bold inline-flex items-center gap-1 active:scale-95"
-                title="Cancelar venta"
-              >
-                <Trash2 className="h-3 w-3" />
-                Cancelar
-              </button>
-            )}
-          </div>
+            <div className="flex items-center gap-2">
+              {items.length > 0 && (
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); limpiarTodo() }}
+                  className="h-7 px-2 rounded-md border border-rose-500/30 text-rose-300 text-[10px] font-bold inline-flex items-center gap-1 active:scale-95 cursor-pointer"
+                  title="Cancelar venta"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Cancelar
+                </span>
+              )}
+              {/* Chevron solo en mobile (indicador) */}
+              <ChevronUp className={cn(
+                'h-5 w-5 text-zinc-400 md:hidden transition-transform',
+                mobileTicketOpen && 'rotate-180'
+              )} />
+            </div>
+          </button>
 
-          {/* Items del ticket */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1.5" style={{ WebkitOverflowScrolling: 'touch' }}>
+          {/* Items del ticket — solo visible cuando expandido (mobile) o siempre (desktop) */}
+          <div
+            className={cn(
+              'flex-1 overflow-y-auto p-2 space-y-1.5',
+              !mobileTicketOpen && 'hidden md:block'
+            )}
+            style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
+          >
             {items.length === 0 ? (
               <div className="text-center py-12 text-zinc-600 text-sm">
                 <ShoppingBag className="h-10 w-10 mx-auto mb-2 opacity-30" />
@@ -373,9 +412,14 @@ export function PosClient({
             )}
           </div>
 
-          {/* Total + Botón cobrar */}
-          <div className="border-t border-zinc-800 p-3 bg-zinc-950 space-y-2"
-               style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+          {/* Total + Botón cobrar — solo visible expandido en mobile, siempre en desktop */}
+          <div
+            className={cn(
+              'border-t border-zinc-800 p-3 bg-zinc-950 space-y-2',
+              !mobileTicketOpen && 'hidden md:block'
+            )}
+            style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+          >
             <div className="flex items-baseline justify-between">
               <span className="text-xs uppercase tracking-wider font-bold text-zinc-500">Total</span>
               <span className="text-2xl font-black text-emerald-300 tabular-nums">
@@ -390,12 +434,37 @@ export function PosClient({
             >
               💵 COBRAR
             </button>
-            <p className="text-center text-[9px] text-zinc-600">
+            <p className="text-center text-[9px] text-zinc-600 hidden md:block">
               Atajos: <kbd className="font-mono text-zinc-500">/</kbd> buscar · <kbd className="font-mono text-zinc-500">Esc</kbd> limpiar
             </p>
           </div>
+
+          {/* Bar colapsada en mobile cuando hay items y no está expandido */}
+          {items.length > 0 && !mobileTicketOpen && (
+            <button
+              type="button"
+              onClick={() => setMobileTicketOpen(true)}
+              className="md:hidden absolute inset-x-0 bottom-0 mx-2 mb-2 h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 text-white font-black inline-flex items-center justify-between px-4 shadow-lg shadow-emerald-500/30 active:scale-[0.98]"
+              style={{ marginBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+            >
+              <span className="inline-flex items-center gap-2">
+                <ShoppingBag className="h-4 w-4" />
+                {items.length} item{items.length === 1 ? '' : 's'}
+              </span>
+              <span className="tabular-nums">{formatMoney(tot.subtotal, 'MXN')}</span>
+              <span className="text-xs opacity-80">Ver →</span>
+            </button>
+          )}
         </aside>
       </div>
+
+      {/* Backdrop cuando ticket abierto en mobile */}
+      {mobileTicketOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/40 z-30"
+          onClick={() => setMobileTicketOpen(false)}
+        />
+      )}
 
       {/* Scanner */}
       <BarcodeScanner
