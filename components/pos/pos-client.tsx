@@ -17,6 +17,7 @@ import { Search, Plus, Minus, Trash2, X, ShoppingBag, AlertTriangle, ScanLine, C
 import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { CobroSheet } from '@/components/pos/cobro-sheet'
+import { CvuLogo } from '@/components/pos/cvu-logo'
 import { BarcodeScanner } from '@/components/inventario/barcode-scanner'
 import { calcularItem, calcularTotalesVenta, type VentaItemInput } from '@/lib/ventas/items'
 
@@ -265,27 +266,65 @@ export function PosClient({
         className="px-3 py-2.5 flex items-center gap-2.5 shrink-0 border-b"
         style={{ borderColor: T.border, background: T.headerGrad, backdropFilter: 'blur(10px)' }}
       >
-        {/* Logo */}
-        <div
-          className="h-11 w-11 rounded-xl inline-flex items-center justify-center shrink-0 ring-1 ring-white/20 shadow-lg"
-          style={{
-            background: tema === 'light'
-              ? 'linear-gradient(135deg, #dc2626, #b91c1c, #991b1b)'
-              : 'linear-gradient(135deg, #10b981, #34d399, #06b6d4)',
-            boxShadow: tema === 'light' ? '0 4px 20px rgba(220,38,38,0.35)' : '0 4px 20px rgba(16,185,129,0.4)',
-          }}
-        >
-          <span className="text-xl filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">💊</span>
-        </div>
-        <div className="min-w-0 leading-tight">
-          <p className="text-base font-black truncate tracking-tight inline-flex items-center gap-1.5" style={{ color: T.text }}>
-            CVU <span style={{ color: T.accent }}>Pharmacy</span>
-          </p>
-          <p className="text-[10px] truncate inline-flex items-center gap-1" style={{ color: T.textMuted }}>
-            <span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: T.accent }} />
-            {userNombre} · {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
-          </p>
-        </div>
+        {/* Logo — versión cajera light desktop: usa el logo CVU oficial.
+             En otros casos (mobile, dark, admin): logo cuadrado con emoji */}
+        {esCajera && tema === 'light' ? (
+          <>
+            {/* Logo CVU oficial — solo desktop */}
+            <div className="hidden md:flex items-center shrink-0">
+              <CvuLogo height={42} />
+            </div>
+            {/* En mobile cajera light: cuadrado rojo */}
+            <div
+              className="md:hidden h-11 w-11 rounded-xl inline-flex items-center justify-center shrink-0 ring-1 ring-black/5 shadow-lg"
+              style={{
+                background: 'linear-gradient(135deg, #ef4444, #dc2626, #b91c1c)',
+                boxShadow: '0 4px 20px rgba(239,68,68,0.35)',
+              }}
+            >
+              <span className="text-xl filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]">❤️</span>
+            </div>
+            <div className="min-w-0 leading-tight md:hidden">
+              <p className="text-base font-black truncate tracking-tight inline-flex items-center gap-1.5" style={{ color: T.text }}>
+                CVU <span style={{ color: T.accent }}>Pharmacy</span>
+              </p>
+              <p className="text-[10px] truncate inline-flex items-center gap-1" style={{ color: T.textMuted }}>
+                <span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: T.accent }} />
+                {userNombre} · {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+              </p>
+            </div>
+            {/* Indicador sutil con nombre cajera en desktop */}
+            <div className="hidden md:flex flex-col leading-tight ml-2">
+              <p className="text-[10px] truncate inline-flex items-center gap-1" style={{ color: T.textMuted }}>
+                <span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: T.accent }} />
+                {userNombre} · {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div
+              className="h-11 w-11 rounded-xl inline-flex items-center justify-center shrink-0 ring-1 ring-white/20 shadow-lg"
+              style={{
+                background: tema === 'light'
+                  ? 'linear-gradient(135deg, #dc2626, #b91c1c, #991b1b)'
+                  : 'linear-gradient(135deg, #10b981, #34d399, #06b6d4)',
+                boxShadow: tema === 'light' ? '0 4px 20px rgba(220,38,38,0.35)' : '0 4px 20px rgba(16,185,129,0.4)',
+              }}
+            >
+              <span className="text-xl filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">💊</span>
+            </div>
+            <div className="min-w-0 leading-tight">
+              <p className="text-base font-black truncate tracking-tight inline-flex items-center gap-1.5" style={{ color: T.text }}>
+                CVU <span style={{ color: T.accent }}>Pharmacy</span>
+              </p>
+              <p className="text-[10px] truncate inline-flex items-center gap-1" style={{ color: T.textMuted }}>
+                <span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: T.accent }} />
+                {userNombre} · {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+              </p>
+            </div>
+          </>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           {/* Toggle tema */}
           <button
