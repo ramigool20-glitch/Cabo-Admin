@@ -6,7 +6,8 @@
  */
 
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { Search, Plus, Minus, Trash2, X, ShoppingBag, AlertTriangle, Pill, ScanLine, ChevronUp } from 'lucide-react'
+import Link from 'next/link'
+import { Search, Plus, Minus, Trash2, X, ShoppingBag, AlertTriangle, Pill, ScanLine, ChevronUp, LogOut, FileText } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { CobroSheet } from '@/components/pos/cobro-sheet'
@@ -35,12 +36,16 @@ export function PosClient({
   productos,
   categorias,
   rate,
+  userNombre,
+  esCajera,
 }: {
   negocio: Negocio
   cuentas: Cuenta[]
   productos: Producto[]
   categorias: string[]
   rate: number
+  userNombre: string
+  esCajera: boolean
 }) {
   const [q, setQ] = useState('')
   const [categoria, setCategoria] = useState('')
@@ -179,15 +184,42 @@ export function PosClient({
   return (
     <div className="fixed inset-0 bg-[var(--bg-base)] flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
       {/* Header compacto */}
-      <header className="border-b border-zinc-800 bg-zinc-950/90 backdrop-blur-md px-4 py-2 flex items-center gap-2 shrink-0">
-        <Pill className="h-5 w-5 text-emerald-400" />
-        <div>
-          <p className="text-sm font-black text-zinc-100 leading-tight">CVU Pharmacy POS</p>
-          <p className="text-[9px] text-zinc-500 leading-tight">{new Date().toLocaleDateString('es-MX')} · TC ${rate.toFixed(2)}</p>
+      <header className="border-b border-zinc-800 bg-zinc-950/90 backdrop-blur-md px-3 py-2 flex items-center gap-2 shrink-0">
+        <Pill className="h-5 w-5 text-emerald-400 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-sm font-black text-zinc-100 leading-tight truncate">CVU Pharmacy POS</p>
+          <p className="text-[9px] text-zinc-500 leading-tight">
+            {userNombre} · {new Date().toLocaleDateString('es-MX')}
+          </p>
         </div>
-        <div className="ml-auto inline-flex items-center gap-1.5 text-xs">
-          <span className="rounded-md bg-zinc-800/60 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">/</span>
-          <span className="text-[10px] text-zinc-500">buscar</span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <Link
+            href="/pos/corte"
+            className="h-8 px-2 rounded-md bg-zinc-800/80 border border-zinc-700 text-zinc-200 text-[10px] font-bold inline-flex items-center gap-1 active:scale-95"
+            title="Corte de caja"
+          >
+            <FileText className="h-3 w-3" />
+            <span className="hidden sm:inline">Corte</span>
+          </Link>
+          <Link
+            href="/login?logout=1"
+            className="h-8 px-2 rounded-md bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[10px] font-bold inline-flex items-center gap-1 active:scale-95"
+            title="Cerrar sesión"
+            onClick={async (e) => {
+              e.preventDefault()
+              // Sign out client-side via Supabase
+              const { createBrowserClient } = await import('@supabase/ssr')
+              const supa = createBrowserClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+              )
+              await supa.auth.signOut()
+              window.location.href = '/login'
+            }}
+          >
+            <LogOut className="h-3 w-3" />
+            <span className="hidden sm:inline">Salir</span>
+          </Link>
         </div>
       </header>
 

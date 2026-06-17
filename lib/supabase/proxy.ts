@@ -58,24 +58,32 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Gating de rol del lado del SERVIDOR: la enfermera solo puede entrar a
-  // /clinica y /tareas. Cualquier otra página la regresa a /clinica antes de
-  // que el servidor renderice o consulte datos financieros.
+  // Gating de rol del lado del SERVIDOR:
+  //   • enfermera → solo /clinica y /tareas, todo lo demás → /clinica
+  //   • cajera → solo /pos y /pos/*, todo lo demás → /pos
+  //     (no ve dashboard, transacciones, ganancias, otros negocios)
   if (
     user &&
     !isPublic &&
-    !pathname.startsWith('/api') &&
-    !pathname.startsWith('/clinica') &&
-    !pathname.startsWith('/tareas')
+    !pathname.startsWith('/api')
   ) {
     try {
       const admin = createAdminClient()
       const { data: prof } = await admin.from('profiles').select('roles(nombre)').eq('id', user.id).single()
       const rol = (prof?.roles as unknown as { nombre: string } | null)?.nombre
+
       if (rol === 'enfermera') {
-        const url = request.nextUrl.clone()
-        url.pathname = '/clinica'
-        return NextResponse.redirect(url)
+        if (!pathname.startsWith('/clinica') && !pathname.startsWith('/tareas')) {
+          const url = request.nextUrl.clone()
+          url.pathname = '/clinica'
+          return NextResponse.redirect(url)
+        }
+      } else if (rol === 'cajera') {
+        if (!pathname.startsWith('/pos')) {
+          const url = request.nextUrl.clone()
+          url.pathname = '/pos'
+          return NextResponse.redirect(url)
+        }
       }
     } catch {
       // si falla la verificación de rol, no bloqueamos (la guard de cliente respalda)

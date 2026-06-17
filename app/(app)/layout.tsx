@@ -40,6 +40,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     rol = roleRow?.nombre ?? null
   }
   const esEnfermera = rol === 'enfermera'
+  const esCajera = rol === 'cajera'
+
+  // CAJERA: experiencia POS pura — sin header, sin tabs, sin FAB.
+  // El componente /pos ya maneja su propio layout fullscreen.
+  if (esCajera) {
+    return (
+      <div className="min-h-screen flex flex-col bg-[var(--bg-base)]">
+        <main className="flex-1">{children}</main>
+        <Toaster />
+        <Suspense fallback={null}>
+          <ToastFlash />
+        </Suspense>
+      </div>
+    )
+  }
 
   // ENFERMERA: experiencia propia — dashboard, menú inferior, sin acceso al resto
   if (esEnfermera) {

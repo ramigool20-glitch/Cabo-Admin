@@ -1,10 +1,26 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { PosClient } from '@/components/pos/pos-client'
 
 export const dynamic = 'force-dynamic'
 
 export default async function PosPage() {
   const admin = createAdminClient()
+  const supabase = await createClient()
+
+  // Usuario actual (para mostrar nombre + saber si es cajera)
+  const { data: { user } } = await supabase.auth.getUser()
+  let userNombre = 'Usuario'
+  let rol: string | null = null
+  if (user) {
+    const { data: prof } = await admin
+      .from('profiles')
+      .select('nombre, roles(nombre)')
+      .eq('id', user.id)
+      .single()
+    userNombre = (prof?.nombre as string) ?? user.email?.split('@')[0] ?? 'Usuario'
+    rol = ((prof?.roles as unknown as { nombre: string } | null)?.nombre) ?? null
+  }
 
   // Hardcoded a Cvu Pharmacy local — el POS es solo para ese negocio
   const { data: negocio } = await admin
@@ -98,6 +114,8 @@ export default async function PosPage() {
       productos={productos}
       categorias={categorias}
       rate={rate}
+      userNombre={userNombre}
+      esCajera={rol === 'cajera'}
     />
   )
 }
