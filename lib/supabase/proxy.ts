@@ -36,7 +36,13 @@ export async function updateSession(request: NextRequest) {
     // no traen cookie de sesión. NO redirigir a /login o nunca se ejecutan.
     pathname.startsWith('/api/cron') ||
     pathname.startsWith('/api/webhooks') ||
-    pathname === '/api/stripe/webhook'
+    pathname === '/api/stripe/webhook' ||
+    // Routine remoto (Bearer CRON_SECRET) deposita reportes SEO
+    pathname === '/api/seo-reports' ||
+    // Imagen pública de cotizaciones (UUID en URL es la "clave"):
+    // habilita compartir el link con el cliente sin que tenga que
+    // estar autenticado en Cabo Admin.
+    /^\/api\/cotizaciones\/[a-f0-9-]{36}\/imagen$/i.test(pathname)
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()

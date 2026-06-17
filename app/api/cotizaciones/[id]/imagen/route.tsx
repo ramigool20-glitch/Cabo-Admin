@@ -34,25 +34,35 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params
-  const admin = createAdminClient()
+  try {
+    const { id } = await params
+    const admin = createAdminClient()
 
-  const { data: cot } = await admin
-    .from('cotizaciones')
-    .select('*')
-    .eq('id', id)
-    .single()
-  if (!cot) return new Response('No encontrada', { status: 404 })
+    const { data: cot, error: cotErr } = await admin
+      .from('cotizaciones')
+      .select('*')
+      .eq('id', id)
+      .single()
+    if (cotErr || !cot) {
+      return new Response(`No encontrada: ${cotErr?.message ?? 'sin datos'}`, { status: 404 })
+    }
 
-  const { data: neg } = await admin
-    .from('negocios')
-    .select('id, nombre, tipo, slogan, rfc, direccion, telefono, email, url, color_primario, color_secundario')
-    .eq('id', cot.negocio_id as string)
-    .single()
+    // Defensive: si la migración 0042 no agregó las columnas extra, retry con menos
+    let neg: Record<string, unknown> | null = null
+    if (cot.negocio_id) {
+      const colsExt = 'id, nombre, tipo, slogan, rfc, direccion, telefono, email, url, color_primario, color_secundario'
+      const r1 = await admin.from('negocios').select(colsExt).eq('id', cot.negocio_id as string).maybeSingle()
+      if (r1.error) {
+        const r2 = await admin.from('negocios').select('id, nombre, tipo').eq('id', cot.negocio_id as string).maybeSingle()
+        neg = r2.data
+      } else {
+        neg = r1.data
+      }
+    }
 
-  const negocio = (neg ?? { id: '', nombre: 'Cabo Admin', tipo: 'general' }) as NegocioBranding
-  const tema = temaDeNegocio(negocio)
-  const items = (cot.items as CotizacionItem[] | null) ?? []
+    const negocio = (neg ?? { id: '', nombre: 'Cabo Admin', tipo: 'general' }) as unknown as NegocioBranding
+    const tema = temaDeNegocio(negocio)
+    const items = (cot.items as CotizacionItem[] | null) ?? []
 
   const fechaCreado = new Date(cot.created_at as string)
   const fechaVigencia = new Date(fechaCreado.getTime() + Number(cot.vigencia_dias ?? 15) * 86_400_000)
@@ -378,4 +388,9 @@ export async function GET(
     ),
     { width: WIDTH, height: HEIGHT },
   )
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Error desconocido'
+    console.error('[cotizaciones/imagen] ERROR:', msg, e)
+    return new Response(`Error generando imagen: ${msg}`, { status: 500 })
+  }
 }
