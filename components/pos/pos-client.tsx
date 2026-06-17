@@ -2,12 +2,18 @@
 
 /**
  * POS para Cvu Pharmacy.
- * Layout 2 columnas (productos | ticket). Cobro multi-método con ticket PNG.
+ *
+ * Funcionalidades:
+ *   - Layout 2 columnas desktop / bottom-sheet mobile
+ *   - Múltiples tickets en tabs (T1 / T2 / +)
+ *   - Modo claro premium (rojo/negro/blanco) + oscuro
+ *   - Atajos teclado: / busca, Esc limpia, F2 nuevo ticket
+ *   - Persistencia en localStorage (tabs + tema)
  */
 
-import { useMemo, useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Search, Plus, Minus, Trash2, X, ShoppingBag, AlertTriangle, ScanLine, ChevronUp, LogOut, FileText } from 'lucide-react'
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react'
+import { Search, Plus, Minus, Trash2, X, ShoppingBag, AlertTriangle, ScanLine, ChevronUp, LogOut, FileText, Sun, Moon } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { CobroSheet } from '@/components/pos/cobro-sheet'
@@ -23,12 +29,28 @@ type Producto = {
   foto_path: string | null; foto_signed_url: string | null
 }
 
+type Ticket = {
+  id: string
+  nombre: string
+  items: VentaItemInput[]
+}
+
 const EMOJI_CAT: Record<string, string> = {
   GENERICO: '💊', PATENTE: '🏥', OTC: '🩹',
   'Cuidado Personal': '🧴', Bebidas: '🥤',
   'Departamento de bebe': '👶', Antiácido: '🌿',
   Choco: '🍫',
 }
+
+const LS_TICKETS = 'pos_tickets_v1'
+const LS_TEMA   = 'pos_tema_v1'
+const LS_ACTIVE = 'pos_active_tab_v1'
+
+const nuevoTicket = (n: number): Ticket => ({
+  id: `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  nombre: `T${n}`,
+  items: [],
+})
 
 export function PosClient({
   negocio,
@@ -47,35 +69,96 @@ export function PosClient({
   userNombre: string
   esCajera: boolean
 }) {
+  // ── TEMA ───────────────────────────────────────────────
+  // Default: claro para cajera (Tania), oscuro para admin
+  const [tema, setTema] = useState<'light' | 'dark'>(esCajera ? 'light' : 'dark')
+  useEffect(() => {
+    const stored = localStorage.getItem(LS_TEMA)
+    if (stored === 'light' || stored === 'dark') setTema(stored)
+  }, [])
+  useEffect(() => {
+    localStorage.setItem(LS_TEMA, tema)
+  }, [tema])
+
+  // ── MÚLTIPLES TICKETS (POS-3) ──────────────────────────
+  const [tickets, setTickets] = useState<Ticket[]>([nuevoTicket(1)])
+  const [activeTabIdx, setActiveTabIdx] = useState(0)
+
+  // Cargar tickets de localStorage al inicio
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(LS_TICKETS)
+      if (stored) {
+        const parsed = JSON.parse(stored) as Ticket[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setTickets(parsed)
+          const idx = Number(localStorage.getItem(LS_ACTIVE) ?? 0)
+          if (idx >= 0 && idx < parsed.length) setActiveTabIdx(idx)
+        }
+      }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  // Guardar tickets cuando cambian
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_TICKETS, JSON.stringify(tickets))
+      localStorage.setItem(LS_ACTIVE, String(activeTabIdx))
+    } catch { /* ignore */ }
+  }, [tickets, activeTabIdx])
+
+  const items = tickets[activeTabIdx]?.items ?? []
+  const setItems = useCallback((updater: VentaItemInput[] | ((prev: VentaItemInput[]) => VentaItemInput[])) => {
+    setTickets(prev => prev.map((t, i) => {
+      if (i !== activeTabIdx) return t
+      const newItems = typeof updater === 'function' ? updater(t.items) : updater
+      return { ...t, items: newItems }
+    }))
+  }, [activeTabIdx])
+
+  const agregarTab = () => {
+    if (tickets.length >= 5) return toast.error('Máximo 5 tickets a la vez', '')
+    setTickets(prev => [...prev, nuevoTicket(prev.length + 1)])
+    setActiveTabIdx(tickets.length)
+  }
+
+  const cerrarTab = (idx: number) => {
+    if (tickets.length === 1) {
+      // Si es el único, lo limpia
+      if (tickets[0].items.length > 0 && !confirm('¿Vaciar el ticket?')) return
+      setTickets([nuevoTicket(1)])
+      setActiveTabIdx(0)
+      return
+    }
+    if (tickets[idx].items.length > 0 && !confirm(`¿Cerrar ${tickets[idx].nombre}? Tiene ${tickets[idx].items.length} producto(s).`)) return
+    setTickets(prev => prev.filter((_, i) => i !== idx))
+    setActiveTabIdx(Math.max(0, Math.min(activeTabIdx, tickets.length - 2)))
+  }
+
+  // ── ESTADO DEL FORM ────────────────────────────────────
   const [q, setQ] = useState('')
   const [categoria, setCategoria] = useState('')
-  const [items, setItems] = useState<VentaItemInput[]>([])
   const [scannerOpen, setScannerOpen] = useState(false)
   const [cobroOpen, setCobroOpen] = useState(false)
-  // En mobile el ticket es un bottom-sheet (colapsado/expandido).
-  // En desktop md+ siempre se ve como sidebar.
   const [mobileTicketOpen, setMobileTicketOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  // Focus input al cargar y al cerrar sheets (atajo /)
+  // Atajos de teclado
   useEffect(() => {
     inputRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
       const isTyping = ['INPUT', 'TEXTAREA'].includes(target.tagName)
-      if (e.key === '/' && !isTyping) {
-        e.preventDefault()
-        inputRef.current?.focus()
-      }
-      if (e.key === 'Escape' && !isTyping) {
-        setQ('')
-      }
+      if (e.key === '/' && !isTyping) { e.preventDefault(); inputRef.current?.focus() }
+      if (e.key === 'Escape' && !isTyping) setQ('')
+      if (e.key === 'F2') { e.preventDefault(); agregarTab() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Búsqueda con filtros
+  // Búsqueda
   const productosFiltrados = useMemo(() => {
     const qn = q.trim().toLowerCase()
     return productos.filter(p => {
@@ -88,15 +171,14 @@ export function PosClient({
     }).slice(0, 60)
   }, [productos, q, categoria])
 
-  // Items calculados
   const itemsCalc = items.map(calcularItem)
   const tot = calcularTotalesVenta(itemsCalc)
 
-  // Agregar al carrito
+  // ── ACCIONES DEL CARRITO ───────────────────────────────
   const addProducto = (p: Producto) => {
     const ix = items.findIndex(i => i.producto_id === p.id)
     if (ix >= 0) {
-      cambiarCantidad(ix, 1)
+      setItems(prev => prev.map((it, i) => i === ix ? { ...it, cantidad: it.cantidad + 1 } : it))
     } else {
       setItems(prev => [...prev, {
         producto_id: p.id,
@@ -109,17 +191,13 @@ export function PosClient({
         descuento_pct: 0,
       }])
     }
-    // Limpiar búsqueda y re-focus (estilo POS)
     setQ('')
+    toast.success('✓ Agregado', p.nombre.slice(0, 40))
     inputRef.current?.focus()
   }
 
   const cambiarCantidad = (idx: number, delta: number) => {
-    setItems(prev => prev.map((it, i) => {
-      if (i !== idx) return it
-      const nueva = Math.max(0.001, it.cantidad + delta)
-      return { ...it, cantidad: nueva }
-    }))
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: Math.max(0.001, it.cantidad + delta) } : it))
   }
 
   const setCantidad = (idx: number, n: number) => {
@@ -130,26 +208,22 @@ export function PosClient({
     setItems(prev => prev.filter((_, i) => i !== idx))
   }
 
-  const limpiarTodo = () => {
+  const limpiarTicketActivo = () => {
     if (items.length === 0) return
-    if (!confirm(`¿Cancelar venta? Se quitarán ${items.length} productos del ticket.`)) return
+    if (!confirm(`¿Vaciar ${tickets[activeTabIdx].nombre}? Se quitarán ${items.length} productos.`)) return
     setItems([])
     setQ('')
-    toast.success('Venta cancelada', 'Ticket vacío')
   }
 
-  // Buscar por código escaneado
   const onScanResult = (code: string) => {
     const found = productos.find(p => p.codigo_barras === code)
     if (found) {
       addProducto(found)
-      toast.success('Agregado', found.nombre.slice(0, 40))
     } else {
       toast.error('No encontrado', `Código: ${code}`)
     }
   }
 
-  // Iniciar cobro
   const iniciarCobro = () => {
     if (items.length === 0) return toast.error('Falta', 'Agrega productos al ticket')
     if (!negocio) return toast.error('Sin negocio', 'Crea Cvu Pharmacy local')
@@ -157,59 +231,96 @@ export function PosClient({
     setCobroOpen(true)
   }
 
-  // Falta validar
+  // ── VALIDACIONES PREVIAS ───────────────────────────────
   if (!negocio) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-6 max-w-md space-y-3 text-center">
-          <AlertTriangle className="h-10 w-10 text-rose-300 mx-auto" />
-          <p className="text-lg font-bold text-rose-200">Falta el negocio "Cvu Pharmacy local"</p>
-          <p className="text-sm text-rose-200/80">El POS solo opera en ese negocio. Créalo o renómbralo en <code className="font-mono">/negocios</code>.</p>
-        </div>
-      </div>
-    )
+    return <PrerequisitoError mensaje="Falta el negocio Cvu Pharmacy local" detalle="El POS solo opera en ese negocio." tema={tema} />
   }
   if (cuentas.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-6 max-w-md space-y-3 text-center">
-          <AlertTriangle className="h-10 w-10 text-rose-300 mx-auto" />
-          <p className="text-lg font-bold text-rose-200">No hay cuentas activas en MXN</p>
-          <p className="text-sm text-rose-200/80">Necesitas al menos una para asignar los ingresos del POS.</p>
-        </div>
-      </div>
-    )
+    return <PrerequisitoError mensaje="No hay cuentas activas en MXN" detalle="Necesitas al menos una para asignar los ingresos." tema={tema} />
+  }
+
+  // ── PALETA POR TEMA ────────────────────────────────────
+  const T = tema === 'light' ? {
+    bgBase: '#ffffff', bgHeader: '#fafafa', bgCard: '#ffffff', bgInput: '#f4f4f5',
+    border: '#e4e4e7', borderStrong: '#d4d4d8',
+    text: '#0a0a0a', textMuted: '#71717a', textSubtle: '#a1a1aa',
+    accent: '#dc2626', accentBg: '#fef2f2', accentBorder: '#fecaca',
+    headerGrad: 'linear-gradient(135deg, #fef2f2, #fafafa, #ffffff)',
+  } : {
+    bgBase: '#0a0a0a', bgHeader: '#0a0a0a', bgCard: '#18181b', bgInput: '#27272a',
+    border: '#27272a', borderStrong: '#3f3f46',
+    text: '#fafafa', textMuted: '#a1a1aa', textSubtle: '#71717a',
+    accent: '#10b981', accentBg: 'rgba(16,185,129,0.08)', accentBorder: 'rgba(16,185,129,0.3)',
+    headerGrad: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(6,182,212,0.05), transparent)',
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--bg-base)] flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
-      {/* Header premium con branding CVU Pharmacy */}
-      <header className="border-b border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 via-cyan-500/5 to-transparent backdrop-blur-md px-3 py-2.5 flex items-center gap-2.5 shrink-0">
-        {/* Logo cuadrado con gradiente + emoji */}
-        <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-emerald-500 via-emerald-400 to-cyan-500 shadow-lg shadow-emerald-500/40 inline-flex items-center justify-center shrink-0 ring-1 ring-white/20">
-          <span className="text-xl filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]">💊</span>
+    <div
+      data-tema={tema}
+      className="fixed inset-0 flex flex-col overflow-hidden"
+      style={{ height: '100dvh', background: T.bgBase, color: T.text }}
+    >
+      {/* Header */}
+      <header
+        className="px-3 py-2.5 flex items-center gap-2.5 shrink-0 border-b"
+        style={{ borderColor: T.border, background: T.headerGrad, backdropFilter: 'blur(10px)' }}
+      >
+        {/* Logo */}
+        <div
+          className="h-11 w-11 rounded-xl inline-flex items-center justify-center shrink-0 ring-1 ring-white/20 shadow-lg"
+          style={{
+            background: tema === 'light'
+              ? 'linear-gradient(135deg, #dc2626, #b91c1c, #991b1b)'
+              : 'linear-gradient(135deg, #10b981, #34d399, #06b6d4)',
+            boxShadow: tema === 'light' ? '0 4px 20px rgba(220,38,38,0.35)' : '0 4px 20px rgba(16,185,129,0.4)',
+          }}
+        >
+          <span className="text-xl filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">💊</span>
         </div>
         <div className="min-w-0 leading-tight">
-          <p className="text-base font-black text-zinc-100 truncate tracking-tight inline-flex items-center gap-1.5">
-            CVU <span className="text-emerald-300">Pharmacy</span>
+          <p className="text-base font-black truncate tracking-tight inline-flex items-center gap-1.5" style={{ color: T.text }}>
+            CVU <span style={{ color: T.accent }}>Pharmacy</span>
           </p>
-          <p className="text-[10px] text-zinc-500 truncate inline-flex items-center gap-1">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <p className="text-[10px] truncate inline-flex items-center gap-1" style={{ color: T.textMuted }}>
+            <span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: T.accent }} />
             {userNombre} · {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
+          {/* Toggle tema */}
+          <button
+            type="button"
+            onClick={() => setTema(t => t === 'light' ? 'dark' : 'light')}
+            className="h-9 w-9 rounded-lg inline-flex items-center justify-center transition-all active:scale-95"
+            style={{
+              background: tema === 'light' ? '#0a0a0a' : '#fafafa',
+              color: tema === 'light' ? '#fafafa' : '#0a0a0a',
+            }}
+            title="Cambiar tema"
+          >
+            {tema === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+          </button>
           <Link
             href="/pos/corte"
-            className="h-9 px-2.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-200 text-[11px] font-bold inline-flex items-center gap-1 active:scale-95 hover:bg-cyan-500/25 transition-colors"
+            className="h-9 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 active:scale-95 transition-colors"
+            style={{
+              background: T.accentBg,
+              border: `1px solid ${T.accentBorder}`,
+              color: T.accent,
+            }}
             title="Corte de caja"
           >
             <FileText className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Corte</span>
           </Link>
           <Link
-            href="/login?logout=1"
-            className="h-9 px-2.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[11px] font-bold inline-flex items-center gap-1 active:scale-95 hover:bg-rose-500/25 transition-colors"
+            href="/login"
+            className="h-9 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 active:scale-95 transition-colors"
+            style={{
+              background: tema === 'light' ? '#fef2f2' : 'rgba(244,63,94,0.15)',
+              border: `1px solid ${tema === 'light' ? '#fecaca' : 'rgba(244,63,94,0.3)'}`,
+              color: tema === 'light' ? '#b91c1c' : '#fca5a5',
+            }}
             title="Cerrar sesión"
             onClick={async (e) => {
               e.preventDefault()
@@ -228,34 +339,92 @@ export function PosClient({
         </div>
       </header>
 
-      {/* Layout: mobile stack vertical (ticket es bottom-sheet), desktop side-by-side */}
+      {/* Tabs (solo si hay >1 ticket o siempre visibles desktop) */}
+      <div
+        className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto shrink-0 border-b"
+        style={{ borderColor: T.border, background: T.bgHeader }}
+      >
+        {tickets.map((t, i) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setActiveTabIdx(i)}
+            className={cn(
+              'shrink-0 h-8 px-2.5 rounded-md text-[11px] font-bold inline-flex items-center gap-1.5 transition-all',
+              i === activeTabIdx ? 'shadow-sm' : 'opacity-70 hover:opacity-100'
+            )}
+            style={{
+              background: i === activeTabIdx ? T.accent : T.bgInput,
+              color: i === activeTabIdx ? '#ffffff' : T.text,
+              border: `1px solid ${i === activeTabIdx ? T.accent : T.border}`,
+            }}
+          >
+            {t.nombre} {t.items.length > 0 && `(${t.items.length})`}
+            {tickets.length > 1 && i === activeTabIdx && (
+              <span
+                role="button"
+                onClick={(e) => { e.stopPropagation(); cerrarTab(i) }}
+                className="ml-1 hover:opacity-80 cursor-pointer inline-flex"
+              >
+                <X className="h-3 w-3" />
+              </span>
+            )}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={agregarTab}
+          className="shrink-0 h-8 w-8 rounded-md inline-flex items-center justify-center font-bold active:scale-95"
+          style={{ background: T.bgInput, color: T.textMuted, border: `1px dashed ${T.borderStrong}` }}
+          title="Nuevo ticket (F2)"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+        <span className="ml-auto text-[9px] hidden sm:inline" style={{ color: T.textSubtle }}>
+          <kbd className="font-mono">F2</kbd> nuevo · <kbd className="font-mono">/</kbd> busca
+        </span>
+      </div>
+
+      {/* Layout principal */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* COLUMNA IZQUIERDA: PRODUCTOS */}
-        <div className="flex-1 flex flex-col overflow-hidden md:border-r border-zinc-800">
+        <div
+          className="flex-1 flex flex-col overflow-hidden md:border-r"
+          style={{ borderColor: T.border }}
+        >
           {/* Barra de búsqueda + scanner */}
-          <div className="p-3 border-b border-zinc-800 bg-zinc-950/60 space-y-2">
+          <div
+            className="p-3 border-b space-y-2"
+            style={{ borderColor: T.border, background: tema === 'light' ? '#fafafa' : 'rgba(10,10,10,0.6)' }}
+          >
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 pointer-events-none" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none" style={{ color: T.textMuted }} />
                 <input
                   ref={inputRef}
                   type="text"
                   value={q}
                   onChange={e => setQ(e.target.value)}
                   placeholder="Buscar producto o escanear código…"
-                  className="w-full h-12 pl-10 pr-9 rounded-xl border border-zinc-700 bg-zinc-900 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full h-12 pl-10 pr-9 rounded-xl text-base focus:outline-none focus:ring-2"
+                  style={{
+                    background: T.bgInput,
+                    border: `1px solid ${T.border}`,
+                    color: T.text,
+                  }}
                 />
                 {q && (
                   <button onClick={() => setQ('')} className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <X className="h-4 w-4 text-zinc-500" />
+                    <X className="h-4 w-4" style={{ color: T.textMuted }} />
                   </button>
                 )}
               </div>
               <button
                 type="button"
                 onClick={() => setScannerOpen(true)}
-                className="h-12 w-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 inline-flex items-center justify-center text-white shrink-0"
-                title="Escanear código (cámara)"
+                className="h-12 w-12 rounded-xl active:scale-95 inline-flex items-center justify-center shrink-0 shadow-md"
+                style={{ background: T.accent, color: '#ffffff' }}
+                title="Escanear código"
               >
                 <ScanLine className="h-5 w-5" />
               </button>
@@ -263,84 +432,41 @@ export function PosClient({
 
             {/* Chips categorías */}
             <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-              <button
-                type="button"
-                onClick={() => setCategoria('')}
-                className={cn(
-                  'shrink-0 h-7 px-2.5 rounded-full text-[10px] border transition-all',
-                  !categoria
-                    ? 'border-emerald-500 bg-emerald-500 text-white'
-                    : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
-                )}
-              >
+              <CategoryChip activa={!categoria} onClick={() => setCategoria('')} tema={tema} T={T}>
                 Todas ({productos.length})
-              </button>
+              </CategoryChip>
               {categorias.slice(0, 12).map(c => {
                 const count = productos.filter(p => p.categoria === c).length
                 const em = EMOJI_CAT[c] ?? '📦'
                 return (
-                  <button
+                  <CategoryChip
                     key={c}
-                    type="button"
+                    activa={categoria === c}
                     onClick={() => setCategoria(categoria === c ? '' : c)}
-                    className={cn(
-                      'shrink-0 h-7 px-2.5 rounded-full text-[10px] border transition-all inline-flex items-center gap-1',
-                      categoria === c
-                        ? 'border-cyan-500 bg-cyan-500 text-white'
-                        : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
-                    )}
+                    tema={tema}
+                    T={T}
                   >
                     <span>{em}</span>{c} ({count})
-                  </button>
+                  </CategoryChip>
                 )
               })}
             </div>
           </div>
 
-          {/* Grid productos */}
-          <div className="flex-1 overflow-y-auto p-3" style={{ WebkitOverflowScrolling: 'touch' }}>
+          {/* Grid productos — pb extra en mobile para que no tape el aside */}
+          <div
+            className="flex-1 overflow-y-auto p-3 pb-24 md:pb-3"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             {productosFiltrados.length === 0 ? (
-              <div className="text-center py-10 text-zinc-500 text-sm">
+              <div className="text-center py-10 text-sm" style={{ color: T.textMuted }}>
                 Sin resultados {q && `para "${q}"`}
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-                {productosFiltrados.map(p => {
-                  const emoji = p.categoria === 'Choco' ? '📦' : (EMOJI_CAT[p.categoria ?? ''] ?? '📦')
-                  const sinStock = p.stock <= 0
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => addProducto(p)}
-                      className={cn(
-                        'text-left rounded-xl border bg-zinc-900 overflow-hidden hover:border-emerald-500/40 active:scale-[0.97] transition-all',
-                        sinStock ? 'border-rose-500/30 opacity-60' : 'border-zinc-700'
-                      )}
-                    >
-                      <div className="relative aspect-square bg-gradient-to-br from-zinc-800/60 to-zinc-950 flex items-center justify-center">
-                        {p.foto_signed_url ? (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={p.foto_signed_url} alt={p.nombre} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-4xl opacity-50">{emoji}</span>
-                        )}
-                        <span className={cn(
-                          'absolute top-1.5 right-1.5 inline-flex items-center px-1.5 h-5 rounded-full text-[9px] font-bold border tabular-nums backdrop-blur',
-                          sinStock
-                            ? 'bg-rose-500/20 text-rose-200 border-rose-500/40'
-                            : p.stock <= 3
-                              ? 'bg-amber-500/20 text-amber-200 border-amber-500/40'
-                              : 'bg-emerald-500/20 text-emerald-200 border-emerald-500/40'
-                        )}>{p.stock}</span>
-                      </div>
-                      <div className="p-1.5 space-y-0.5">
-                        <p className="text-[11px] font-semibold text-zinc-100 leading-tight line-clamp-2 min-h-[28px]">{p.nombre}</p>
-                        <p className="text-sm font-black text-emerald-300 tabular-nums leading-none">{formatMoney(p.precio_mxn, 'MXN')}</p>
-                      </div>
-                    </button>
-                  )
-                })}
+                {productosFiltrados.map(p => (
+                  <ProductoCard key={p.id} p={p} onTap={() => addProducto(p)} tema={tema} T={T} />
+                ))}
               </div>
             )}
           </div>
@@ -349,30 +475,37 @@ export function PosClient({
         {/* COLUMNA DERECHA: TICKET — desktop sidebar / mobile bottom-sheet */}
         <aside
           className={cn(
-            'flex flex-col bg-zinc-950 z-40 transition-all duration-300',
-            // Desktop: sidebar tradicional
-            'md:relative md:w-80 lg:w-96 md:translate-y-0 md:max-h-none',
-            // Mobile: fixed bottom-sheet, colapsado por default
-            'fixed inset-x-0 bottom-0 border-t border-emerald-500/30 rounded-t-2xl md:rounded-none md:border-t-0',
+            'flex flex-col z-40 transition-all duration-300',
+            'md:relative md:w-80 lg:w-96 md:max-h-none md:translate-y-0',
+            'fixed inset-x-0 bottom-0 rounded-t-2xl md:rounded-none',
             mobileTicketOpen ? 'max-h-[80dvh]' : 'max-h-[80px]',
-            // En desktop ignora mobileTicketOpen
-            'md:max-h-none md:border-emerald-500/30'
+            'md:max-h-none'
           )}
-          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+          style={{
+            background: T.bgCard,
+            borderTop: `1px solid ${T.accent}`,
+            borderLeft: `1px solid ${T.border}`,
+            paddingBottom: 'env(safe-area-inset-bottom)',
+            boxShadow: tema === 'light' ? '0 -8px 24px rgba(0,0,0,0.08)' : '0 -8px 24px rgba(0,0,0,0.4)',
+          }}
         >
-          {/* Header del ticket — en mobile sirve como handle para abrir/cerrar */}
+          {/* Header del ticket */}
           <button
             type="button"
             onClick={() => setMobileTicketOpen(v => !v)}
-            className="md:cursor-default px-3 py-2 border-b border-zinc-800 flex items-center justify-between w-full text-left"
+            className="md:cursor-default px-3 py-2 flex items-center justify-between w-full text-left border-b"
+            style={{ borderColor: T.border }}
           >
             <div className="flex items-center gap-2 flex-1">
+              <ShoppingBag className="h-4 w-4 shrink-0" style={{ color: T.accent }} />
               <div>
-                <p className="text-sm font-black text-zinc-100 leading-tight">Ticket {items.length > 0 && `(${items.length})`}</p>
-                <p className="text-[10px] text-zinc-500 leading-tight md:hidden">
+                <p className="text-sm font-black leading-tight" style={{ color: T.text }}>
+                  {tickets[activeTabIdx]?.nombre} {items.length > 0 && `· ${items.length}`}
+                </p>
+                <p className="text-[10px] leading-tight md:hidden" style={{ color: T.textMuted }}>
                   {items.length === 0 ? 'Tap para abrir' : `Total ${formatMoney(tot.subtotal, 'MXN')}`}
                 </p>
-                <p className="text-[10px] text-zinc-500 leading-tight hidden md:block">
+                <p className="text-[10px] leading-tight hidden md:block" style={{ color: T.textMuted }}>
                   {items.length} item{items.length === 1 ? '' : 's'}
                 </p>
               </div>
@@ -381,23 +514,26 @@ export function PosClient({
               {items.length > 0 && (
                 <span
                   role="button"
-                  onClick={(e) => { e.stopPropagation(); limpiarTodo() }}
-                  className="h-7 px-2 rounded-md border border-rose-500/30 text-rose-300 text-[10px] font-bold inline-flex items-center gap-1 active:scale-95 cursor-pointer"
-                  title="Cancelar venta"
+                  onClick={(e) => { e.stopPropagation(); limpiarTicketActivo() }}
+                  className="h-7 px-2 rounded-md text-[10px] font-bold inline-flex items-center gap-1 active:scale-95 cursor-pointer"
+                  style={{
+                    background: tema === 'light' ? '#fef2f2' : 'rgba(244,63,94,0.15)',
+                    border: `1px solid ${tema === 'light' ? '#fecaca' : 'rgba(244,63,94,0.3)'}`,
+                    color: tema === 'light' ? '#b91c1c' : '#fca5a5',
+                  }}
                 >
                   <Trash2 className="h-3 w-3" />
-                  Cancelar
+                  Vaciar
                 </span>
               )}
-              {/* Chevron solo en mobile (indicador) */}
-              <ChevronUp className={cn(
-                'h-5 w-5 text-zinc-400 md:hidden transition-transform',
-                mobileTicketOpen && 'rotate-180'
-              )} />
+              <ChevronUp
+                className={cn('h-5 w-5 md:hidden transition-transform', mobileTicketOpen && 'rotate-180')}
+                style={{ color: T.textMuted }}
+              />
             </div>
           </button>
 
-          {/* Items del ticket — solo visible cuando expandido (mobile) o siempre (desktop) */}
+          {/* Items */}
           <div
             className={cn(
               'flex-1 overflow-y-auto p-2 space-y-1.5',
@@ -406,26 +542,29 @@ export function PosClient({
             style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
           >
             {items.length === 0 ? (
-              <div className="text-center py-12 text-zinc-600 text-sm">
+              <div className="text-center py-12 text-sm" style={{ color: T.textSubtle }}>
                 <ShoppingBag className="h-10 w-10 mx-auto mb-2 opacity-30" />
                 Carrito vacío
               </div>
             ) : (
               itemsCalc.map((it, idx) => (
-                <div key={idx} className="rounded-lg border border-zinc-700 bg-zinc-900 p-2">
+                <div key={idx} className="rounded-lg p-2" style={{ background: T.bgInput, border: `1px solid ${T.border}` }}>
                   <div className="flex items-start gap-2 mb-1.5">
-                    <p className="text-xs font-semibold text-zinc-100 flex-1 leading-tight line-clamp-2">{it.nombre_snapshot}</p>
+                    <p className="text-xs font-semibold flex-1 leading-tight line-clamp-2" style={{ color: T.text }}>
+                      {it.nombre_snapshot}
+                    </p>
                     <button
                       type="button"
                       onClick={() => quitarItem(idx)}
-                      className="h-6 w-6 rounded text-rose-300 hover:bg-rose-500/10 inline-flex items-center justify-center shrink-0"
+                      className="h-6 w-6 rounded inline-flex items-center justify-center shrink-0"
+                      style={{ color: tema === 'light' ? '#dc2626' : '#fca5a5' }}
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <div className="inline-flex items-center rounded-md border border-zinc-700 bg-zinc-950">
-                      <button onClick={() => cambiarCantidad(idx, -1)} className="h-7 w-7 inline-flex items-center justify-center text-zinc-300">
+                    <div className="inline-flex items-center rounded-md" style={{ background: T.bgCard, border: `1px solid ${T.border}` }}>
+                      <button onClick={() => cambiarCantidad(idx, -1)} className="h-7 w-7 inline-flex items-center justify-center" style={{ color: T.text }}>
                         <Minus className="h-3 w-3" />
                       </button>
                       <input
@@ -433,14 +572,17 @@ export function PosClient({
                         value={it.cantidad}
                         step="1"
                         onChange={e => setCantidad(idx, Number(e.target.value) || 1)}
-                        className="w-10 h-7 bg-transparent text-center text-xs font-bold tabular-nums text-zinc-100 focus:outline-none"
+                        className="w-10 h-7 bg-transparent text-center text-xs font-bold tabular-nums focus:outline-none"
+                        style={{ color: T.text }}
                       />
-                      <button onClick={() => cambiarCantidad(idx, 1)} className="h-7 w-7 inline-flex items-center justify-center text-zinc-300">
+                      <button onClick={() => cambiarCantidad(idx, 1)} className="h-7 w-7 inline-flex items-center justify-center" style={{ color: T.text }}>
                         <Plus className="h-3 w-3" />
                       </button>
                     </div>
-                    <span className="text-[10px] text-zinc-500">× {formatMoney(it.precio_unitario_mxn, 'MXN')}</span>
-                    <p className="ml-auto text-sm font-bold text-emerald-300 tabular-nums">
+                    <span className="text-[10px]" style={{ color: T.textMuted }}>
+                      × {formatMoney(it.precio_unitario_mxn, 'MXN')}
+                    </span>
+                    <p className="ml-auto text-sm font-bold tabular-nums" style={{ color: T.accent }}>
                       {formatMoney(it.subtotal_mxn, 'MXN')}
                     </p>
                   </div>
@@ -449,17 +591,21 @@ export function PosClient({
             )}
           </div>
 
-          {/* Total + Botón cobrar — solo visible expandido en mobile, siempre en desktop */}
+          {/* Total + Botón cobrar */}
           <div
             className={cn(
-              'border-t border-zinc-800 p-3 bg-zinc-950 space-y-2',
+              'p-3 space-y-2 border-t',
               !mobileTicketOpen && 'hidden md:block'
             )}
-            style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+            style={{
+              borderColor: T.border,
+              background: T.bgCard,
+              paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+            }}
           >
             <div className="flex items-baseline justify-between">
-              <span className="text-xs uppercase tracking-wider font-bold text-zinc-500">Total</span>
-              <span className="text-2xl font-black text-emerald-300 tabular-nums">
+              <span className="text-xs uppercase tracking-wider font-bold" style={{ color: T.textMuted }}>Total</span>
+              <span className="text-2xl font-black tabular-nums" style={{ color: T.accent }}>
                 {formatMoney(tot.subtotal, 'MXN')}
               </span>
             </div>
@@ -467,22 +613,31 @@ export function PosClient({
               type="button"
               onClick={iniciarCobro}
               disabled={items.length === 0}
-              className="w-full h-14 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 text-white font-black text-base inline-flex items-center justify-center gap-2 disabled:opacity-30 shadow-lg shadow-emerald-500/30 active:scale-[0.98]"
+              className="w-full h-14 rounded-xl text-white font-black text-base inline-flex items-center justify-center gap-2 disabled:opacity-30 shadow-lg active:scale-[0.98] transition-all"
+              style={{
+                background: tema === 'light'
+                  ? 'linear-gradient(90deg, #dc2626, #b91c1c)'
+                  : 'linear-gradient(90deg, #10b981, #06b6d4)',
+                boxShadow: tema === 'light' ? '0 8px 24px rgba(220,38,38,0.4)' : '0 8px 24px rgba(16,185,129,0.4)',
+              }}
             >
               💵 COBRAR
             </button>
-            <p className="text-center text-[9px] text-zinc-600 hidden md:block">
-              Atajos: <kbd className="font-mono text-zinc-500">/</kbd> buscar · <kbd className="font-mono text-zinc-500">Esc</kbd> limpiar
-            </p>
           </div>
 
-          {/* Bar colapsada en mobile cuando hay items y no está expandido */}
+          {/* Bar colapsada en mobile cuando hay items */}
           {items.length > 0 && !mobileTicketOpen && (
             <button
               type="button"
               onClick={() => setMobileTicketOpen(true)}
-              className="md:hidden absolute inset-x-0 bottom-0 mx-2 mb-2 h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 text-white font-black inline-flex items-center justify-between px-4 shadow-lg shadow-emerald-500/30 active:scale-[0.98]"
-              style={{ marginBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+              className="md:hidden absolute inset-x-0 bottom-0 mx-2 mb-2 h-12 rounded-xl text-white font-black inline-flex items-center justify-between px-4 shadow-lg active:scale-[0.98]"
+              style={{
+                background: tema === 'light'
+                  ? 'linear-gradient(90deg, #dc2626, #b91c1c)'
+                  : 'linear-gradient(90deg, #10b981, #06b6d4)',
+                boxShadow: tema === 'light' ? '0 8px 20px rgba(220,38,38,0.45)' : '0 8px 20px rgba(16,185,129,0.45)',
+                marginBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+              }}
             >
               <span className="inline-flex items-center gap-2">
                 <ShoppingBag className="h-4 w-4" />
@@ -495,7 +650,7 @@ export function PosClient({
         </aside>
       </div>
 
-      {/* Backdrop cuando ticket abierto en mobile */}
+      {/* Backdrop mobile */}
       {mobileTicketOpen && (
         <div
           className="md:hidden fixed inset-0 bg-black/40 z-30"
@@ -523,10 +678,116 @@ export function PosClient({
           onSuccess={() => {
             setItems([])
             setCobroOpen(false)
+            setMobileTicketOpen(false)
             inputRef.current?.focus()
           }}
         />
       )}
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────
+// Subcomponentes
+// ────────────────────────────────────────────────────────
+
+function ProductoCard({ p, onTap, tema, T }: { p: Producto; onTap: () => void; tema: 'light' | 'dark'; T: Record<string, string> }) {
+  const emoji = p.categoria === 'Choco' ? '📦' : (EMOJI_CAT[p.categoria ?? ''] ?? '📦')
+  const sinStock = p.stock <= 0
+  return (
+    <button
+      type="button"
+      onClick={onTap}
+      className="text-left rounded-xl overflow-hidden active:scale-[0.96] transition-all"
+      style={{
+        background: T.bgCard,
+        border: `1px solid ${sinStock ? (tema === 'light' ? '#fecaca' : 'rgba(244,63,94,0.3)') : T.border}`,
+        opacity: sinStock ? 0.6 : 1,
+        boxShadow: tema === 'light' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+      }}
+    >
+      <div
+        className="relative aspect-square flex items-center justify-center"
+        style={{ background: tema === 'light' ? '#f9fafb' : 'linear-gradient(to bottom right, rgba(39,39,42,0.6), #0a0a0a)' }}
+      >
+        {p.foto_signed_url ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={p.foto_signed_url} alt={p.nombre} className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-4xl opacity-50">{emoji}</span>
+        )}
+        <span
+          className="absolute top-1.5 right-1.5 inline-flex items-center px-1.5 h-5 rounded-full text-[9px] font-bold tabular-nums"
+          style={{
+            background: sinStock
+              ? (tema === 'light' ? '#fee2e2' : 'rgba(244,63,94,0.2)')
+              : p.stock <= 3
+                ? (tema === 'light' ? '#fef3c7' : 'rgba(251,191,36,0.2)')
+                : (tema === 'light' ? '#dcfce7' : 'rgba(16,185,129,0.2)'),
+            color: sinStock
+              ? (tema === 'light' ? '#991b1b' : '#fca5a5')
+              : p.stock <= 3
+                ? (tema === 'light' ? '#92400e' : '#fbbf24')
+                : (tema === 'light' ? '#166534' : '#10b981'),
+            border: `1px solid ${sinStock
+              ? (tema === 'light' ? '#fecaca' : 'rgba(244,63,94,0.4)')
+              : p.stock <= 3
+                ? (tema === 'light' ? '#fde68a' : 'rgba(251,191,36,0.4)')
+                : (tema === 'light' ? '#bbf7d0' : 'rgba(16,185,129,0.4)')}`,
+          }}
+        >
+          {p.stock}
+        </span>
+      </div>
+      <div className="p-1.5 space-y-0.5">
+        <p className="text-[11px] font-semibold leading-tight line-clamp-2 min-h-[28px]" style={{ color: T.text }}>{p.nombre}</p>
+        <p className="text-sm font-black tabular-nums leading-none" style={{ color: T.accent }}>
+          {formatMoney(p.precio_mxn, 'MXN')}
+        </p>
+      </div>
+    </button>
+  )
+}
+
+function CategoryChip({ activa, onClick, tema, T, children }: {
+  activa: boolean; onClick: () => void; tema: 'light' | 'dark'; T: Record<string, string>; children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="shrink-0 h-7 px-2.5 rounded-full text-[10px] transition-all inline-flex items-center gap-1"
+      style={{
+        background: activa ? T.accent : 'transparent',
+        color: activa ? '#ffffff' : T.textMuted,
+        border: `1px solid ${activa ? T.accent : T.border}`,
+        boxShadow: activa
+          ? (tema === 'light' ? '0 2px 8px rgba(220,38,38,0.25)' : '0 2px 8px rgba(16,185,129,0.25)')
+          : 'none',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function PrerequisitoError({ mensaje, detalle, tema }: { mensaje: string; detalle: string; tema: 'light' | 'dark' }) {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center p-6"
+      style={{ background: tema === 'light' ? '#ffffff' : '#0a0a0a' }}
+    >
+      <div
+        className="rounded-2xl p-6 max-w-md space-y-3 text-center"
+        style={{
+          background: tema === 'light' ? '#fef2f2' : 'rgba(244,63,94,0.05)',
+          border: `1px solid ${tema === 'light' ? '#fecaca' : 'rgba(244,63,94,0.3)'}`,
+        }}
+      >
+        <AlertTriangle className="h-10 w-10 mx-auto" style={{ color: tema === 'light' ? '#dc2626' : '#fca5a5' }} />
+        <p className="text-lg font-bold" style={{ color: tema === 'light' ? '#991b1b' : '#fecaca' }}>{mensaje}</p>
+        <p className="text-sm" style={{ color: tema === 'light' ? '#dc2626' : 'rgba(244,63,94,0.8)' }}>{detalle}</p>
+      </div>
     </div>
   )
 }
