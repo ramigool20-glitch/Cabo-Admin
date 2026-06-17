@@ -675,6 +675,7 @@ export function PosClient({
           totalMxn={tot.subtotal}
           negocioId={negocio.id}
           cuentas={cuentas}
+          rate={rate}
           onSuccess={() => {
             setItems([])
             setCobroOpen(false)

@@ -9,16 +9,17 @@
  */
 
 import { useState, useEffect } from 'react'
-import { X, Banknote, CreditCard, Smartphone, Loader2, CheckCircle2, Printer, Share2 } from 'lucide-react'
+import { X, Banknote, CreditCard, Smartphone, Loader2, CheckCircle2, Printer, Share2, DollarSign } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { crearVentaConItems } from '@/app/(app)/transacciones/venta-actions'
 import type { VentaItemInput } from '@/lib/ventas/items'
 
 type Cuenta = { id: string; nombre: string; moneda: string; tipo: string }
-type Metodo = 'efectivo' | 'mp' | 'tarjeta'
+type Metodo = 'efectivo' | 'efectivo_usd' | 'mp' | 'tarjeta'
 
-const DENOMS = [50, 100, 200, 500, 1000]
+const DENOMS_MXN = [50, 100, 200, 500, 1000]
+const DENOMS_USD = [5, 10, 20, 50, 100]
 
 export function CobroSheet({
   open,
@@ -27,6 +28,7 @@ export function CobroSheet({
   totalMxn,
   negocioId,
   cuentas,
+  rate = 17,
   onSuccess,
 }: {
   open: boolean
@@ -35,8 +37,11 @@ export function CobroSheet({
   totalMxn: number
   negocioId: string
   cuentas: Cuenta[]
+  rate?: number
   onSuccess: () => void
 }) {
+  // Total en USD para mostrar siempre como referencia
+  const totalUsd = totalMxn / rate
   const [metodo, setMetodo] = useState<Metodo>('efectivo')
   const [recibido, setRecibido] = useState<string>(String(Math.ceil(totalMxn)))
   const [cobrando, setCobrando] = useState(false)
@@ -44,19 +49,26 @@ export function CobroSheet({
 
   // Cuenta auto-seleccionada según método
   const cuentaSugerida = (m: Metodo): string => {
-    const efectivo = cuentas.find(c => /efectivo/i.test(c.nombre) && c.moneda === 'MXN')
+    const efectivoMxn = cuentas.find(c => /efectivo/i.test(c.nombre) && c.moneda === 'MXN')
+    const efectivoUsd = cuentas.find(c => /efectivo/i.test(c.nombre) && c.moneda === 'USD')
     const mp = cuentas.find(c => /mp|mercado/i.test(c.nombre))
     const tarjeta = cuentas.find(c => /tarjeta|stripe|fiscal/i.test(c.nombre))
-    if (m === 'efectivo') return efectivo?.id ?? cuentas[0].id
+    if (m === 'efectivo') return efectivoMxn?.id ?? cuentas[0].id
+    if (m === 'efectivo_usd') return efectivoUsd?.id ?? efectivoMxn?.id ?? cuentas[0].id
     if (m === 'mp') return mp?.id ?? cuentas[0].id
     if (m === 'tarjeta') return tarjeta?.id ?? cuentas[0].id
     return cuentas[0].id
   }
   const [cuentaId, setCuentaId] = useState<string>(cuentaSugerida('efectivo'))
 
-  // Cuando cambias método, auto-selecciona cuenta
+  // Cuando cambias método, auto-selecciona cuenta + ajusta el "recibido" sugerido
   useEffect(() => {
     setCuentaId(cuentaSugerida(metodo))
+    if (metodo === 'efectivo_usd') {
+      setRecibido(String(Math.ceil(totalUsd)))
+    } else if (metodo === 'efectivo') {
+      setRecibido(String(Math.ceil(totalMxn)))
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metodo])
 
@@ -67,12 +79,16 @@ export function CobroSheet({
   }, [])
 
   const recibidoNum = Number(recibido) || 0
-  const cambio = Math.max(0, recibidoNum - totalMxn)
-  const faltante = Math.max(0, totalMxn - recibidoNum)
+  // Para efectivo USD, todo está en USD. Para los demás, en MXN.
+  const totalParaMetodo = metodo === 'efectivo_usd' ? totalUsd : totalMxn
+  const cambio = Math.max(0, recibidoNum - totalParaMetodo)
+  const faltante = Math.max(0, totalParaMetodo - recibidoNum)
+  const monedaSimbolo = metodo === 'efectivo_usd' ? 'USD' : 'MXN'
 
   // Mapea método visual → metodo_pago de BD
   const metodoPagoBd = (): string => {
     if (metodo === 'efectivo') return 'efectivo_mxn'
+    if (metodo === 'efectivo_usd') return 'efectivo_usd'
     if (metodo === 'mp') return 'mp_terminal'
     if (metodo === 'tarjeta') return 'tarjeta'
     return 'otro'
@@ -80,23 +96,31 @@ export function CobroSheet({
 
   const cobrar = async () => {
     if (cobrando) return
-    if (metodo === 'efectivo' && recibidoNum < totalMxn) {
-      return toast.error('Falta efectivo', `Recibido $${recibidoNum} < total $${totalMxn.toFixed(2)}`)
+    if ((metodo === 'efectivo' || metodo === 'efectivo_usd') && recibidoNum < totalParaMetodo) {
+      return toast.error('Falta efectivo', `Recibido ${monedaSimbolo} ${recibidoNum} < total ${totalParaMetodo.toFixed(2)}`)
     }
     setCobrando(true)
     try {
+      const conceptoLabel = metodo === 'efectivo' ? 'Efectivo MXN'
+        : metodo === 'efectivo_usd' ? 'Efectivo USD'
+        : metodo === 'mp' ? 'Mercado Pago' : 'Tarjeta'
+      const notasCambio = (metodo === 'efectivo' || metodo === 'efectivo_usd') && cambio > 0
+        ? `Recibido ${monedaSimbolo} ${recibidoNum} · cambio ${monedaSimbolo} ${cambio.toFixed(2)}` + (metodo === 'efectivo_usd' ? ` · TC ${rate.toFixed(2)}` : '')
+        : null
+
       const r = await crearVentaConItems({
         fecha: new Date().toISOString().slice(0, 10),
         negocio_id: negocioId,
         cuenta_id: cuentaId,
         metodo_pago: metodoPagoBd(),
-        concepto: `POS · ${metodo === 'efectivo' ? 'Efectivo' : metodo === 'mp' ? 'Mercado Pago' : 'Tarjeta'}`,
+        concepto: `POS · ${conceptoLabel}`,
         cliente_nombre: null,
-        notas: metodo === 'efectivo' && cambio > 0 ? `Recibido $${recibidoNum} · cambio $${cambio.toFixed(2)}` : null,
+        notas: notasCambio,
         items,
         descuento_global_pct: 0,
         descontar_stock: true,
-        no_redirect: true,  // ⚡ POS no redirige — muestra éxito inline
+        no_redirect: true,
+        moneda_cobro: metodo === 'efectivo_usd' ? 'USD' : 'MXN',
       })
       if (r?.error) {
         setCobrando(false)
@@ -173,11 +197,14 @@ export function CobroSheet({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ overscrollBehavior: 'contain' }}>
-          {/* Total destacado */}
-          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-center">
+          {/* Total destacado MXN + USD */}
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-center space-y-1">
             <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Total a cobrar</p>
-            <p className="text-4xl font-black text-emerald-300 tabular-nums leading-none mt-1">
+            <p className="text-4xl font-black text-emerald-300 tabular-nums leading-none">
               {formatMoney(totalMxn, 'MXN')}
+            </p>
+            <p className="text-sm text-cyan-300/80 tabular-nums">
+              🇺🇸 ${totalUsd.toFixed(2)} USD <span className="text-zinc-500">(TC ${rate.toFixed(2)})</span>
             </p>
           </div>
 
@@ -218,11 +245,12 @@ export function CobroSheet({
           ) : (
             // ─── COBRO ──────────────
             <>
-              {/* Selector método */}
-              <div className="grid grid-cols-3 gap-2">
-                <MetodoButton activo={metodo === 'efectivo'} onClick={() => setMetodo('efectivo')} icon={<Banknote className="h-5 w-5" />} label="Efectivo" />
-                <MetodoButton activo={metodo === 'mp'}        onClick={() => setMetodo('mp')}        icon={<Smartphone className="h-5 w-5" />} label="MP" />
-                <MetodoButton activo={metodo === 'tarjeta'}   onClick={() => setMetodo('tarjeta')}   icon={<CreditCard className="h-5 w-5" />} label="Tarjeta" />
+              {/* Selector método — 4 opciones (incluye USD) */}
+              <div className="grid grid-cols-4 gap-1.5">
+                <MetodoButton activo={metodo === 'efectivo'}     onClick={() => setMetodo('efectivo')}     icon={<Banknote className="h-5 w-5" />}    label="MXN" />
+                <MetodoButton activo={metodo === 'efectivo_usd'} onClick={() => setMetodo('efectivo_usd')} icon={<DollarSign className="h-5 w-5" />} label="USD" />
+                <MetodoButton activo={metodo === 'mp'}           onClick={() => setMetodo('mp')}           icon={<Smartphone className="h-5 w-5" />}  label="MP" />
+                <MetodoButton activo={metodo === 'tarjeta'}      onClick={() => setMetodo('tarjeta')}      icon={<CreditCard className="h-5 w-5" />}  label="Tarjeta" />
               </div>
 
               {/* Cuenta donde se asienta */}
@@ -237,29 +265,39 @@ export function CobroSheet({
                 </select>
               </div>
 
-              {/* Específico de efectivo */}
-              {metodo === 'efectivo' && (
+              {/* Efectivo MXN o USD — shared UI */}
+              {(metodo === 'efectivo' || metodo === 'efectivo_usd') && (
                 <div className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Efectivo recibido</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={recibido}
-                      onChange={e => setRecibido(e.target.value)}
-                      className="w-full h-14 px-4 rounded-xl border border-zinc-700 bg-zinc-900 text-2xl font-black tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
+                    <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">
+                      Efectivo recibido ({monedaSimbolo})
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-lg">
+                        {metodo === 'efectivo_usd' ? '🇺🇸 $' : '$'}
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={recibido}
+                        onChange={e => setRecibido(e.target.value)}
+                        className={cn(
+                          'w-full h-14 pr-4 rounded-xl border border-zinc-700 bg-zinc-900 text-2xl font-black tabular-nums focus:outline-none focus:ring-2',
+                          metodo === 'efectivo_usd' ? 'pl-12 focus:ring-cyan-500' : 'pl-9 focus:ring-emerald-500'
+                        )}
+                      />
+                    </div>
                   </div>
 
-                  {/* Denominaciones rápidas */}
+                  {/* Denominaciones rápidas según moneda */}
                   <div className="grid grid-cols-3 gap-1.5">
                     <button
-                      onClick={() => setRecibido(String(Math.ceil(totalMxn)))}
+                      onClick={() => setRecibido(String(Math.ceil(totalParaMetodo)))}
                       className="h-10 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-xs font-bold active:scale-95"
                     >
-                      ${Math.ceil(totalMxn)} (exacto)
+                      ${Math.ceil(totalParaMetodo)} (exacto)
                     </button>
-                    {DENOMS.filter(d => d >= totalMxn).slice(0, 5).map(d => (
+                    {(metodo === 'efectivo_usd' ? DENOMS_USD : DENOMS_MXN).filter(d => d >= totalParaMetodo).slice(0, 5).map(d => (
                       <button
                         key={d}
                         onClick={() => setRecibido(String(d))}
@@ -271,15 +309,26 @@ export function CobroSheet({
                   </div>
 
                   {/* Cambio o faltante */}
-                  {recibidoNum >= totalMxn ? (
+                  {recibidoNum >= totalParaMetodo ? (
                     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-center justify-between">
-                      <span className="text-xs uppercase tracking-wider font-bold text-amber-200">Cambio</span>
-                      <span className="text-2xl font-black text-amber-300 tabular-nums">{formatMoney(cambio, 'MXN')}</span>
+                      <span className="text-xs uppercase tracking-wider font-bold text-amber-200">Cambio ({monedaSimbolo})</span>
+                      <span className="text-2xl font-black text-amber-300 tabular-nums">
+                        {monedaSimbolo === 'USD' ? `🇺🇸 $${cambio.toFixed(2)}` : formatMoney(cambio, 'MXN')}
+                      </span>
                     </div>
                   ) : (
                     <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 flex items-center justify-between">
-                      <span className="text-xs uppercase tracking-wider font-bold text-rose-200">Falta</span>
-                      <span className="text-2xl font-black text-rose-300 tabular-nums">{formatMoney(faltante, 'MXN')}</span>
+                      <span className="text-xs uppercase tracking-wider font-bold text-rose-200">Falta ({monedaSimbolo})</span>
+                      <span className="text-2xl font-black text-rose-300 tabular-nums">
+                        {monedaSimbolo === 'USD' ? `🇺🇸 $${faltante.toFixed(2)}` : formatMoney(faltante, 'MXN')}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Aviso USD */}
+                  {metodo === 'efectivo_usd' && (
+                    <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-2 text-[10px] text-cyan-200/80">
+                      💡 La venta se registra en USD. Equivalencia MXN: <strong>{formatMoney(totalMxn, 'MXN')}</strong> al tipo de cambio de hoy (${rate.toFixed(2)})
                     </div>
                   )}
                 </div>

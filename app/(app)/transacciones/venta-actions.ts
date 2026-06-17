@@ -48,6 +48,9 @@ const VentaSchema = z.object({
   descontar_stock: z.boolean().default(true),
   // POS: no redirige al detalle, devuelve id para mostrar éxito inline
   no_redirect: z.boolean().optional(),
+  // Moneda del COBRO (la cajera recibió USD aunque productos están en MXN).
+  // Default MXN. Si es USD, convierte el total MXN a USD usando el rate del día.
+  moneda_cobro: z.enum(['MXN', 'USD']).optional(),
 })
 
 export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Promise<VentaActionState> {
@@ -83,8 +86,23 @@ export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Pr
 
   if (tot.subtotal <= 0) return { error: 'El total de la venta debe ser mayor a 0' }
 
-  // 2. FX (todo en MXN para ventas, pero respetamos lo del módulo)
-  const fx = await aMxnEquivalente(tot.subtotal, 'MXN', d.fecha)
+  // 2. FX — si cobraste en USD, conviertes el total MXN a USD del día
+  const monedaCobro = d.moneda_cobro ?? 'MXN'
+  let montoTx = tot.subtotal
+  let montoMxnEquiv = tot.subtotal
+  let rateUsado = 1
+  if (monedaCobro === 'USD') {
+    // Tomamos el rate como (USD recibido) = (MXN total / rate)
+    // Usamos rate_compra del día como referencia para la conversión inversa
+    const fxRef = await aMxnEquivalente(1, 'USD', d.fecha)
+    rateUsado = Number(fxRef.tipo_cambio_usado ?? 17)
+    montoTx = Number((tot.subtotal / rateUsado).toFixed(2))
+    montoMxnEquiv = tot.subtotal  // el valor real del producto vendido en MXN
+  } else {
+    const fx = await aMxnEquivalente(tot.subtotal, 'MXN', d.fecha)
+    rateUsado = Number(fx.tipo_cambio_usado ?? 1)
+    montoMxnEquiv = fx.monto_mxn_equivalente
+  }
 
   // 3. Insert transacción
   const conceptoFinal = d.concepto ?? (d.cliente_nombre
@@ -95,10 +113,10 @@ export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Pr
     .from('transacciones')
     .insert({
       tipo: 'ingreso',
-      monto: tot.subtotal,
-      moneda: 'MXN',
-      monto_mxn_equivalente: fx.monto_mxn_equivalente,
-      tipo_cambio_usado: fx.tipo_cambio_usado,
+      monto: montoTx,
+      moneda: monedaCobro,
+      monto_mxn_equivalente: montoMxnEquiv,
+      tipo_cambio_usado: rateUsado,
       fecha: d.fecha,
       negocio_id: d.negocio_id,
       cuenta_id: d.cuenta_id,
