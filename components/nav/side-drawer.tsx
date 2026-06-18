@@ -34,6 +34,7 @@ const HERRAMIENTAS = [
   { href: '/transacciones', label: 'Transacciones', icon: Receipt,       emoji: '📋' },
   { href: '/transacciones/venta', label: 'Registrar Venta', icon: Receipt, emoji: '🛒' },
   { href: '/pos',           label: 'POS Cvu',     icon: Receipt,        emoji: '💊' },
+  { href: '/pos/tv',        label: 'Tablero TV',  icon: Sparkles,       emoji: '📺', badge: 'LIVE' },
   { href: '/cotizaciones',  label: 'Cotizaciones', icon: Receipt,        emoji: '📄' },
   { href: '/reportes/ganancia', label: 'Reportes Ganancia', icon: Sparkles, emoji: '📈' },
   { href: '/negocios',      label: 'Negocios',    icon: Building2,       emoji: '🏢' },

@@ -64,6 +64,7 @@ export function PosClient({
   rate,
   userNombre,
   esCajera,
+  favoritosIds = [],
 }: {
   negocio: Negocio
   cuentas: Cuenta[]
@@ -72,6 +73,7 @@ export function PosClient({
   rate: number
   userNombre: string
   esCajera: boolean
+  favoritosIds?: string[]
 }) {
   // Productos en estado local para que Realtime los pueda actualizar en vivo
   const [productos, setProductos] = useState<Producto[]>(productosIniciales)
@@ -216,6 +218,15 @@ export function PosClient({
       return true
     }).slice(0, 60)
   }, [productos, q, categoria])
+
+  // Favoritos del día: productos más vendidos hoy (quick reorder)
+  const favoritos = useMemo(() => {
+    if (q.trim() || categoria) return []  // No mostrar favoritos si está filtrando
+    if (favoritosIds.length === 0) return []
+    return favoritosIds
+      .map(id => productos.find(p => p.id === id))
+      .filter((p): p is Producto => !!p)
+  }, [favoritosIds, productos, q, categoria])
 
   const itemsCalc = items.map(calcularItem)
   const tot = calcularTotalesVenta(itemsCalc)
@@ -584,6 +595,33 @@ export function PosClient({
             className="flex-1 overflow-y-auto p-3 pb-24 md:pb-3"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
+            {/* Favoritos del día — quick reorder */}
+            {favoritos.length > 0 && (
+              <div className="mb-3 space-y-1.5">
+                <p className="text-[10px] uppercase tracking-wider font-bold inline-flex items-center gap-1.5" style={{ color: T.textMuted }}>
+                  ⚡ Favoritos de hoy · Tap rápido
+                </p>
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                  {favoritos.map(p => (
+                    <button
+                      key={`fav-${p.id}`}
+                      type="button"
+                      onClick={() => addProducto(p)}
+                      className="shrink-0 rounded-xl px-2.5 py-1.5 inline-flex items-center gap-1.5 active:scale-95 transition-all"
+                      style={{
+                        background: tema === 'light' ? '#fef3c7' : 'rgba(251,191,36,0.12)',
+                        border: `1px solid ${tema === 'light' ? '#fde68a' : 'rgba(251,191,36,0.3)'}`,
+                        color: tema === 'light' ? '#92400e' : '#fbbf24',
+                      }}
+                    >
+                      <span className="text-[11px] font-bold truncate max-w-[140px]">{p.nombre}</span>
+                      <span className="text-[10px] font-bold tabular-nums opacity-80">${p.precio_mxn}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {productosFiltrados.length === 0 ? (
               <div className="text-center py-10 text-sm" style={{ color: T.textMuted }}>
                 Sin resultados {q && `para "${q}"`}
@@ -731,9 +769,7 @@ export function PosClient({
           >
             <div className="flex items-baseline justify-between">
               <span className="text-xs uppercase tracking-wider font-bold" style={{ color: T.textMuted }}>Total</span>
-              <span className="text-2xl font-black tabular-nums" style={{ color: T.accent }}>
-                {formatMoney(tot.subtotal, 'MXN')}
-              </span>
+              <AnimatedTotal value={tot.subtotal} color={T.accent} />
             </div>
             <button
               type="button"
@@ -980,6 +1016,44 @@ function ConnectionBadge({
         <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: tema === 'light' ? '#16a34a' : '#10b981' }}></span>
       </span>
       Live
+    </span>
+  )
+}
+
+/** Total animado con tween cuando cambia (smooth count) */
+function AnimatedTotal({ value, color }: { value: number; color: string }) {
+  const [display, setDisplay] = useState(value)
+  const [pulse, setPulse] = useState(false)
+  const prevRef = useRef(value)
+
+  useEffect(() => {
+    if (value === prevRef.current) return
+    const from = prevRef.current
+    const to = value
+    const duration = 500
+    const start = performance.now()
+    let raf = 0
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / duration)
+      const eased = 1 - Math.pow(1 - p, 3)
+      setDisplay(from + (to - from) * eased)
+      if (p < 1) raf = requestAnimationFrame(tick)
+      else prevRef.current = to
+    }
+    raf = requestAnimationFrame(tick)
+    if (to > from) {
+      setPulse(true)
+      setTimeout(() => setPulse(false), 400)
+    }
+    return () => cancelAnimationFrame(raf)
+  }, [value])
+
+  return (
+    <span
+      className={cn('text-2xl font-black tabular-nums transition-transform', pulse && 'scale-110')}
+      style={{ color }}
+    >
+      ${Math.round(display).toLocaleString('es-MX', { minimumFractionDigits: 0 })}.{(display % 1).toFixed(2).slice(2)}
     </span>
   )
 }

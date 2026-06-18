@@ -107,6 +107,38 @@ export default async function PosPage() {
   // Categorías para filtros
   const categorias = Array.from(new Set(productos.map(p => p.categoria).filter(Boolean) as string[])).sort()
 
+  // Productos más vendidos HOY del negocio (quick reorder)
+  let favoritosIds: string[] = []
+  try {
+    const hoyStr = new Date().toISOString().slice(0, 10)
+    if (negocio) {
+      const { data: txsHoy } = await admin
+        .from('transacciones')
+        .select('id')
+        .eq('tiene_items', true)
+        .eq('tipo', 'ingreso')
+        .eq('negocio_id', negocio.id)
+        .gte('fecha', hoyStr)
+      const ids = (txsHoy ?? []).map(t => t.id)
+      if (ids.length > 0) {
+        const { data: items } = await admin
+          .from('venta_items')
+          .select('producto_id, cantidad')
+          .in('transaccion_id', ids)
+          .not('producto_id', 'is', null)
+        const agg = new Map<string, number>()
+        for (const it of items ?? []) {
+          const k = String(it.producto_id)
+          agg.set(k, (agg.get(k) ?? 0) + Number(it.cantidad ?? 0))
+        }
+        favoritosIds = Array.from(agg.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([id]) => id)
+      }
+    }
+  } catch { /* sin favoritos */ }
+
   return (
     <PosClient
       negocio={negocio ?? null}
@@ -116,6 +148,7 @@ export default async function PosPage() {
       rate={rate}
       userNombre={userNombre}
       esCajera={rol === 'cajera'}
+      favoritosIds={favoritosIds}
     />
   )
 }
