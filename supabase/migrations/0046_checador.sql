@@ -43,7 +43,9 @@ create table if not exists checadas (
 );
 
 create index if not exists idx_check_prof on checadas(profile_id, timestamp_at desc);
-create index if not exists idx_check_fecha on checadas(date(timestamp_at), profile_id);
+-- Nota: no usamos índice sobre date(timestamp_at) porque date() no es
+-- IMMUTABLE para timestamptz (depende de timezone de la sesión).
+-- El índice de arriba cubre las queries por profile + rango de tiempo.
 
 alter table checadas enable row level security;
 drop policy if exists "select_autenticado" on checadas;
