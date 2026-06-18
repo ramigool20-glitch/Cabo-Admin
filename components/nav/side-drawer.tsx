@@ -17,6 +17,7 @@ import {
   Settings,
   LogOut,
   Clock,
+  Camera,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { logoutAction } from '@/app/(auth)/login/actions'
@@ -44,6 +45,7 @@ const HERRAMIENTAS = [
   { href: '/inventario',    label: 'Inventario',  icon: Building2,       emoji: '📦' },
   { href: '/inventario/costos', label: 'Costos faltantes IA', icon: Sparkles, emoji: '🤖' },
   { href: '/checador',     label: 'Checador',     icon: Clock,            emoji: '⏰' },
+  { href: '/checador/historial', label: 'Historial checadas', icon: Camera, emoji: '📸' },
   { href: '/recurrentes',   label: 'Gastos Fijos', icon: Calendar,       emoji: '📅' },
   { href: '/por-pagar',     label: 'Por Pagar',   icon: AlertTriangle,   emoji: '💸' },
   { href: '/por-cobrar',    label: 'Por Cobrar',  icon: AlertTriangle,   emoji: '💰' },
