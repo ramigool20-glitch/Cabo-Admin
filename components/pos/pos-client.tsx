@@ -316,8 +316,8 @@ export function PosClient({
         {esCajera && tema === 'light' ? (
           <>
             {/* Logo CVU oficial — solo desktop */}
-            <div className="hidden md:flex items-center shrink-0">
-              <CvuLogo height={42} />
+            <div className="hidden md:flex items-center shrink-0 py-1">
+              <CvuLogo height={48} />
             </div>
             {/* En mobile cajera light: cuadrado rojo */}
             <div
