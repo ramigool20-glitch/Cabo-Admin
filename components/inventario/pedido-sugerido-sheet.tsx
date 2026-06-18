@@ -22,15 +22,23 @@ type ItemPedido = {
   prioridad: 'alta' | 'media' | 'baja'
   costo_estimado_mxn: number
   justificacion: string
+  margen_pct?: number | null
 }
 
 type Resp = {
   ok?: boolean
   items?: ItemPedido[]
   total_costo_mxn?: number
+  presupuesto_mxn?: number
+  porcentaje_uso?: number
+  estrategia?: string | null
+  motor?: 'claude-sonnet' | 'reglas-fallback'
+  criticos_omitidos?: number
   mensaje?: string
   error?: string
 }
+
+const PRESUPUESTOS = [5000, 10000, 20000, 50000, 100000]
 
 const PRIORIDAD_META = {
   alta:  { emoji: '🔴', label: 'Urgente',  card: 'border-rose-500/40 bg-rose-500/5',   pill: 'bg-rose-500/20 text-rose-200 border-rose-500/40' },
@@ -47,16 +55,24 @@ export function PedidoSugeridoSheet({
 }) {
   const [cargando, setCargando] = useState(false)
   const [data, setData] = useState<Resp | null>(null)
+  const [presupuesto, setPresupuesto] = useState<number>(20000)
+  const [presupuestoLocked, setPresupuestoLocked] = useState(false)
 
-  useEffect(() => {
-    if (!open || data || cargando) return
+  const generar = (mxn: number) => {
+    if (cargando) return
     setCargando(true)
-    fetch('/api/ai/pedido-sugerido', { method: 'POST' })
+    setData(null)
+    setPresupuestoLocked(true)
+    fetch('/api/ai/pedido-sugerido', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ presupuesto_mxn: mxn }),
+    })
       .then(r => r.json())
       .then(j => setData(j))
       .catch(() => setData({ error: 'Error de red' }))
       .finally(() => setCargando(false))
-  }, [open, data, cargando])
+  }
 
   // No bloqueamos body — usamos overscroll-contain en el scroll interno
   // para evitar el bug de scroll en iOS que oculta productos.
@@ -211,7 +227,52 @@ export function PedidoSugeridoSheet({
           {cargando && (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-cyan-400" />
-              <p className="text-sm text-zinc-400">Analizando inventario…</p>
+              <p className="text-sm text-zinc-300 font-bold">Claude Sonnet analizando…</p>
+              <p className="text-[10px] text-zinc-500">Considerando margen, rotación, presupuesto y categorías. ~30 seg.</p>
+            </div>
+          )}
+
+          {!cargando && !data && !presupuestoLocked && (
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 via-emerald-500/5 to-transparent p-4 space-y-2">
+                <p className="text-sm font-black text-zinc-100">¿Cuánto puedes gastar?</p>
+                <p className="text-[11px] text-zinc-500">Claude Sonnet optimizará el pedido para maximizar tu ROI dentro de ese presupuesto.</p>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {PRESUPUESTOS.map(p => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPresupuesto(p)}
+                    className={cn(
+                      'h-14 rounded-xl border transition-all active:scale-95',
+                      presupuesto === p
+                        ? 'border-cyan-500 bg-cyan-500/15 text-cyan-200'
+                        : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-600'
+                    )}
+                  >
+                    <p className="text-base font-black tabular-nums">{formatMoney(p, 'MXN').replace('.00', '')}</p>
+                    <p className="text-[9px] text-zinc-500 uppercase mt-0.5">{p <= 5000 ? 'mínimo' : p <= 20000 ? 'normal' : p <= 50000 ? 'amplio' : 'grande'}</p>
+                  </button>
+                ))}
+                <div className="h-14 rounded-xl border border-zinc-700 bg-zinc-900 flex items-center px-2 gap-1">
+                  <span className="text-zinc-500 text-sm">$</span>
+                  <input
+                    type="number"
+                    value={presupuesto}
+                    onChange={e => setPresupuesto(Number(e.target.value) || 0)}
+                    className="w-full h-full bg-transparent text-sm font-bold tabular-nums focus:outline-none"
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => generar(presupuesto)}
+                className="w-full h-14 rounded-xl bg-gradient-to-r from-cyan-600 to-emerald-600 text-white font-black inline-flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/30 active:scale-[0.98]"
+              >
+                <Sparkles className="h-5 w-5" />
+                Generar pedido con IA
+              </button>
             </div>
           )}
 
@@ -235,8 +296,24 @@ export function PedidoSugeridoSheet({
 
           {!cargando && items.length > 0 && (
             <div className="space-y-3">
-              {/* Resumen visual */}
-              <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-cyan-500/5 to-transparent p-3">
+              {/* Estrategia IA */}
+              {data?.estrategia && (
+                <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-3 flex gap-2">
+                  <Sparkles className="h-4 w-4 text-cyan-300 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-cyan-300 font-bold">Estrategia Claude Sonnet</p>
+                    <p className="text-xs text-zinc-300 mt-0.5">{data.estrategia}</p>
+                  </div>
+                </div>
+              )}
+              {data?.motor === 'reglas-fallback' && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-[10px] text-amber-200">
+                  ⚠ IA no respondió, usando reglas determinísticas como respaldo.
+                </div>
+              )}
+
+              {/* Resumen visual con presupuesto */}
+              <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-cyan-500/5 to-transparent p-3 space-y-2">
                 <div className="grid grid-cols-3 gap-1 text-center">
                   <div className="flex flex-col items-center">
                     <Package className="h-4 w-4 text-zinc-500 mb-1" />
@@ -254,6 +331,20 @@ export function PedidoSugeridoSheet({
                     <p className="text-[9px] uppercase tracking-wider text-zinc-500 mt-0.5">Total</p>
                   </div>
                 </div>
+                {data?.presupuesto_mxn && (
+                  <div className="pt-2 border-t border-zinc-800">
+                    <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                      <span>Presupuesto: {formatMoney(data.presupuesto_mxn, 'MXN')}</span>
+                      <span>Usado: {data.porcentaje_uso ?? 0}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500"
+                        style={{ width: `${Math.min(100, data.porcentaje_uso ?? 0)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
                 {/* Chips de prioridad */}
                 <div className="flex gap-1.5 mt-3 justify-center flex-wrap">
                   {conteoAlta > 0 && (
