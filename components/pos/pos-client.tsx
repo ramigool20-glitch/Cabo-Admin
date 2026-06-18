@@ -175,7 +175,7 @@ export function PosClient({
   const [mobileTicketOpen, setMobileTicketOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  // Atajos de teclado
+  // Atajos de teclado + auto-focus permanente para el escáner físico
   useEffect(() => {
     inputRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
@@ -184,11 +184,25 @@ export function PosClient({
       if (e.key === '/' && !isTyping) { e.preventDefault(); inputRef.current?.focus() }
       if (e.key === 'Escape' && !isTyping) setQ('')
       if (e.key === 'F2') { e.preventDefault(); agregarTab() }
+      // 🔫 Si el usuario empieza a teclear (incluido el escáner físico)
+      //    y NO está en otro input, re-enfoca el buscador automáticamente
+      const isDigit = /^[0-9]$/.test(e.key)
+      if (isDigit && !isTyping && !cobroOpen && !scannerOpen) {
+        inputRef.current?.focus()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [cobroOpen, scannerOpen])
+
+  // Re-focus al input cuando se cierra el sheet de cobro (mantiene escáner listo)
+  useEffect(() => {
+    if (!cobroOpen && !scannerOpen) {
+      const t = setTimeout(() => inputRef.current?.focus(), 100)
+      return () => clearTimeout(t)
+    }
+  }, [cobroOpen, scannerOpen])
 
   // Búsqueda
   const productosFiltrados = useMemo(() => {
@@ -484,7 +498,26 @@ export function PosClient({
                   type="text"
                   value={q}
                   onChange={e => setQ(e.target.value)}
-                  placeholder="Buscar producto o escanear código…"
+                  onKeyDown={e => {
+                    // 🔫 Enter del escáner físico (USB pistola/lápiz)
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      const codigo = q.trim()
+                      if (codigo.length < 3) return
+                      // 1. Match exacto por código de barras
+                      let prod = productos.find(p => p.codigo_barras === codigo)
+                      // 2. Si no, primer match en búsqueda (sirve para escribir parcial)
+                      if (!prod && productosFiltrados.length > 0) prod = productosFiltrados[0]
+                      if (prod) {
+                        addProducto(prod)
+                      } else {
+                        toast.error('No encontrado', codigo.slice(0, 30))
+                        setQ('')
+                      }
+                    }
+                  }}
+                  placeholder="Escanear código o buscar producto…"
+                  autoFocus
                   className="w-full h-12 pl-10 pr-9 rounded-xl text-base focus:outline-none focus:ring-2"
                   style={{
                     background: T.bgInput,
