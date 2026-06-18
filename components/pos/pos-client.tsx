@@ -13,7 +13,7 @@
 
 import Link from 'next/link'
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react'
-import { Search, Plus, Minus, Trash2, X, ShoppingBag, AlertTriangle, ScanLine, ChevronUp, LogOut, FileText, Sun, Moon } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, X, ShoppingBag, AlertTriangle, ScanLine, ChevronUp, LogOut, FileText, Sun, Moon, Clock } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { CobroSheet } from '@/components/pos/cobro-sheet'
@@ -393,6 +393,20 @@ export function PosClient({
           >
             {tema === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
           </button>
+          {/* Botón Checador — siempre visible para que Tania lo encuentre */}
+          <Link
+            href="/checador"
+            className="h-9 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 active:scale-95 transition-colors"
+            style={{
+              background: tema === 'light' ? '#fef3c7' : 'rgba(251,191,36,0.15)',
+              border: `1px solid ${tema === 'light' ? '#fde68a' : 'rgba(251,191,36,0.3)'}`,
+              color: tema === 'light' ? '#92400e' : '#fbbf24',
+            }}
+            title="Checar entrada/salida"
+          >
+            <Clock className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Checar</span>
+          </Link>
           <Link
             href="/pos/corte"
             className="h-9 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 active:scale-95 transition-colors"

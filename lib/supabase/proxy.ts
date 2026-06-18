@@ -79,7 +79,8 @@ export async function updateSession(request: NextRequest) {
           return NextResponse.redirect(url)
         }
       } else if (rol === 'cajera') {
-        if (!pathname.startsWith('/pos')) {
+        // Cajera puede entrar a /pos (y subrutas) + /checador (checar entrada/salida)
+        if (!pathname.startsWith('/pos') && !pathname.startsWith('/checador')) {
           const url = request.nextUrl.clone()
           url.pathname = '/pos'
           return NextResponse.redirect(url)
