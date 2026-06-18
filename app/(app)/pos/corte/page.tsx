@@ -6,10 +6,11 @@
  */
 
 import Link from 'next/link'
-import { ChevronLeft, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, AlertTriangle, Clock } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { CorteCajaClient } from '@/components/pos/corte-caja-client'
+import { puedeHacerCorte } from '@/app/(app)/checador/actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -116,6 +117,9 @@ export default async function CorteCajaPage() {
     unidades = (items ?? []).reduce((s, i) => s + Number(i.cantidad ?? 0), 0)
   }
 
+  // Verifica si puede hacer corte (cajera solo desde 15min antes de su salida)
+  const acceso = await puedeHacerCorte()
+
   return (
     <div className="px-4 pt-4 pb-32 space-y-4 max-w-2xl mx-auto">
       <Link href="/pos" className="inline-flex items-center gap-1 text-sm text-zinc-400">
@@ -130,6 +134,22 @@ export default async function CorteCajaPage() {
         </p>
       </header>
 
+      {!acceso.permitido && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6 text-center space-y-3">
+          <Clock className="h-12 w-12 text-amber-300 mx-auto" />
+          <p className="text-lg font-bold text-amber-200">Corte aún no disponible</p>
+          <p className="text-sm text-amber-200/80">{acceso.mensaje}</p>
+          {acceso.minutos_faltantes && (
+            <p className="text-3xl font-black text-amber-300 tabular-nums">
+              {Math.floor(acceso.minutos_faltantes / 60) > 0 && `${Math.floor(acceso.minutos_faltantes / 60)}h `}
+              {acceso.minutos_faltantes % 60} min
+            </p>
+          )}
+          <p className="text-[11px] text-zinc-500">Mientras tanto, sigue atendiendo clientes desde /pos</p>
+        </div>
+      )}
+
+      {acceso.permitido && (
       <CorteCajaClient
         negocioId={negocio.id}
         fecha={hoy}
@@ -144,6 +164,7 @@ export default async function CorteCajaPage() {
         unidades={unidades}
         ganancia={ganancia}
       />
+      )}
     </div>
   )
 }
