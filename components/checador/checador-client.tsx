@@ -17,6 +17,7 @@ import { Fingerprint, Clock, CheckCircle2, AlertTriangle, Loader2, Calendar, Cam
 import { cn } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { crearChecada } from '@/app/(app)/checador/actions'
+import { verificarHuella } from '@/app/(app)/checador/huellas-actions'
 
 type Horario = {
   hora_entrada: string
@@ -143,34 +144,116 @@ export function ChecadorClient({
     botonHabilitado = false
   }
 
-  // Tomar foto automática desde la cámara del dispositivo
+  // Tomar foto desde la cámara — versión robusta con preview visible
   const tomarFoto = async (): Promise<string | null> => {
+    setTomandoFoto(true)
+    let stream: MediaStream | null = null
     try {
-      setTomandoFoto(true)
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 540 } },
         audio: false,
       })
       streamRef.current = stream
+
+      // Crear video oculto en DOM (algunos browsers no inician stream si no está en DOM)
       const video = document.createElement('video')
       video.srcObject = stream
       video.playsInline = true
+      video.muted = true
+      video.style.position = 'fixed'
+      video.style.left = '-9999px'
+      document.body.appendChild(video)
       await video.play()
-      // Esperar 800ms para que la cámara se estabilice (auto-exposición)
-      await new Promise(r => setTimeout(r, 800))
+
+      // Esperar a que el video tenga dimensiones reales (max 3 seg)
+      let tries = 0
+      while ((video.videoWidth === 0 || video.videoHeight === 0) && tries < 30) {
+        await new Promise(r => setTimeout(r, 100))
+        tries++
+      }
+      // Esperar 600ms extra para que la cámara auto-ajuste exposición
+      await new Promise(r => setTimeout(r, 600))
+
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        throw new Error('cámara no inicializó')
+      }
+
+      // Capturar frame
       const canvas = document.createElement('canvas')
       canvas.width = video.videoWidth
       canvas.height = video.videoHeight
       const ctx = canvas.getContext('2d')
-      ctx?.drawImage(video, 0, 0)
+      if (!ctx) throw new Error('canvas sin contexto')
+      ctx.drawImage(video, 0, 0)
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.78)
+
+      // Cleanup
+      document.body.removeChild(video)
       stream.getTracks().forEach(t => t.stop())
       streamRef.current = null
       setTomandoFoto(false)
-      return canvas.toDataURL('image/jpeg', 0.78)  // JPEG 78% calidad
+
+      // Verificar que la foto tenga contenido (no toda negra)
+      if (dataUrl.length < 2000) {
+        console.error('Foto muy pequeña, probablemente vacía:', dataUrl.length)
+      }
+      return dataUrl
     } catch (e) {
+      console.error('Error captura cámara:', e)
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop())
+        streamRef.current = null
+      }
       setTomandoFoto(false)
-      // Si falla la cámara (sin permisos o sin cam), continuamos sin foto
       return null
+    }
+  }
+
+  // Convertir base64url ↔ Uint8Array para WebAuthn
+  function base64urlToBuffer(b64url: string): ArrayBuffer {
+    const padding = '='.repeat((4 - (b64url.length % 4)) % 4)
+    const b64 = (b64url + padding).replace(/-/g, '+').replace(/_/g, '/')
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    return bytes.buffer
+  }
+  function bufferToBase64url(buf: ArrayBuffer): string {
+    const bytes = new Uint8Array(buf)
+    let bin = ''
+    for (const b of bytes) bin += String.fromCharCode(b)
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  }
+
+  // Verificar huella con lector USB (si está registrada)
+  const verificarConHuella = async (credentialIds: string[]): Promise<boolean> => {
+    if (typeof window === 'undefined' || !window.PublicKeyCredential) return false
+    if (credentialIds.length === 0) return false
+    try {
+      const challenge = new Uint8Array(32)
+      crypto.getRandomValues(challenge)
+      const credential = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          rpId: window.location.hostname,
+          allowCredentials: credentialIds.map(id => ({
+            id: base64urlToBuffer(id),
+            type: 'public-key' as const,
+          })),
+          userVerification: 'required',
+          timeout: 30000,
+        },
+      }) as PublicKeyCredential | null
+
+      if (!credential) return false
+
+      // Verifica en server que el credentialId existe y pertenece al usuario actual
+      const credId = bufferToBase64url(credential.rawId)
+      const r = await verificarHuella({ credential_id: credId })
+      return r.ok === true
+    } catch (e) {
+      console.error('Error huella:', e)
+      return false
     }
   }
 
