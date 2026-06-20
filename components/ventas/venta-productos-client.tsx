@@ -46,12 +46,17 @@ export function VentaProductosClient({
   cuentas: Cuenta[]
   productos: Producto[]
 }) {
-  const [negocioId, setNegocioId] = useState(negocios[0]?.id ?? '')
+  // Sin negocio predeterminado — el usuario debe escogerlo conscientemente
+  const [negocioId, setNegocioId] = useState('')
   const [cuentaId, setCuentaId] = useState(
     cuentas.find(c => c.moneda === 'MXN')?.id ?? cuentas[0]?.id ?? ''
   )
   const [metodoPago, setMetodoPago] = useState<string>('efectivo_mxn')
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
+  // Fecha LOCAL del dispositivo (no UTC). Antes daba 1 día más adelante por timezone.
+  const [fecha, setFecha] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
   const [clienteNombre, setClienteNombre] = useState('')
   const [descuentoGlobal, setDescuentoGlobal] = useState(0)
   const [descontarStock, setDescontarStock] = useState(true)
@@ -167,12 +172,14 @@ export function VentaProductosClient({
       {/* Setup rápido: negocio + cuenta + método + fecha + cliente */}
       <div className="space-y-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-3">
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Negocio">
+          <Field label="Negocio *">
             <select
               value={negocioId}
               onChange={e => setNegocioId(e.target.value)}
               className="input-base w-full h-10 px-2 text-sm"
+              required
             >
+              <option value="">— Escoge negocio —</option>
               {negocios.map(n => (
                 <option key={n.id} value={n.id}>{TIPO_EMOJI[n.tipo] ?? '🏢'} {n.nombre}</option>
               ))}

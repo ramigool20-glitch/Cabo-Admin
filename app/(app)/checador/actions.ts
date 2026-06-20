@@ -115,7 +115,39 @@ export async function crearChecada(input: z.infer<typeof ChecadaSchema>): Promis
   if (insErr) return { error: insErr.message }
   const checadaId = nuevaChecada?.id as string | undefined
 
-  // 6. Si fue retardo, contar retardos del mes y aplicar multa si llega al límite
+  // 6a. Push inmediato a admin/socio cuando un empleado (no-admin) checa.
+  //    Si hay foto, el push final con análisis IA lo envía /api/ai/analizar-checada.
+  //    Si NO hay foto, mandamos este como único notificador.
+  if (!fotoPath) {
+    try {
+      const { data: profActual } = await admin
+        .from('profiles').select('roles(nombre)').eq('id', user.id).single()
+      const rolActual = (profActual?.roles as unknown as { nombre: string } | null)?.nombre
+      // Solo notificar si el que checa NO es admin/socio (para no spam)
+      if (rolActual !== 'admin' && rolActual !== 'socio') {
+        const { data: admins } = await admin
+          .from('profiles').select('id, roles(nombre)').eq('activo', true)
+        const adminIds = (admins ?? [])
+          .filter(p => {
+            const r = (p.roles as unknown as { nombre: string } | null)?.nombre
+            return r === 'admin' || r === 'socio'
+          })
+          .map(p => p.id as string)
+        if (adminIds.length > 0) {
+          const hora = ahora.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true })
+          const tipoLabel = parsed.data.tipo === 'entrada' ? '🟢 LLEGÓ' : '🔴 SE FUE'
+          await enviarPushAProfiles(adminIds, {
+            title: `${tipoLabel} · ${nombre}`,
+            body: esRetardo ? `${hora} · ⚠ ${retardoMin} min tarde` : `${hora} · puntual ✓`,
+            url: '/checador/historial',
+            tag: `checada-${user.id}-${hoyStr}-${parsed.data.tipo}`,
+          })
+        }
+      }
+    } catch { /* silent */ }
+  }
+
+  // 6b. Si fue retardo, contar retardos del mes y aplicar multa si llega al límite
   let multaAplicada = false
   if (esRetardo && horario) {
     const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString()

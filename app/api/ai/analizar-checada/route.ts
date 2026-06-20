@@ -126,32 +126,40 @@ Responde SOLO con un JSON válido, sin markdown, con esta forma exacta:
     })
     .eq('id', checada.id as string)
 
-  // 5. Push a admin/socio si requiere alerta o no_apto
-  if (resultado.alerta || resultado.estado === 'no_apto' || resultado.estado === 'precaucion') {
-    try {
-      const { data: admins } = await admin
-        .from('profiles')
-        .select('id, roles(nombre)')
-        .eq('activo', true)
-      const adminIds = (admins ?? [])
-        .filter(p => {
-          const r = (p.roles as unknown as { nombre: string } | null)?.nombre
-          return r === 'admin' || r === 'socio'
-        })
-        .map(p => p.id as string)
+  // 5. Push SIEMPRE a admin/socio cuando hay análisis IA — con el resultado completo
+  //    (incluso cuando sale "apto" — el usuario quiere saber siempre cuando Tania checa)
+  try {
+    const { data: admins } = await admin
+      .from('profiles')
+      .select('id, roles(nombre)')
+      .eq('activo', true)
+    const adminIds = (admins ?? [])
+      .filter(p => {
+        const r = (p.roles as unknown as { nombre: string } | null)?.nombre
+        return r === 'admin' || r === 'socio'
+      })
+      .map(p => p.id as string)
 
-      if (adminIds.length > 0) {
-        const emoji = resultado.estado === 'no_apto' ? '🚨' : resultado.estado === 'precaucion' ? '⚠️' : 'ℹ️'
-        const tipo = checada.tipo === 'entrada' ? 'llegó' : 'se fue'
-        await enviarPushAProfiles(adminIds, {
-          title: `${emoji} ${resultado.estado === 'no_apto' ? 'ALERTA' : 'Atención'} · ${checada.profile_nombre}`,
-          body: `${tipo} · ${resultado.observaciones}`,
-          url: '/checador/historial',
-          tag: `analisis-${checada.id}`,
-        })
-      }
-    } catch { /* silent */ }
-  }
+    if (adminIds.length > 0) {
+      const emoji = resultado.estado === 'no_apto' ? '🚨'
+        : resultado.estado === 'precaucion' ? '⚠️'
+        : resultado.estado === 'apto' ? '✅'
+        : 'ℹ️'
+      const tipoLabel = checada.tipo === 'entrada' ? 'LLEGÓ' : 'SE FUE'
+      const hora = new Date(checada.timestamp_at as string)
+        .toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true })
+      const estadoLabel = resultado.estado === 'apto' ? 'Apto' :
+        resultado.estado === 'precaucion' ? 'Precaución' :
+        resultado.estado === 'no_apto' ? 'NO APTO' : 'Indeterminado'
+
+      await enviarPushAProfiles(adminIds, {
+        title: `${emoji} ${tipoLabel} · ${checada.profile_nombre} · ${hora}`,
+        body: `${estadoLabel} (${resultado.score}/10): ${resultado.observaciones}`,
+        url: '/checador/historial',
+        tag: `analisis-${checada.id}`,
+      })
+    }
+  } catch { /* silent */ }
 
   return NextResponse.json({ ok: true, ...resultado })
 }
