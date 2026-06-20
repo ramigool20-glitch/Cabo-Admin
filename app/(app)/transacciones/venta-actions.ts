@@ -22,6 +22,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { aMxnEquivalente } from '@/lib/fx/server'
 import { calcularItem, calcularTotalesVenta } from '@/lib/ventas/items'
 import { enviarPushAProfiles } from '@/lib/push/server'
+import { logError, logFatal } from '@/lib/logger/server'
 
 export type VentaActionState = { ok?: boolean; error?: string; id?: string }
 
@@ -131,7 +132,12 @@ export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Pr
     .select('id')
     .single()
 
-  if (txErr || !nuevaTx) return { error: txErr?.message ?? 'No se creó la transacción' }
+  if (txErr || !nuevaTx) {
+    await logFatal('venta-actions/crearVentaConItems', txErr ?? 'No se creó la transacción', {
+      user_id: user.id, monedaCobro, monto: tot.subtotal, items_count: itemsCalculados.length,
+    })
+    return { error: txErr?.message ?? 'No se creó la transacción' }
+  }
   const txId = nuevaTx.id as string
 
   // 4. Insert venta_items uno por uno (el trigger recalcula la TX en BD)
@@ -155,6 +161,9 @@ export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Pr
     if (viErr) {
       // Si falla, dejamos la transacción huérfana en lugar de revertir
       // (la app es defensive con tiene_items=false hasta que el trigger corra)
+      await logError('venta-actions/insertVentaItem', viErr, {
+        user_id: user.id, txId, producto_id: it.producto_id, cantidad: it.cantidad,
+      })
       return { error: 'Item: ' + viErr.message, id: txId }
     }
 

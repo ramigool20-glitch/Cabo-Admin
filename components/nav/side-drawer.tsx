@@ -56,6 +56,7 @@ const HERRAMIENTAS = [
   { href: '/inteligencia',  label: 'Inteligencia SEO', icon: Sparkles,   emoji: '🕵️' },
   { href: '/historial',     label: 'Historial',   icon: LayoutDashboard, emoji: '📜' },
   { href: '/config',        label: 'Configuración', icon: Settings,      emoji: '⚙️' },
+  { href: '/config/errores', label: 'Salud del sistema', icon: AlertTriangle, emoji: '🩺' },
 ]
 
 export function SideDrawer({ open, onClose, nombre }: { open: boolean; onClose: () => void; nombre: string }) {

@@ -15,6 +15,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { anthropic, CLAUDE_MODEL } from '@/lib/ai/anthropic'
 import { enviarPushAProfiles } from '@/lib/push/server'
+import { logError } from '@/lib/logger/server'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -106,7 +107,7 @@ Responde SOLO con un JSON válido, sin markdown, con esta forma exacta:
       resultado = JSON.parse(jsonMatch[0])
     }
   } catch (e) {
-    console.error('[analizar-checada] IA error:', e instanceof Error ? e.message : 'unknown')
+    await logError('ai/analizar-checada', e, { checada_id: parsed.data.checada_id })
     return NextResponse.json({ error: 'IA falló' }, { status: 500 })
   }
 

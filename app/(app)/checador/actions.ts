@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { enviarPushAProfiles } from '@/lib/push/server'
+import { logError } from '@/lib/logger/server'
 
 export type ActionState = { ok?: boolean; error?: string; retardo?: boolean; multa?: boolean; minutos?: number; checada_id?: string }
 
@@ -112,7 +113,12 @@ export async function crearChecada(input: z.infer<typeof ChecadaSchema>): Promis
     })
     .select('id')
     .single()
-  if (insErr) return { error: insErr.message }
+  if (insErr) {
+    await logError('checador-actions/crearChecada', insErr, {
+      user_id: user.id, tipo: parsed.data.tipo, nombre,
+    })
+    return { error: insErr.message }
+  }
   const checadaId = nuevaChecada?.id as string | undefined
 
   // 6a. Push inmediato a admin/socio cuando un empleado (no-admin) checa.
