@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { enviarPushAProfiles } from '@/lib/push/server'
 
-export type ActionState = { ok?: boolean; error?: string; retardo?: boolean; multa?: boolean; minutos?: number }
+export type ActionState = { ok?: boolean; error?: string; retardo?: boolean; multa?: boolean; minutos?: number; checada_id?: string }
 
 const ChecadaSchema = z.object({
   tipo: z.enum(['entrada', 'salida']),
@@ -96,7 +96,7 @@ export async function crearChecada(input: z.infer<typeof ChecadaSchema>): Promis
   }
 
   // 5b. Registrar
-  const { error: insErr } = await admin
+  const { data: nuevaChecada, error: insErr } = await admin
     .from('checadas')
     .insert({
       profile_id: user.id,
@@ -110,7 +110,10 @@ export async function crearChecada(input: z.infer<typeof ChecadaSchema>): Promis
       foto_url: fotoPath,
       notas: parsed.data.notas ?? null,
     })
+    .select('id')
+    .single()
   if (insErr) return { error: insErr.message }
+  const checadaId = nuevaChecada?.id as string | undefined
 
   // 6. Si fue retardo, contar retardos del mes y aplicar multa si llega al límite
   let multaAplicada = false
@@ -174,6 +177,7 @@ export async function crearChecada(input: z.infer<typeof ChecadaSchema>): Promis
     retardo: esRetardo,
     multa: multaAplicada,
     minutos: retardoMin,
+    checada_id: checadaId,
   }
 }
 

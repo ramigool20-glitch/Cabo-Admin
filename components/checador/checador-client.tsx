@@ -144,69 +144,76 @@ export function ChecadorClient({
     botonHabilitado = false
   }
 
-  // Tomar foto desde la cámara — versión robusta con preview visible
-  const tomarFoto = async (): Promise<string | null> => {
+  // Estado del preview de cámara
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [countdown, setCountdown] = useState<number | null>(null)
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+
+  // Abrir preview con molde biométrico y countdown
+  const abrirPreviewYCapturar = async (): Promise<string | null> => {
+    setPreviewOpen(true)
     setTomandoFoto(true)
-    let stream: MediaStream | null = null
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 540 } },
-        audio: false,
-      })
-      streamRef.current = stream
+    return new Promise(async (resolve) => {
+      let stream: MediaStream | null = null
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } },
+          audio: false,
+        })
+        streamRef.current = stream
 
-      // Crear video oculto en DOM (algunos browsers no inician stream si no está en DOM)
-      const video = document.createElement('video')
-      video.srcObject = stream
-      video.playsInline = true
-      video.muted = true
-      video.style.position = 'fixed'
-      video.style.left = '-9999px'
-      document.body.appendChild(video)
-      await video.play()
-
-      // Esperar a que el video tenga dimensiones reales (max 3 seg)
-      let tries = 0
-      while ((video.videoWidth === 0 || video.videoHeight === 0) && tries < 30) {
+        // Esperar a que el video esté en DOM (un tick)
         await new Promise(r => setTimeout(r, 100))
-        tries++
-      }
-      // Esperar 600ms extra para que la cámara auto-ajuste exposición
-      await new Promise(r => setTimeout(r, 600))
+        const video = previewVideoRef.current
+        if (!video) throw new Error('video element no listo')
 
-      if (video.videoWidth === 0 || video.videoHeight === 0) {
-        throw new Error('cámara no inicializó')
-      }
+        video.srcObject = stream
+        video.playsInline = true
+        video.muted = true
+        await video.play()
 
-      // Capturar frame
-      const canvas = document.createElement('canvas')
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      const ctx = canvas.getContext('2d')
-      if (!ctx) throw new Error('canvas sin contexto')
-      ctx.drawImage(video, 0, 0)
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.78)
+        // Esperar dimensiones reales
+        let tries = 0
+        while ((video.videoWidth === 0 || video.videoHeight === 0) && tries < 30) {
+          await new Promise(r => setTimeout(r, 100))
+          tries++
+        }
+        if (video.videoWidth === 0) throw new Error('cámara sin dimensiones')
 
-      // Cleanup
-      document.body.removeChild(video)
-      stream.getTracks().forEach(t => t.stop())
-      streamRef.current = null
-      setTomandoFoto(false)
+        // Countdown 3...2...1 con flash visual
+        for (const n of [3, 2, 1]) {
+          setCountdown(n)
+          await new Promise(r => setTimeout(r, 1000))
+        }
+        setCountdown(null)
 
-      // Verificar que la foto tenga contenido (no toda negra)
-      if (dataUrl.length < 2000) {
-        console.error('Foto muy pequeña, probablemente vacía:', dataUrl.length)
-      }
-      return dataUrl
-    } catch (e) {
-      console.error('Error captura cámara:', e)
-      if (stream) {
+        // Capturar
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('sin contexto')
+        ctx.drawImage(video, 0, 0)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+
+        // Cleanup
         stream.getTracks().forEach(t => t.stop())
         streamRef.current = null
+        setTomandoFoto(false)
+        // Mantener preview abierto 500ms más para feedback "✓ Capturado"
+        await new Promise(r => setTimeout(r, 500))
+        setPreviewOpen(false)
+        resolve(dataUrl)
+      } catch (e) {
+        console.error('Cámara error:', e)
+        if (stream) stream.getTracks().forEach(t => t.stop())
+        streamRef.current = null
+        setTomandoFoto(false)
+        setPreviewOpen(false)
+        setCountdown(null)
+        resolve(null)
       }
-      setTomandoFoto(false)
-      return null
-    }
+    })
   }
 
   // Convertir base64url ↔ Uint8Array para WebAuthn
@@ -294,8 +301,8 @@ export function ChecadorClient({
       }
     }
 
-    // Tomar foto antes de registrar (si la cámara está disponible)
-    const fotoBase64 = await tomarFoto()
+    // Tomar foto con preview + molde biométrico
+    const fotoBase64 = await abrirPreviewYCapturar()
 
     const r = await crearChecada({
       tipo: botonTipo,
@@ -305,6 +312,16 @@ export function ChecadorClient({
 
     setProcesando(false)
     if (r.error) return toast.error('No se registró', r.error)
+
+    // Dispara análisis IA en background (no bloquea al usuario)
+    if (r.checada_id && fotoBase64) {
+      fetch('/api/ai/analizar-checada', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checada_id: r.checada_id }),
+      }).catch(() => { /* silent: análisis es bonus */ })
+    }
+
     if (r.multa) {
       toast.error('🚨 Multa aplicada', `${horario.retardos_para_multa} retardos este mes`)
     } else if (r.retardo) {
@@ -317,6 +334,105 @@ export function ChecadorClient({
 
   return (
     <div className="space-y-4">
+      {/* Preview de cámara con molde biométrico */}
+      {previewOpen && (
+        <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center">
+          <div className="relative w-full h-full max-w-md mx-auto flex flex-col">
+            {/* Video full-screen mirror */}
+            <div className="relative flex-1 overflow-hidden">
+              <video
+                ref={previewVideoRef}
+                playsInline
+                muted
+                className="absolute inset-0 w-full h-full object-cover"
+                style={{ transform: 'scaleX(-1)' }}  // efecto espejo
+              />
+
+              {/* Molde biométrico (óvalo guía) */}
+              <svg
+                className="absolute inset-0 w-full h-full pointer-events-none"
+                viewBox="0 0 400 600"
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <defs>
+                  <mask id="oval-mask">
+                    <rect width="400" height="600" fill="white" />
+                    <ellipse cx="200" cy="280" rx="130" ry="180" fill="black" />
+                  </mask>
+                </defs>
+                {/* Overlay oscuro con hueco oval */}
+                <rect width="400" height="600" fill="rgba(0,0,0,0.55)" mask="url(#oval-mask)" />
+                {/* Borde del óvalo */}
+                <ellipse
+                  cx="200" cy="280" rx="130" ry="180"
+                  fill="none"
+                  stroke={countdown !== null ? '#10b981' : '#06b6d4'}
+                  strokeWidth="3"
+                  strokeDasharray={countdown !== null ? '0' : '8 8'}
+                  className={countdown !== null ? 'animate-pulse' : ''}
+                />
+                {/* Esquinas decorativas */}
+                {[
+                  [70, 100], [330, 100], [70, 460], [330, 460]
+                ].map(([cx, cy], i) => (
+                  <g key={i}>
+                    <line x1={cx} y1={cy} x2={cx + (cx < 200 ? 20 : -20)} y2={cy} stroke="#06b6d4" strokeWidth="2" />
+                    <line x1={cx} y1={cy} x2={cx} y2={cy + (cy < 200 ? 20 : -20)} stroke="#06b6d4" strokeWidth="2" />
+                  </g>
+                ))}
+              </svg>
+
+              {/* Instrucción y countdown */}
+              <div className="absolute inset-x-0 top-8 text-center px-4">
+                <p className="text-white text-sm font-bold tracking-wide">
+                  {countdown !== null ? 'Toma de evidencia…' : 'Pon tu cara dentro del molde'}
+                </p>
+              </div>
+
+              {/* Countdown gigante */}
+              {countdown !== null && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div
+                    className="h-32 w-32 rounded-full bg-emerald-500/30 backdrop-blur-md flex items-center justify-center border-4 border-emerald-400 animate-pulse"
+                  >
+                    <span className="text-7xl font-black text-white tabular-nums">{countdown}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Estado "Capturando" después */}
+              {tomandoFoto && countdown === null && (
+                <div className="absolute inset-x-0 bottom-24 text-center">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/90 backdrop-blur text-white font-bold text-sm">
+                    <CheckCircle2 className="h-4 w-4" /> ✓ Capturado
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Botón cancelar */}
+            <div className="p-4 bg-black">
+              <button
+                type="button"
+                onClick={() => {
+                  if (streamRef.current) {
+                    streamRef.current.getTracks().forEach(t => t.stop())
+                    streamRef.current = null
+                  }
+                  setPreviewOpen(false)
+                  setCountdown(null)
+                  setTomandoFoto(false)
+                  setProcesando(false)
+                }}
+                className="w-full h-11 rounded-xl bg-zinc-800 text-zinc-200 text-sm font-bold"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Reloj y nombre */}
       <div className="rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 via-emerald-500/5 to-transparent p-4 text-center space-y-2">
         <p className="text-xs text-zinc-500 uppercase tracking-wider font-bold">Hola, {nombre}</p>

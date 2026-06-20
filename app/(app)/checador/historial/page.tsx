@@ -25,17 +25,29 @@ export default async function HistorialChecadasPage({
   // Fecha objetivo (default hoy)
   const fecha = sp.fecha ?? new Date().toISOString().slice(0, 10)
 
-  // Query checadas
+  // Query checadas (incluye análisis IA si la migración 0048 está aplicada)
+  const colsBase = 'id, profile_id, profile_nombre, tipo, timestamp_at, esperado_at, retardo_minutos, es_retardo, biometrico_verificado, foto_url, notas'
+  const colsExt = `${colsBase}, analisis_estado, analisis_score, analisis_observaciones, analisis_alerta`
   let q = admin
     .from('checadas')
-    .select('id, profile_id, profile_nombre, tipo, timestamp_at, esperado_at, retardo_minutos, es_retardo, biometrico_verificado, foto_url, notas')
+    .select(colsExt)
     .gte('timestamp_at', `${fecha}T00:00:00`)
     .lte('timestamp_at', `${fecha}T23:59:59`)
     .order('timestamp_at', { ascending: false })
 
   if (sp.empleado) q = q.eq('profile_id', sp.empleado)
 
-  const { data: checadas } = await q
+  // Defensive: si migración 0048 no aplicada, retry sin esas columnas
+  let { data: checadas, error: qErr } = await q
+  if (qErr) {
+    let q2 = admin.from('checadas').select(colsBase)
+      .gte('timestamp_at', `${fecha}T00:00:00`)
+      .lte('timestamp_at', `${fecha}T23:59:59`)
+      .order('timestamp_at', { ascending: false })
+    if (sp.empleado) q2 = q2.eq('profile_id', sp.empleado)
+    const r = await q2
+    checadas = r.data as never
+  }
 
   // Signed URLs para las fotos
   const fotoPaths = (checadas ?? []).map(c => c.foto_url).filter(Boolean) as string[]
@@ -168,6 +180,21 @@ export default async function HistorialChecadasPage({
                         🔐 Bio
                       </span>
                     )}
+                    {(c as { analisis_estado?: string }).analisis_estado && (
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 h-5 text-[10px] font-bold border ${
+                        (c as { analisis_estado?: string }).analisis_estado === 'no_apto' ? 'bg-rose-500/20 border-rose-500/40 text-rose-200'
+                        : (c as { analisis_estado?: string }).analisis_estado === 'precaucion' ? 'bg-amber-500/20 border-amber-500/40 text-amber-200'
+                        : (c as { analisis_estado?: string }).analisis_estado === 'apto' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
+                        : 'bg-zinc-700/40 border-zinc-700 text-zinc-300'
+                      }`}>
+                        {(c as { analisis_estado?: string }).analisis_estado === 'no_apto' ? '🚨'
+                          : (c as { analisis_estado?: string }).analisis_estado === 'precaucion' ? '⚠️'
+                          : (c as { analisis_estado?: string }).analisis_estado === 'apto' ? '✅'
+                          : '❓'}
+                        {(c as { analisis_estado?: string }).analisis_estado?.toUpperCase()}
+                        {(c as { analisis_score?: number }).analisis_score != null && ` ${(c as { analisis_score?: number }).analisis_score}/10`}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm font-bold text-zinc-100">{c.profile_nombre}</p>
                   <p className="text-xs text-zinc-400 tabular-nums">
@@ -181,6 +208,11 @@ export default async function HistorialChecadasPage({
                   </p>
                   {c.notas && (
                     <p className="text-[11px] text-zinc-500 italic mt-1">{c.notas as string}</p>
+                  )}
+                  {(c as { analisis_observaciones?: string }).analisis_observaciones && (
+                    <p className="text-[11px] text-cyan-300/80 italic mt-1">
+                      🤖 IA: {(c as { analisis_observaciones?: string }).analisis_observaciones}
+                    </p>
                   )}
                 </div>
 
