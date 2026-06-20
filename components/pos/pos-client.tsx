@@ -18,6 +18,7 @@ import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { CobroSheet } from '@/components/pos/cobro-sheet'
 import { CvuLogo } from '@/components/pos/cvu-logo'
+import { VoiceMonitorBadge } from '@/components/pos/voice-monitor-badge'
 import { BarcodeScanner } from '@/components/inventario/barcode-scanner'
 import { calcularItem, calcularTotalesVenta, type VentaItemInput } from '@/lib/ventas/items'
 import { useRealtimeProductos } from '@/lib/pos/use-realtime-productos'
@@ -382,6 +383,9 @@ export function PosClient({
           </>
         )}
         <div className="ml-auto flex items-center gap-1.5">
+          {/* Indicador del monitor de voz IA */}
+          <VoiceMonitorBadge tema={tema} />
+
           {/* Indicador estado de conexión (online/offline + cola) */}
           <ConnectionBadge
             online={conn.online}
