@@ -384,7 +384,7 @@ export function PosClient({
         )}
         <div className="ml-auto flex items-center gap-1.5">
           {/* Indicador del monitor de voz IA */}
-          <VoiceMonitorBadge tema={tema} />
+          <VoiceMonitorBadge tema={tema} rateUsd={rate} />
 
           {/* Indicador estado de conexión (online/offline + cola) */}
           <ConnectionBadge

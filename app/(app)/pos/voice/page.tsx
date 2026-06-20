@@ -64,6 +64,27 @@ export default async function VoicePage({
   if (sp.categoria) q = q.eq('categoria', sp.categoria)
   const { data: eventos } = await q
 
+  // Auditoría diaria
+  const hoy = new Date().toISOString().slice(0, 10)
+  const { data: ventasEscuchadas } = await admin
+    .from('voice_events')
+    .select('monto_detectado_mxn, idioma')
+    .eq('es_venta_potencial', true)
+    .gte('created_at', `${hoy}T00:00:00`)
+  const totalEscuchado = (ventasEscuchadas ?? []).reduce((s, e) => s + Number(e.monto_detectado_mxn ?? 0), 0)
+  const turistasIngles = (ventasEscuchadas ?? []).filter(e => e.idioma === 'en').length
+  const { data: txsCobradas } = await admin
+    .from('transacciones')
+    .select('monto_mxn_equivalente, monto')
+    .eq('tiene_items', true)
+    .eq('tipo', 'ingreso')
+    .gte('fecha', hoy)
+  const totalCobrado = (txsCobradas ?? []).reduce((s, t) => s + Number(t.monto_mxn_equivalente ?? t.monto ?? 0), 0)
+  const diferencia = totalEscuchado - totalCobrado
+  const base = Math.max(totalEscuchado, totalCobrado, 1)
+  const porcentajeDif = Math.abs(diferencia / base) * 100
+  const alertaAuditoria = porcentajeDif > 10 && Math.abs(diferencia) > 200
+
   // Conteos por categoría últimas 24h
   const hace24 = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const { data: ult24 } = await admin
@@ -90,6 +111,51 @@ export default async function VoicePage({
           Eventos detectados por la IA · {eventos?.length ?? 0} en pantalla
         </p>
       </header>
+
+      {/* Auditoría del día */}
+      {totalEscuchado > 0 && (
+        <div className={cn(
+          'rounded-2xl border p-4 space-y-2',
+          alertaAuditoria
+            ? 'border-rose-500/40 bg-rose-500/5'
+            : 'border-emerald-500/30 bg-emerald-500/5'
+        )}>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-400">
+            📢 Auditoría del día
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[10px] text-zinc-500 uppercase">Escuchado en conversación</p>
+              <p className="text-xl font-black text-emerald-300 tabular-nums">
+                ${totalEscuchado.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-zinc-500 uppercase">Cobrado en POS</p>
+              <p className="text-xl font-black text-cyan-300 tabular-nums">
+                ${totalCobrado.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+          <div className="border-t border-zinc-800 pt-2 flex items-center justify-between">
+            <span className="text-xs uppercase tracking-wider font-bold text-zinc-500">Diferencia</span>
+            <span className={cn(
+              'text-lg font-black tabular-nums',
+              alertaAuditoria ? 'text-rose-300' : 'text-emerald-300'
+            )}>
+              {diferencia >= 0 ? '+' : ''}${Math.abs(diferencia).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ({porcentajeDif.toFixed(1)}%)
+            </span>
+          </div>
+          <p className={cn('text-[10px]', alertaAuditoria ? 'text-rose-300' : 'text-emerald-300')}>
+            {alertaAuditoria
+              ? '⚠ Discrepancia mayor al 10% — revisar'
+              : '✓ Dentro del margen normal'}
+          </p>
+          {turistasIngles > 0 && (
+            <p className="text-[10px] text-zinc-500">🇺🇸 {turistasIngles} clientes en inglés atendidos hoy</p>
+          )}
+        </div>
+      )}
 
       {/* Conteos por categoría 24h */}
       {Object.keys(contadores).length > 0 && (
