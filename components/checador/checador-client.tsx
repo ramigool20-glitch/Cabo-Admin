@@ -147,6 +147,8 @@ export function ChecadorClient({
   // Estado del preview de cámara
   const [previewOpen, setPreviewOpen] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
+  const [previewFase, setPreviewFase] = useState<'preview' | 'capturado' | 'analizando' | 'resultado'>('preview')
+  const [analisisResult, setAnalisisResult] = useState<{ estado: string; score: number; observaciones: string } | null>(null)
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
 
   // Abrir preview con molde biométrico y countdown
@@ -301,27 +303,23 @@ export function ChecadorClient({
       }
     }
 
-    // Tomar foto con preview + molde biométrico
+    // Tomar foto con preview + molde biométrico (mantiene modal abierto)
     const fotoBase64 = await abrirPreviewYCapturar()
 
+    // Registra la checada con la foto
     const r = await crearChecada({
       tipo: botonTipo,
       biometrico_verificado: biometricoOk,
       foto_base64: fotoBase64,
     })
 
-    setProcesando(false)
-    if (r.error) return toast.error('No se registró', r.error)
-
-    // Dispara análisis IA en background (no bloquea al usuario)
-    if (r.checada_id && fotoBase64) {
-      fetch('/api/ai/analizar-checada', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ checada_id: r.checada_id }),
-      }).catch(() => { /* silent: análisis es bonus */ })
+    if (r.error) {
+      setProcesando(false)
+      setPreviewOpen(false)
+      return toast.error('No se registró', r.error)
     }
 
+    // Mostrar resultados de retardo/multa antes del análisis
     if (r.multa) {
       toast.error('🚨 Multa aplicada', `${horario.retardos_para_multa} retardos este mes`)
     } else if (r.retardo) {
@@ -329,6 +327,42 @@ export function ChecadorClient({
     } else {
       toast.success(`✓ ${botonTipo === 'entrada' ? 'Entrada' : 'Salida'} registrada`, biometricoOk ? '🔐 Verificado biométrico' : '')
     }
+
+    // Analizar con IA — bloquea el preview con animación visible
+    if (r.checada_id && fotoBase64) {
+      setPreviewFase('analizando')
+      try {
+        // Timeout 12 seg max para que no se quede pegado
+        const ac = new AbortController()
+        const timeoutId = setTimeout(() => ac.abort(), 12000)
+        const resp = await fetch('/api/ai/analizar-checada', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checada_id: r.checada_id }),
+          signal: ac.signal,
+        })
+        clearTimeout(timeoutId)
+        const data = await resp.json()
+        if (data.estado) {
+          setAnalisisResult({
+            estado: data.estado,
+            score: data.score,
+            observaciones: data.observaciones,
+          })
+          setPreviewFase('resultado')
+          // Mantener el resultado en pantalla 3 segundos
+          await new Promise(r => setTimeout(r, 3000))
+        }
+      } catch {
+        // Si IA falla, no bloquees al usuario — solo cierra
+      }
+    }
+
+    // Cerrar todo
+    setProcesando(false)
+    setPreviewOpen(false)
+    setPreviewFase('preview')
+    setAnalisisResult(null)
     router.refresh()
   }
 
@@ -400,11 +434,87 @@ export function ChecadorClient({
                 </div>
               )}
 
-              {/* Estado "Capturando" después */}
-              {tomandoFoto && countdown === null && (
+              {/* Fase: Capturado */}
+              {tomandoFoto && countdown === null && previewFase === 'preview' && (
                 <div className="absolute inset-x-0 bottom-24 text-center">
                   <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/90 backdrop-blur text-white font-bold text-sm">
                     <CheckCircle2 className="h-4 w-4" /> ✓ Capturado
+                  </div>
+                </div>
+              )}
+
+              {/* Fase: Analizando con IA */}
+              {previewFase === 'analizando' && (
+                <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-4 px-6 text-center">
+                    {/* Anillo de escaneo */}
+                    <div className="relative h-32 w-32">
+                      <div className="absolute inset-0 rounded-full border-4 border-cyan-500/30" />
+                      <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-cyan-400 animate-spin" />
+                      <div className="absolute inset-2 rounded-full border-2 border-transparent border-t-emerald-400 animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }} />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-4xl">🤖</span>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xl font-black text-cyan-200">Analizando con IA…</p>
+                      <p className="text-xs text-zinc-400">Verificando estado físico para el turno</p>
+                    </div>
+                    {/* Items que la IA está analizando (animado en sequence) */}
+                    <ul className="space-y-1 text-[11px] text-zinc-400">
+                      <li className="inline-flex items-center gap-2">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                        Detectando rostro
+                      </li>
+                      <li className="inline-flex items-center gap-2">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" style={{ animationDelay: '0.3s' }} />
+                        Evaluando ojos y mirada
+                      </li>
+                      <li className="inline-flex items-center gap-2">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" style={{ animationDelay: '0.6s' }} />
+                        Verificando estado físico
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Fase: Resultado del análisis */}
+              {previewFase === 'resultado' && analisisResult && (
+                <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center px-6">
+                  <div className="flex flex-col items-center gap-4 text-center max-w-md">
+                    <div className={cn(
+                      'h-32 w-32 rounded-full flex items-center justify-center text-7xl border-4',
+                      analisisResult.estado === 'apto' && 'bg-emerald-500/20 border-emerald-400',
+                      analisisResult.estado === 'precaucion' && 'bg-amber-500/20 border-amber-400',
+                      analisisResult.estado === 'no_apto' && 'bg-rose-500/20 border-rose-400',
+                      analisisResult.estado === 'indeterminado' && 'bg-zinc-700/20 border-zinc-500',
+                    )}>
+                      {analisisResult.estado === 'apto' && '✅'}
+                      {analisisResult.estado === 'precaucion' && '⚠️'}
+                      {analisisResult.estado === 'no_apto' && '🚨'}
+                      {analisisResult.estado === 'indeterminado' && '❓'}
+                    </div>
+                    <div className="space-y-1">
+                      <p className={cn(
+                        'text-3xl font-black uppercase tracking-wider',
+                        analisisResult.estado === 'apto' && 'text-emerald-300',
+                        analisisResult.estado === 'precaucion' && 'text-amber-300',
+                        analisisResult.estado === 'no_apto' && 'text-rose-300',
+                        analisisResult.estado === 'indeterminado' && 'text-zinc-300',
+                      )}>
+                        {analisisResult.estado}
+                      </p>
+                      <p className="text-lg text-zinc-300 tabular-nums font-bold">
+                        Score: {analisisResult.score}/10
+                      </p>
+                      <p className="text-sm text-zinc-400 italic mt-3 leading-relaxed">
+                        "{analisisResult.observaciones}"
+                      </p>
+                    </div>
+                    <p className="text-[10px] text-zinc-600 tracking-widest uppercase pt-4">
+                      Análisis IA · Claude Sonnet
+                    </p>
                   </div>
                 </div>
               )}
