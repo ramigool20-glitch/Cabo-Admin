@@ -1,137 +1,28 @@
-import Link from 'next/link'
-import { ChevronRight } from 'lucide-react'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { OPERATION_START } from '@/lib/operacion'
+import { createClient } from '@/lib/supabase/server'
+import { requireOwner } from '@/lib/auth/require-owner'
 import { totalizar } from '@/lib/agregaciones'
 import { rangoFechas } from '@/lib/rangos'
-import { formatMoney, cn } from '@/lib/utils'
-
-const tipoMeta: Record<string, { emoji: string; gradient: string; label: string }> = {
-  farmacia:       { emoji: '💊', gradient: 'from-emerald-500 to-teal-500',    label: 'Farmacia local' },
-  consultorio:    { emoji: '🩺', gradient: 'from-blue-500 to-cyan-500',       label: 'Clínica' },
-  pagina_digital: { emoji: '🌐', gradient: 'from-purple-500 to-pink-500',     label: 'Online' },
-  general:        { emoji: '💼', gradient: 'from-zinc-500 to-zinc-600',       label: 'General' },
-}
+import { desdeOperacion } from '@/lib/operacion'
+import { BusinessPortfolio } from '@/components/negocios/business-portfolio'
 
 export default async function NegociosPage() {
-  const supabase = createAdminClient()
-  const r = rangoFechas('mes_actual')
-
-  // FX rate más reciente (fallback runtime para USD sin equivalente persistido)
-  const { data: fxLatest } = await supabase
-    .from('fx_rates')
-    .select('rate_compra')
-    .order('fecha', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  const fxRate = fxLatest ? Number(fxLatest.rate_compra) : null
-
-  const { data: negocios } = await supabase
-    .from('negocios')
-    .select('id, nombre, tipo, moneda_principal, activo, url')
-    .eq('activo', true)
-    .order('tipo')
-    .order('nombre')
-
-  // Incluye monto_mxn_equivalente y tipo_cambio_usado para conversión correcta
-  const { data: txMes } = await supabase
-    .from('transacciones')
-    .select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente, tipo_cambio_usado')
-    .gte('fecha', r.desde)
-    .lte('fecha', r.hasta)
-
-  const rowsPorNegocio = new Map<string, typeof txMes>()
-  for (const t of txMes ?? []) {
-    if (!t.negocio_id) continue
-    if (!rowsPorNegocio.has(t.negocio_id)) rowsPorNegocio.set(t.negocio_id, [])
-    rowsPorNegocio.get(t.negocio_id)!.push(t)
-  }
-
-  return (
-    <div className="px-4 pt-5 pb-28 space-y-5 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-black heading-gradient">Negocios</h1>
-        <span className="chip">{negocios?.length ?? 0} activos</span>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {negocios?.map((n) => {
-          const meta = tipoMeta[n.tipo] ?? tipoMeta.general
-          // Pasa fxRate para que totalizar convierta USD automático
-          const t = totalizar(rowsPorNegocio.get(n.id) ?? [], fxRate)
-          const positiva = t.utilidad_total_mxn >= 0
-          const url = (n as { url?: string | null }).url
-
-          return (
-            <Link
-              key={n.id}
-              href={`/negocios/${n.id}`}
-              className="card hover:bg-[var(--bg-card-hover)] transition-colors p-4 space-y-3 group"
-            >
-              {/* Header: emoji + nombre + chip */}
-              <div className="flex items-center gap-3">
-                <div className={cn(
-                  'h-11 w-11 inline-flex items-center justify-center rounded-xl bg-gradient-to-br text-xl shrink-0',
-                  meta.gradient
-                )}>
-                  {meta.emoji}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-white truncate">{n.nombre}</p>
-                  <p className="text-xs text-zinc-500 truncate">{meta.label}</p>
-                </div>
-                <span className="chip chip-green text-[10px]">
-                  <span className="h-1 w-1 rounded-full bg-emerald-400" />
-                  Activo
-                </span>
-              </div>
-
-              {/* Utilidad del mes (totales convertidos a MXN) */}
-              <div className="space-y-0.5">
-                <p className="label-caps">Utilidad del mes</p>
-                <p className={cn(
-                  'text-2xl font-black tabular-nums',
-                  positiva ? 'text-emerald-300' : 'text-rose-300'
-                )}>
-                  {positiva ? '+' : ''}{formatMoney(t.utilidad_total_mxn, 'MXN')}
-                </p>
-              </div>
-
-              {/* Métricas (totales en MXN incluyen USD convertidos al rate del día) */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <p className="label-caps">Ingresos</p>
-                  <p className="text-sm font-bold text-emerald-400 tabular-nums">
-                    {formatMoney(t.ingresos_total_mxn, 'MXN')}
-                  </p>
-                  {t.ingresos_usd > 0 && (
-                    <p className="text-[9px] text-zinc-500 tabular-nums">incl. {formatMoney(t.ingresos_usd, 'USD')}</p>
-                  )}
-                </div>
-                <div>
-                  <p className="label-caps">Gastos</p>
-                  <p className="text-sm font-bold text-rose-400 tabular-nums">
-                    {formatMoney(t.gastos_total_mxn, 'MXN')}
-                  </p>
-                  {t.gastos_usd > 0 && (
-                    <p className="text-[9px] text-zinc-500 tabular-nums">incl. {formatMoney(t.gastos_usd, 'USD')}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* URL si existe */}
-              {url && (
-                <p className="text-[10px] text-cyan-400/60 truncate pt-1 border-t border-[var(--border-subtle)]">
-                  🔗 {url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-                </p>
-              )}
-
-              <div className="flex items-center justify-end text-xs text-cyan-400 group-hover:text-cyan-300">
-                Ver detalle <ChevronRight className="h-3 w-3 ml-0.5" />
-              </div>
-            </Link>
-          )
-        })}
-      </div>
-    </div>
-  )
+  await requireOwner()
+  const db = await createClient()
+  const periodo = rangoFechas('mes_actual')
+  const desde = desdeOperacion(periodo.desde)
+  const [negociosRes, txRes, fxRes] = await Promise.all([
+    db.from('negocios').select('id,nombre,tipo,url,color_primario,moneda_principal').eq('activo', true).order('nombre'),
+    db.from('transacciones').select('tipo,monto,moneda,fecha,categoria,negocio_id,monto_mxn_equivalente,tipo_cambio_usado').gte('fecha', OPERATION_START).gte('fecha', desde).lte('fecha',periodo.hasta),
+    db.from('fx_rates').select('rate_compra').order('fecha',{ascending:false}).limit(1).maybeSingle(),
+  ])
+  if (negociosRes.error || txRes.error) throw new Error('No se pudieron cargar tus negocios. Intenta de nuevo.')
+  const fx = fxRes.data ? Number(fxRes.data.rate_compra) : null
+  const rows = txRes.data ?? []
+  const businesses = (negociosRes.data ?? []).map(n => {
+    const movimientos = rows.filter(t => t.negocio_id === n.id)
+    const total = totalizar(movimientos, fx)
+    return { ...n, ingresos:total.ingresos_total_mxn,gastos:total.gastos_total_mxn,resultado:total.utilidad_total_mxn,movimientos:movimientos.length }
+  })
+  return <BusinessPortfolio businesses={businesses} desde={desde} />
 }

@@ -1,3 +1,4 @@
+import { OPERATION_START } from '@/lib/operacion'
 import { NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron/auth'
 import { enviarMensajeRandom } from '@/lib/cron/enviar-mensaje-equipo'
@@ -16,7 +17,7 @@ export async function GET(req: Request) {
   const hoy = hoyEnCabos()
   const { count: nTxHoy } = await admin
     .from('transacciones')
-    .select('id', { count: 'exact', head: true })
+    .select('id', { count: 'exact', head: true }).gte('fecha', OPERATION_START)
     .eq('fecha', hoy)
 
   const mensajes = (nTxHoy ?? 0) < 3

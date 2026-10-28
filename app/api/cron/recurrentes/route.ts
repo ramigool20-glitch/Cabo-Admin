@@ -51,7 +51,7 @@ export async function GET(req: Request) {
       const tituloTarea = `Pagar: ${r.nombre} (vencido ${r.proximo_pago})`
       const { data: tareaExistente } = await supabase
         .from('tareas')
-        .select('id')
+        .select('id').is('archivada_at', null)
         .eq('titulo', tituloTarea)
         .maybeSingle()
 

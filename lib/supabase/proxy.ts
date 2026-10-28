@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { createAdminClient } from './admin'
+import { isActiveOwner } from '@/lib/auth/owner'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -30,6 +31,7 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const isPublic =
     pathname.startsWith('/login') ||
+    pathname === '/recuperar' ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/api/auth') ||
     // Crons (Bearer CRON_SECRET) y webhooks (firma) se autentican solos,
@@ -38,13 +40,8 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/api/webhooks') ||
     pathname === '/api/stripe/webhook' ||
     // Routine remoto (Bearer CRON_SECRET) deposita reportes SEO
-    pathname === '/api/seo-reports' ||
-    // Imagen pública de cotizaciones (UUID en URL es la "clave"):
-    // habilita compartir el link con el cliente sin que tenga que
-    // estar autenticado en Cabo Admin.
-    /^\/api\/cotizaciones\/[a-f0-9-]{36}\/imagen$/i.test(pathname) ||
-    // Ticket de POS (igual patrón: UUID es la "clave")
-    /^\/api\/pos\/ticket\/[a-f0-9-]{36}\/imagen$/i.test(pathname)
+    pathname === '/api/seo-reports'
+
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()
@@ -52,42 +49,25 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (user && pathname === '/login') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
-  }
-
-  // Gating de rol del lado del SERVIDOR:
-  //   • enfermera → solo /clinica y /tareas, todo lo demás → /clinica
-  //   • cajera → solo /pos y /pos/*, todo lo demás → /pos
-  //     (no ve dashboard, transacciones, ganancias, otros negocios)
-  if (
-    user &&
-    !isPublic &&
-    !pathname.startsWith('/api')
-  ) {
+  // Los endpoints públicos verifican sus propios secretos o firmas.
+  // Todo acceso privado, incluidas APIs, exige al propietario activo.
+  if (user && (!isPublic || pathname === '/login')) {
     try {
-      const admin = createAdminClient()
-      const { data: prof } = await admin.from('profiles').select('roles(nombre)').eq('id', user.id).single()
-      const rol = (prof?.roles as unknown as { nombre: string } | null)?.nombre
-
-      if (rol === 'enfermera') {
-        if (!pathname.startsWith('/clinica') && !pathname.startsWith('/tareas')) {
-          const url = request.nextUrl.clone()
-          url.pathname = '/clinica'
-          return NextResponse.redirect(url)
-        }
-      } else if (rol === 'cajera') {
-        // Cajera puede entrar a /pos (y subrutas) + /checador (checar entrada/salida)
-        if (!pathname.startsWith('/pos') && !pathname.startsWith('/checador')) {
-          const url = request.nextUrl.clone()
-          url.pathname = '/pos'
-          return NextResponse.redirect(url)
-        }
+      const { data: profile, error } = await createAdminClient()
+        .from('profiles').select('activo').eq('id', user.id).single()
+      const allowed = !error && isActiveOwner(user, profile)
+      if (!allowed && !isPublic) {
+        return NextResponse.json({ error: 'Acceso no autorizado' }, { status: 403 })
+      }
+      if (allowed && pathname === '/login') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard'
+        const response = NextResponse.redirect(url)
+        for (const cookie of supabaseResponse.cookies.getAll()) response.cookies.set(cookie)
+        return response
       }
     } catch {
-      // si falla la verificación de rol, no bloqueamos (la guard de cliente respalda)
+      if (!isPublic) return NextResponse.json({ error: 'Servicio de acceso no disponible' }, { status: 503 })
     }
   }
 

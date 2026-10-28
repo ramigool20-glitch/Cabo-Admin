@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -60,6 +62,7 @@ export async function createRecurrente(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  await requireOwner()
   const parsed = parse(formData)
   if (!parsed.success) {
     return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
@@ -91,6 +94,7 @@ export async function updateRecurrente(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  await requireOwner()
   const parsed = parse(formData)
   if (!parsed.success) {
     return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
@@ -103,6 +107,7 @@ export async function updateRecurrente(
 }
 
 export async function deleteRecurrente(id: string) {
+  await requireOwner()
   const supabase = await createClient()
   // Soft delete: marcamos inactivo
   const { error } = await supabase.from('gastos_recurrentes').update({ activo: false }).eq('id', id)
@@ -120,6 +125,7 @@ export async function marcarPagado(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const admin = createAdminClient()
 

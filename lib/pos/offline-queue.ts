@@ -8,10 +8,13 @@
  * con error pero NO se borra (la cajera debe decidir).
  */
 
-const KEY = 'pos_offline_queue_v1'
+let ownerScope: string | null = null
+export function setOfflineOwnerScope(id: string | null) { ownerScope = id }
+function storageKey() { return ownerScope ? `pos:${ownerScope}:queue` : null }
 const MAX_ATTEMPTS = 3
 
 export type VentaInput = {
+  clave_idempotencia: string
   fecha: string
   negocio_id: string
   cuenta_id: string
@@ -44,23 +47,25 @@ export type VentaPendiente = {
 }
 
 function safeRead(): VentaPendiente[] {
-  if (typeof window === 'undefined') return []
+  if (typeof window === 'undefined' || !storageKey()) return []
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = localStorage.getItem(storageKey()!)
     if (!raw) return []
     const parsed = JSON.parse(raw) as VentaPendiente[]
-    return Array.isArray(parsed) ? parsed : []
+    return Array.isArray(parsed) ? parsed.map(p => ({ ...p, input: { ...p.input, clave_idempotencia: p.input.clave_idempotencia ?? p.local_id } })) : []
   } catch {
     return []
   }
 }
 
 function safeWrite(cola: VentaPendiente[]): void {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined' || !storageKey()) throw new Error('Espera a que se verifique tu sesión antes de guardar la venta.')
   try {
-    localStorage.setItem(KEY, JSON.stringify(cola))
+    const encoded = JSON.stringify(cola)
+    localStorage.setItem(storageKey()!, encoded)
+    if (localStorage.getItem(storageKey()!) !== encoded) throw new Error('No se pudo verificar el guardado local')
   } catch {
-    /* localStorage lleno o no disponible */
+    throw new Error('No se guardó la venta en este dispositivo. Conserva el ticket e intenta al recuperar conexión.')
   }
 }
 
@@ -128,17 +133,18 @@ export async function procesarCola(
         marcarError(p.local_id, r.error)
         fallidas++
         errores.push(r.error)
-      } else {
+      } else if (r?.ok === true && r.id) {
         quitarDeCola(p.local_id)
         exitosas++
+      } else {
+        marcarError(p.local_id, 'El servidor no confirmó el guardado de la venta')
+        fallidas++
+        errores.push('Venta sin confirmación')
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Error desconocido'
       // NEXT_REDIRECT no es error real
-      if (msg.includes('NEXT_REDIRECT')) {
-        quitarDeCola(p.local_id)
-        exitosas++
-      } else {
+      {
         marcarError(p.local_id, msg)
         fallidas++
         errores.push(msg)

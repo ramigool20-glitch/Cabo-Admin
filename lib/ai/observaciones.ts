@@ -1,3 +1,4 @@
+import { OPERATION_START } from '@/lib/operacion'
 /**
  * Genera y persiste las OBSERVACIONES del Auditor IA.
  * Fuente 100% datos reales de la BD: detectarIrregularidades() + ejecutarRadar().
@@ -164,7 +165,7 @@ export async function vigilarMovimiento(tx: {
       const hasta = new Date(f + 86400000).toISOString().slice(0, 10)
       const { data: similares } = await admin
         .from('transacciones')
-        .select('id')
+        .select('id').gte('fecha', OPERATION_START)
         .eq('cuenta_id', tx.cuenta_id)
         .eq('tipo', tx.tipo)
         .eq('moneda', tx.moneda)
@@ -191,7 +192,7 @@ export async function vigilarMovimiento(tx: {
       const hace30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
       const { data: hist } = await admin
         .from('transacciones')
-        .select('monto')
+        .select('monto').gte('fecha', OPERATION_START)
         .eq('tipo', 'gasto')
         .eq('categoria', tx.categoria)
         .neq('id', tx.id)
@@ -251,7 +252,7 @@ export async function generarPreguntasDatosFaltantes(): Promise<number> {
 
   const [{ data: negocios }, { data: txMes }, { data: abiertas }] = await Promise.all([
     admin.from('negocios').select('id, nombre, tipo').eq('activo', true),
-    admin.from('transacciones').select('negocio_id').gte('fecha', inicioMes).lte('fecha', hoy),
+    admin.from('transacciones').select('negocio_id').gte('fecha', OPERATION_START).gte('fecha', inicioMes).lte('fecha', hoy),
     admin.from('auditor_pendientes').select('pregunta').eq('estado', 'abierta'),
   ])
 

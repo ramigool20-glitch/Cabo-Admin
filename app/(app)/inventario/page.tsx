@@ -140,7 +140,7 @@ export default async function InventarioPage(
               Inventario
             </h1>
             <p className="text-[11px] text-zinc-500 mt-0.5">
-              Cvu Pharmacy local · TC ${rate.toFixed(2)} MXN/USD
+              Operación actual · TC ${rate.toFixed(2)} MXN/USD
             </p>
           </div>
           <div className="flex items-center gap-2">

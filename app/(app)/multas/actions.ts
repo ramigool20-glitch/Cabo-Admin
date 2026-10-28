@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { hoyEnCabos } from '@/lib/fechas'
@@ -26,6 +28,7 @@ async function registrarMovimiento(
  * Responsable acepta la multa tal cual → se aplica (crea transacción).
  */
 export async function aceptarMulta(multaId: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('No autenticado')
@@ -75,6 +78,7 @@ export async function aceptarMulta(multaId: string): Promise<void> {
  * Responsable justifica con texto → estado pasa a 'justificada', otro socio decide.
  */
 export async function justificarMulta(multaId: string, mensaje: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('No autenticado')
@@ -97,6 +101,7 @@ export async function solicitarReduccionMulta(
   nuevoMonto: number,
   mensaje: string
 ): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('No autenticado')
@@ -115,6 +120,7 @@ export async function solicitarReduccionMulta(
  * Otro socio aprueba la multa tal cual → se aplica.
  */
 export async function aprobarMulta(multaId: string): Promise<void> {
+  await requireOwner()
   return aceptarMulta(multaId) // misma lógica
 }
 
@@ -122,6 +128,7 @@ export async function aprobarMulta(multaId: string): Promise<void> {
  * Otro socio reduce el monto a uno menor.
  */
 export async function reducirMulta(multaId: string, nuevoMonto: number, mensaje?: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('No autenticado')
@@ -167,6 +174,7 @@ export async function reducirMulta(multaId: string, nuevoMonto: number, mensaje?
  * Otro socio perdona la multa → no se aplica, monto_final = 0.
  */
 export async function perdonarMulta(multaId: string, mensaje?: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('No autenticado')
@@ -190,6 +198,7 @@ export async function perdonarMulta(multaId: string, mensaje?: string): Promise<
  * Marca como pendiente_conversacion: no se aplica al balance hasta resolver.
  */
 export async function disputarMulta(multaId: string, mensaje: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('No autenticado')
@@ -215,6 +224,7 @@ export async function liquidarBalance(payload: {
   moneda: 'MXN' | 'USD'
   cuenta_id?: string | null
 }): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('No autenticado')

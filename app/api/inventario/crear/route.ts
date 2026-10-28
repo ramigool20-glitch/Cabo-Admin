@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireOwner } from '@/lib/auth/require-owner'
 
 export const runtime = 'nodejs'
 
@@ -16,13 +16,10 @@ const Body = z.object({
   notas: z.string().max(500).nullable().optional(),
 })
 
-// Cvu Pharmacy local
-const NEGOCIO_DEFAULT_ID = '469211e8-b4bc-4bf3-9442-5c8cdf728584'
-
 export async function POST(req: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+  try { await requireOwner() } catch {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
 
   const body = await req.json().catch(() => null)
   const parsed = Body.safeParse(body)
@@ -34,11 +31,14 @@ export async function POST(req: Request) {
   }
 
   const admin = createAdminClient()
+  const { data: negocio } = await admin.from('negocios')
+    .select('id').eq('nombre', 'Cvu Pharmacy local').eq('activo', true).maybeSingle()
+  if (!negocio) return NextResponse.json({ error: 'No hay una farmacia local activa para este inventario.' }, { status: 409 })
   const { data, error } = await admin
     .from('inventario_productos')
     .insert({
       ...parsed.data,
-      negocio_id: NEGOCIO_DEFAULT_ID,
+      negocio_id: negocio.id,
     })
     .select('id')
     .single()

@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isActiveOwner } from '@/lib/auth/owner'
 import { AppHeader } from '@/components/nav/app-header'
 import { TopTabs } from '@/components/nav/top-tabs'
 import { QuickActionFab } from '@/components/ui/quick-action-fab'
@@ -23,9 +24,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const admin = createAdminClient()
   const { data: profile } = await admin
     .from('profiles')
-    .select('nombre, role_id')
+    .select('nombre, role_id, activo')
     .eq('id', user.id)
     .single()
+
+  if (!isActiveOwner(user, profile)) redirect('/login?error=acceso')
 
   const nombre = profile?.nombre ?? user.email?.split('@')[0] ?? 'Usuario'
 

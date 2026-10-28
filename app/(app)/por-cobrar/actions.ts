@@ -1,5 +1,8 @@
 'use server'
 
+
+import { OPERATION_RESET_AT } from '@/lib/operacion'
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -45,6 +48,7 @@ function parseForm(formData: FormData) {
 }
 
 export async function createCuentaPorCobrar(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const parsed = parseForm(formData)
   if (!parsed.success) {
     return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
@@ -67,6 +71,7 @@ export async function createCuentaPorCobrar(_prev: ActionState, formData: FormDa
 }
 
 export async function registrarCobro(cuentaId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -79,7 +84,7 @@ export async function registrarCobro(cuentaId: string, _prev: ActionState, formD
 
   if (!monto || monto <= 0) return { error: 'Monto inválido' }
 
-  const { data: cuenta } = await supabase.from('cuentas_por_cobrar').select('*').eq('id', cuentaId).single()
+  const { data: cuenta } = await supabase.from('cuentas_por_cobrar').select('*').gte('created_at', OPERATION_RESET_AT).eq('id', cuentaId).single()
   if (!cuenta) return { error: 'No encontré la cuenta' }
 
   const restante = Number(cuenta.monto_total) - Number(cuenta.monto_cobrado)
@@ -138,6 +143,7 @@ export async function registrarCobro(cuentaId: string, _prev: ActionState, formD
 }
 
 export async function actualizarCuentaPorCobrar(cuentaId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const parsed = parseForm(formData)
   if (!parsed.success) return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
 
@@ -158,6 +164,7 @@ export async function actualizarCuentaPorCobrar(cuentaId: string, _prev: ActionS
 }
 
 export async function eliminarCuentaPorCobrar(cuentaId: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
@@ -171,6 +178,7 @@ export async function eliminarCuentaPorCobrar(cuentaId: string): Promise<void> {
 }
 
 export async function cancelarCuentaCobrar(cuentaId: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   await supabase
     .from('cuentas_por_cobrar')

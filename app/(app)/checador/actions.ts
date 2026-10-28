@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -17,6 +19,7 @@ const ChecadaSchema = z.object({
 })
 
 export async function crearChecada(input: z.infer<typeof ChecadaSchema>): Promise<ActionState> {
+  await requireOwner()
   const parsed = ChecadaSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
 
@@ -222,6 +225,7 @@ export async function crearChecada(input: z.infer<typeof ChecadaSchema>): Promis
 /** Verifica si un usuario puede hacer corte de caja según su horario.
  *  Regla: solo desde (hora_salida - 15 min). Antes de eso, bloqueado. */
 export async function puedeHacerCorte(): Promise<{ permitido: boolean; mensaje?: string; minutos_faltantes?: number }> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { permitido: false, mensaje: 'No autenticado' }

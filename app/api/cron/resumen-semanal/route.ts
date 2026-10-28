@@ -1,3 +1,4 @@
+import { OPERATION_RESET_AT } from '@/lib/operacion'
 /**
  * Cron lunes 8am — genera el resumen ejecutivo de la semana pasada (lun→dom).
  * Si ya existe la fila de esa semana, no la regenera. Manda push a socios.
@@ -34,7 +35,7 @@ async function ejecutar(): Promise<Response> {
   // ¿Ya existe el resumen de esta semana?
   const { data: existente } = await admin
     .from('resumen_semanal')
-    .select('id, resumen_md')
+    .select('id, resumen_md').gte('generado_at', OPERATION_RESET_AT)
     .eq('semana_inicio', semana.inicio)
     .maybeSingle()
   if (existente) {

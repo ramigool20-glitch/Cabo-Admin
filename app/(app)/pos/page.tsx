@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { PosClient } from '@/components/pos/pos-client'
+import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,13 +23,26 @@ export default async function PosPage() {
     rol = ((prof?.roles as unknown as { nombre: string } | null)?.nombre) ?? null
   }
 
-  // Hardcoded a Cvu Pharmacy local — el POS es solo para ese negocio
+  // El POS físico requiere un negocio local activo. Cvu Pharmacy local fue retirado.
   const { data: negocio } = await admin
     .from('negocios')
     .select('id, nombre, tipo')
     .ilike('nombre', '%cvu pharmacy local%')
     .eq('activo', true)
     .maybeSingle()
+
+  if (!negocio) {
+    return (
+      <main className="mx-auto flex min-h-[70vh] max-w-xl items-center px-5 py-16">
+        <section className="w-full rounded-3xl border border-white/10 bg-white/[0.03] p-8 text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Punto de venta</p>
+          <h1 className="mt-3 text-2xl font-bold text-white">Sin farmacia local activa</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-400">Cvu Pharmacy local se retiró de esta operación. Tus negocios digitales y clínicas siguen disponibles en el portafolio.</p>
+          <Link href="/negocios" className="mt-6 inline-flex rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-semibold text-slate-950">Ver negocios</Link>
+        </section>
+      </main>
+    )
+  }
 
   // Cuentas activas en MXN para asignar el ingreso
   const { data: cuentas } = await admin
@@ -146,6 +160,7 @@ export default async function PosPage() {
       productos={productos}
       categorias={categorias}
       rate={rate}
+      storageScope={user!.id}
       userNombre={userNombre}
       esCajera={rol === 'cajera'}
       favoritosIds={favoritosIds}

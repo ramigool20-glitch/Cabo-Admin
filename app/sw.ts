@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
-import { defaultCache } from '@serwist/next/worker'
+import { isPublicAsset } from '@/lib/pwa/public-assets'
 import type { PrecacheEntry, SerwistGlobalConfig } from 'serwist'
-import { Serwist } from 'serwist'
+import { CacheFirst, NetworkOnly, ExpirationPlugin, Serwist } from 'serwist'
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -12,14 +12,31 @@ declare global {
 declare const self: ServiceWorkerGlobalScope
 
 const serwist = new Serwist({
-  precacheEntries: self.__SW_MANIFEST,
+  precacheEntries: (self.__SW_MANIFEST ?? []).filter(entry =>
+    isPublicAsset(new URL(typeof entry === 'string' ? entry : entry.url, self.location.origin), self.location.origin)
+  ),
+  precacheOptions: { cacheName: 'cabo-public-precache-v2', cleanupOutdatedCaches: true },
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
-  runtimeCaching: defaultCache,
+  runtimeCaching: [
+    {
+      matcher: ({ url }) => isPublicAsset(url, self.location.origin),
+      handler: new CacheFirst({ cacheName: 'cabo-public-assets-v2', plugins: [new ExpirationPlugin({ maxEntries: 100, maxAgeSeconds: 86400 })] }),
+    },
+    { matcher: () => true, handler: new NetworkOnly() },
+  ],
 })
 
 serwist.addEventListeners()
+
+// Retirar las cachés de páginas, respuestas RSC y API de la versión anterior.
+self.addEventListener('activate', event => {
+  event.waitUntil(caches.keys().then(names => Promise.all(
+    names.filter(name => !['cabo-public-precache-v2', 'cabo-public-assets-v2'].includes(name))
+      .map(name => caches.delete(name))
+  )))
+})
 
 // ====================================================================
 // Push notifications

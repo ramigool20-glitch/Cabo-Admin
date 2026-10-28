@@ -1,3 +1,4 @@
+import { OPERATION_START, OPERATION_RESET_AT } from '@/lib/operacion'
 import Link from 'next/link'
 import { TrendingUp, TrendingDown, AlertCircle, Calendar, Users, CreditCard, Lock, Wallet, ChevronRight, Clock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
@@ -34,17 +35,17 @@ export default async function CashFlowPage() {
     { data: eventosPend },
   ] = await Promise.all([
     // Transacciones desde la fecha de saldo inicial (necesita fecha para filtrar)
-    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha').gte('fecha', desdeSaldo).limit(20000),
+    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha').gte('fecha', OPERATION_START).gte('fecha', desdeSaldo).limit(20000),
     // Tx solo del mes (para movimiento neto)
-    supabase.from('transacciones').select('tipo, monto, moneda, fecha, cuenta_id').gte('fecha', inicioMes),
+    supabase.from('transacciones').select('tipo, monto, moneda, fecha, cuenta_id').gte('fecha', OPERATION_START).gte('fecha', inicioMes),
     admin.from('gastos_recurrentes').select('nombre, monto, moneda, frecuencia, proximo_pago').eq('activo', true),
-    admin.from('cuentas_por_pagar').select('proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').neq('estado', 'cancelado').neq('estado', 'pagado'),
-    admin.from('empleados').select('nombre, empleado_compensacion(sueldo_base, moneda, frecuencia_pago)').eq('activo', true),
+    admin.from('cuentas_por_pagar').select('proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').gte('created_at', OPERATION_RESET_AT).neq('estado', 'cancelado').neq('estado', 'pagado'),
+    admin.from('empleados').select('nombre, empleado_compensacion(sueldo_base, moneda, frecuencia_pago)').gte('created_at', OPERATION_RESET_AT).eq('activo', true),
     admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
     // Por cobrar manuales
-    admin.from('cuentas_por_cobrar').select('monto_total, monto_cobrado, moneda, fecha_vencimiento, estado').neq('estado', 'cancelado').neq('estado', 'cobrado'),
+    admin.from('cuentas_por_cobrar').select('monto_total, monto_cobrado, moneda, fecha_vencimiento, estado').gte('created_at', OPERATION_RESET_AT).neq('estado', 'cancelado').neq('estado', 'cobrado'),
     // Eventos del Rancho pendientes
-    admin.from('eventos').select('monto_total, moneda, fecha_evento, estado, comision_porcentaje, eventos_pagos(monto)').in('estado', ['reservado', 'confirmado']),
+    admin.from('eventos').select('monto_total, moneda, fecha_evento, estado, comision_porcentaje, eventos_pagos(monto)').gte('created_at', OPERATION_RESET_AT).in('estado', ['reservado', 'confirmado']),
   ])
 
   // Saldos en tiempo real de cuentas MP integradas (best-effort)

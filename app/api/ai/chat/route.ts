@@ -1,3 +1,4 @@
+import { OPERATION_START } from '@/lib/operacion'
 import { NextResponse } from 'next/server'
 import { requireSocio } from '@/lib/auth/require-socio'
 import { anthropic, CLAUDE_MODEL } from '@/lib/ai/anthropic'
@@ -25,12 +26,12 @@ const TOOL_PARAMS = {
     monto:          { type: 'number' as const, description: 'Monto positivo' },
     moneda:         { type: 'string' as const, enum: ['MXN', 'USD'] },
     concepto:       { type: 'string' as const, description: 'Descripción corta' },
-    negocio_nombre: { type: 'string' as const, description: 'Negocio, ej: "Cvu Pharmacy local"' },
-    cuenta_nombre:  { type: 'string' as const, description: 'Cuenta, ej: "Mercado Pago Sergio"' },
+    negocio_nombre: { type: 'string' as const, description: 'Nombre de un negocio activo del portafolio; vacío si es general' },
+    cuenta_nombre:  { type: 'string' as const, description: 'Cuenta, ej: "Mercado Pago Miguel"' },
     categoria:      { type: 'string' as const, description: 'Categoría' },
     metodo_pago:    { type: 'string' as const, description: 'mp_terminal, stripe, efectivo_mxn, etc.' },
     fecha:          { type: 'string' as const, description: 'YYYY-MM-DD, default hoy' },
-    atribuido_a_nombre: { type: 'string' as const, description: 'SOLO para gastos de Casa que sean PERSONALES de un socio: "Miguel" o "Sergio". Si es compartido o no es Casa, déjalo vacío.' },
+    atribuido_a_nombre: { type: 'string' as const, description: 'SOLO para gastos de Casa que sean PERSONALES de un socio: "Miguel". Si es compartido o no es Casa, déjalo vacío.' },
   },
   required: ['tipo', 'monto', 'concepto'],
 }
@@ -47,9 +48,9 @@ const GASTO_FIJO_PARAMS = {
     frecuencia:              { type: 'string' as const, enum: ['mensual', 'quincenal', 'semanal', 'anual'] },
     dia_del_mes:             { type: 'number' as const, description: 'Día del mes en que se paga (1-31), solo si frecuencia=mensual' },
     proximo_pago:            { type: 'string' as const, description: 'YYYY-MM-DD opcional. Si no se da, se calcula' },
-    negocio_nombre:          { type: 'string' as const, description: 'Negocio al que pertenece (ej: "Cvu Pharmacy local"). Vacío si es General' },
+    negocio_nombre:          { type: 'string' as const, description: 'Nombre de un negocio activo al que pertenece. Vacío si es General' },
     cuenta_nombre:            { type: 'string' as const, description: 'Cuenta de donde sale el pago' },
-    responsable_nombre:      { type: 'string' as const, description: '"Miguel" o "Sergio"' },
+    responsable_nombre:      { type: 'string' as const, description: '"Miguel"' },
     proveedor:               { type: 'string' as const, description: 'A quién se paga (arrendador, empleado, CFE, etc.)' },
     metodo_pago:             { type: 'string' as const, description: 'transferencia, efectivo, domiciliado, etc.' },
     categoria:               { type: 'string' as const, description: 'renta, sueldo, servicios, etc.' },
@@ -104,7 +105,7 @@ async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
   const hasta = hoyEnCabos()
 
   const [{ data: tx }, { data: negocios }, { data: cuentas }] = await Promise.all([
-    admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', desde).lte('fecha', hasta),
+    admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', OPERATION_START).gte('fecha', desde).lte('fecha', hasta),
     admin.from('negocios').select('nombre, tipo, moneda_principal').eq('activo', true).order('nombre'),
     admin.from('cuentas').select('nombre, tipo, moneda').eq('activo', true).order('nombre'),
   ])

@@ -1,3 +1,4 @@
+import { OPERATION_START } from '@/lib/operacion'
 /**
  * Resumen ejecutivo semanal con IA.
  *
@@ -49,7 +50,7 @@ export async function calcularDatosSemana(
 ): Promise<ResumenSemanalDatos> {
   const { data: txs } = await admin
     .from('transacciones')
-    .select('id, tipo, monto, moneda, monto_mxn_equivalente, fecha, concepto, negocio_id, negocios(nombre)')
+    .select('id, tipo, monto, moneda, monto_mxn_equivalente, fecha, concepto, negocio_id, negocios(nombre)').gte('fecha', OPERATION_START)
     .gte('fecha', semana.inicio)
     .lte('fecha', semana.fin)
 
@@ -60,7 +61,7 @@ export async function calcularDatosSemana(
   finPrev.setDate(finPrev.getDate() - 7)
   const { data: txsPrev } = await admin
     .from('transacciones')
-    .select('tipo, monto, moneda, monto_mxn_equivalente')
+    .select('tipo, monto, moneda, monto_mxn_equivalente').gte('fecha', OPERATION_START)
     .gte('fecha', inicioPrev.toISOString().slice(0, 10))
     .lte('fecha', finPrev.toISOString().slice(0, 10))
 
@@ -170,7 +171,7 @@ ${datos.top_gastos.slice(0, 3).map((g) => `- ${g.concepto}${g.negocio ? ' (' + g
 TOP 3 INGRESOS:
 ${datos.top_ingresos.slice(0, 3).map((g) => `- ${g.concepto}${g.negocio ? ' (' + g.negocio + ')' : ''}: ${fmt(g.monto_mxn)}`).join('\n')}`
 
-  const sysPrompt = `Eres el analista financiero de Cabo Admin, una contabilidad de 2 socios (Miguel y Sergio) que llevan múltiples negocios en Los Cabos: farmacias, clínica walk-in, eventos.
+  const sysPrompt = `Eres el analista financiero de Cabo Admin, la contabilidad individual de Miguel para sus negocios actuales en Los Cabos. Analiza solo la nueva etapa; no inventes comparativos ni obligaciones de la etapa anterior.
 
 Tu tarea: redactar un resumen semanal ejecutivo en español mexicano para los socios. Estilo: directo, sin floretes, 4-6 bullets de máximo 1-2 líneas cada uno. Tono profesional pero relajado (no acartonado).
 

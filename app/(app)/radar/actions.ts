@@ -1,11 +1,14 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ejecutarRadar } from '@/lib/ai/radar'
 
 export async function refrescarRadar() {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -82,6 +85,7 @@ export async function refrescarRadar() {
 }
 
 export async function marcarVisto(id: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false }
@@ -96,6 +100,7 @@ export async function marcarVisto(id: string) {
 }
 
 export async function descartarInsight(id: string) {
+  await requireOwner()
   const admin = createAdminClient()
   await admin.from('radar_insights').delete().eq('id', id)
   revalidatePath('/radar')
@@ -103,6 +108,7 @@ export async function descartarInsight(id: string) {
 }
 
 export async function agregarCompetidor(formData: FormData) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -148,6 +154,7 @@ export async function agregarCompetidor(formData: FormData) {
 }
 
 export async function eliminarCompetidor(id: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false }
@@ -163,6 +170,7 @@ export async function eliminarCompetidor(id: string) {
 // ============================================================
 
 export async function aceptarSugerencia(id: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -211,6 +219,7 @@ export async function aceptarSugerencia(id: string) {
 }
 
 export async function rechazarSugerencia(id: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false }
@@ -225,6 +234,7 @@ export async function rechazarSugerencia(id: string) {
 }
 
 export async function actualizarKeywordsNegocio(negocioId: string, keywords: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -245,6 +255,7 @@ export async function actualizarKeywordsNegocio(negocioId: string, keywords: str
 }
 
 export async function marcarNoticiaVista(id: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false }
@@ -255,6 +266,7 @@ export async function marcarNoticiaVista(id: string) {
 }
 
 export async function forzarMonitor() {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }

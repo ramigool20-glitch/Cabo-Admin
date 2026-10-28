@@ -6,6 +6,8 @@
  */
 
 import { ImageResponse } from 'next/og'
+import { NextResponse } from 'next/server'
+import { requireSocio } from '@/lib/auth/require-socio'
 import QRCode from 'qrcode'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -18,6 +20,8 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const gate = await requireSocio()
+  if (gate instanceof NextResponse) return gate
   try {
     const { id } = await params
     const admin = createAdminClient()
@@ -169,7 +173,7 @@ export async function GET(
           </div>
         </div>
       ),
-      { width: WIDTH, height: HEIGHT, emoji: 'twemoji' },
+      { headers: { 'Cache-Control': 'private, no-store' }, width: WIDTH, height: HEIGHT, emoji: 'twemoji' },
     )
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error desconocido'

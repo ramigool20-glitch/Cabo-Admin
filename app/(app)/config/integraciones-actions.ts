@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -8,6 +10,7 @@ import { validarTokenMP, sincronizarPagosMP } from '@/lib/integraciones/mercadop
 export type IntegState = { ok?: boolean; error?: string; integ_id?: string }
 
 export async function agregarIntegracionMP(_prev: IntegState, formData: FormData): Promise<IntegState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -49,6 +52,7 @@ export async function agregarIntegracionMP(_prev: IntegState, formData: FormData
 }
 
 export async function sincronizarMPAhora(integId: string): Promise<IntegState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -62,6 +66,7 @@ export async function sincronizarMPAhora(integId: string): Promise<IntegState> {
 }
 
 export async function toggleIntegracionMP(integId: string, activa: boolean): Promise<IntegState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -73,6 +78,7 @@ export async function toggleIntegracionMP(integId: string, activa: boolean): Pro
 }
 
 export async function eliminarIntegracionMP(integId: string): Promise<IntegState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -87,6 +93,7 @@ export async function eliminarIntegracionMP(integId: string): Promise<IntegState
 // WhatsApp: autorizar números
 // ============================================================
 export async function agregarNumeroWhatsApp(_prev: IntegState, formData: FormData): Promise<IntegState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }

@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -42,6 +44,7 @@ function parse(formData: FormData) {
 }
 
 export async function createTarea(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const parsed = parse(formData)
   if (!parsed.success) {
     return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
@@ -101,6 +104,7 @@ export async function createTarea(_prev: ActionState, formData: FormData): Promi
 }
 
 export async function completarTarea(id: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
@@ -119,6 +123,7 @@ export async function completarTarea(id: string): Promise<void> {
 }
 
 export async function reabrirTarea(id: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   await supabase
     .from('tareas')
@@ -128,6 +133,7 @@ export async function reabrirTarea(id: string): Promise<void> {
 }
 
 export async function eliminarTarea(id: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   await supabase.from('tareas').delete().eq('id', id)
   revalidatePath('/tareas')

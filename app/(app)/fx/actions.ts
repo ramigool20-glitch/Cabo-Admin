@@ -1,11 +1,14 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUsdMxn } from '@/lib/fx/fetch'
 
 export async function guardarRateManual(fecha: string, rate: number) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -31,6 +34,7 @@ export async function guardarRateManual(fecha: string, rate: number) {
 }
 
 export async function refrescarRateAPI() {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }

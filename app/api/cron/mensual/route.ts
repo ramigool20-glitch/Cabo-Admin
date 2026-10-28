@@ -1,3 +1,4 @@
+import { OPERATION_START, OPERATION_RESET_AT } from '@/lib/operacion'
 /**
  * Cron MENSUAL — corre el día 1 a las 8am Cabo
  * Genera resumen del mes anterior y push a socios.
@@ -46,12 +47,12 @@ export async function GET(req: Request) {
     { data: porPagar },
     { data: socios },
   ] = await Promise.all([
-    admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', desde).lte('fecha', hasta),
+    admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', OPERATION_START).gte('fecha', desde).lte('fecha', hasta),
     admin.from('cuentas').select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas').eq('activo', true),
-    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
+    admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha').gte('fecha', OPERATION_START),
     admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
-    admin.from('cuentas_por_cobrar').select('monto_total, monto_cobrado, moneda').neq('estado', 'cobrado').neq('estado', 'cancelado'),
-    admin.from('cuentas_por_pagar').select('monto_total, monto_pagado, moneda').neq('estado', 'pagado').neq('estado', 'cancelado'),
+    admin.from('cuentas_por_cobrar').select('monto_total, monto_cobrado, moneda').gte('created_at', OPERATION_RESET_AT).neq('estado', 'cobrado').neq('estado', 'cancelado'),
+    admin.from('cuentas_por_pagar').select('monto_total, monto_pagado, moneda').gte('created_at', OPERATION_RESET_AT).neq('estado', 'pagado').neq('estado', 'cancelado'),
     admin.from('profiles').select('id, role_id, roles(nombre)').eq('activo', true),
   ])
 

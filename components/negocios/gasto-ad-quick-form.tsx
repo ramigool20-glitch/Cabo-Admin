@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect, useState } from 'react'
+import { useActionState, useEffect, useState, useRef } from 'react'
 import { Loader2, Megaphone, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { hoyEnCabos } from '@/lib/fechas'
@@ -9,8 +9,15 @@ import { toast } from '@/components/ui/toast'
 
 export function GastoAdQuickForm({ negocioId }: { negocioId: string }) {
   const [open, setOpen] = useState(false)
-  const [state, formAction, pending] = useActionState<VentaState, FormData>(crearGastoAd, {})
-  const [moneda, setMoneda] = useState<'MXN' | 'USD'>('USD')
+  const requestKey = useRef<string | null>(null)
+  const [state, formAction, pending] = useActionState<VentaState, FormData>(async (prev, form) => {
+    requestKey.current ??= crypto.randomUUID()
+    form.set('clave_idempotencia', requestKey.current)
+    const result = await crearGastoAd(prev, form)
+    if (result.ok) requestKey.current = null
+    return result
+  }, {})
+  const [moneda, setMoneda] = useState<'MXN' | 'USD'>('MXN')
 
   useEffect(() => {
     if (state.ok) {
@@ -60,7 +67,7 @@ export function GastoAdQuickForm({ negocioId }: { negocioId: string }) {
         </div>
         <div className="space-y-1">
           <label className="text-[9px] uppercase tracking-wider text-zinc-500">Plataforma</label>
-          <select name="plataforma" defaultValue="meta" className="input-base w-full h-9 text-xs">
+          <select name="plataforma" defaultValue="google" className="input-base w-full h-9 text-xs">
             <option value="meta">Meta (FB/IG)</option>
             <option value="google">Google Ads</option>
             <option value="tiktok">TikTok Ads</option>

@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -31,6 +33,7 @@ function norm(s: string | null | undefined): string {
  * Recibe los IDs ya resueltos por el cliente. Inserta en gastos_recurrentes.
  */
 export async function saveGastoFijo(payload: SaveGastoFijoPayload) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false as const, error: 'No autenticado' }
@@ -80,6 +83,7 @@ export async function resolverIds(payload: {
   cuenta_nombre?: string | null
   responsable_nombre?: string | null
 }) {
+  await requireOwner()
   const admin = createAdminClient()
   const [{ data: negocios }, { data: cuentas }, { data: profiles }] = await Promise.all([
     admin.from('negocios').select('id, nombre').eq('activo', true),

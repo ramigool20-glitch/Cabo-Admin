@@ -1,3 +1,4 @@
+import { OPERATION_START } from '@/lib/operacion'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ChevronLeft, ShoppingBag, TrendingUp } from 'lucide-react'
@@ -59,7 +60,7 @@ export default async function VentasPage(props: { params: Promise<{ id: string }
   // Trae transacciones ingreso (para detectar las que sean ventas y no estén en tabla)
   const { data: txs } = await supabase
     .from('transacciones')
-    .select('id, tipo, monto, moneda, fecha, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado, created_at')
+    .select('id, tipo, monto, moneda, fecha, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado, created_at').gte('fecha', OPERATION_START)
     .eq('negocio_id', id)
     .eq('tipo', 'ingreso')
     .order('fecha', { ascending: false })

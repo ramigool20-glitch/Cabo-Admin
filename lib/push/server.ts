@@ -1,5 +1,6 @@
 import webpush from 'web-push'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isActiveOwner } from '@/lib/auth/owner'
 
 const subject = process.env.VAPID_SUBJECT || 'mailto:backpackboyzmexico@gmail.com'
 const publicKey = process.env.VAPID_PUBLIC_KEY!
@@ -30,10 +31,20 @@ export async function enviarPushAProfiles(
   if (profileIds.length === 0) return { enviados: 0, fallidos: 0 }
 
   const admin = createAdminClient()
+  const { data: profiles, error: profileError } = await admin
+    .from('profiles').select('id, activo').in('id', profileIds).eq('activo', true)
+  if (profileError) throw new Error('No se pudieron verificar los destinatarios del push')
+  const allowedIds: string[] = []
+  for (const profile of profiles ?? []) {
+    const { data, error } = await admin.auth.admin.getUserById(profile.id)
+    if (error) throw new Error('No se pudo verificar la identidad del destinatario')
+    if (data.user && isActiveOwner(data.user, profile)) allowedIds.push(profile.id)
+  }
+  if (allowedIds.length === 0) return { enviados: 0, fallidos: 0 }
   const { data: subs } = await admin
     .from('push_subscriptions')
     .select('id, endpoint, p256dh, auth, profile_id')
-    .in('profile_id', profileIds)
+    .in('profile_id', allowedIds)
 
   if (!subs || subs.length === 0) return { enviados: 0, fallidos: 0 }
 

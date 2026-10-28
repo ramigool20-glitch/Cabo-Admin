@@ -1,3 +1,4 @@
+import { OPERATION_START, OPERATION_RESET_AT } from '@/lib/operacion'
 /**
  * Proyección de flujo de efectivo 30/60/90 días.
  *
@@ -100,7 +101,7 @@ export async function proyectarCashFlow(opts: {
   const desdeTx = fechaSaldoMasAntigua(cuentas)
   const { data: txs } = await admin
     .from('transacciones')
-    .select('tipo, monto, moneda, cuenta_id, fecha')
+    .select('tipo, monto, moneda, cuenta_id, fecha').gte('fecha', OPERATION_START)
     .gte('fecha', desdeTx)
     .lte('fecha', hoy)
   const saldos = calcularSaldos(cuentas, (txs ?? []) as TxParaSaldo[], fxRate)
@@ -134,7 +135,7 @@ export async function proyectarCashFlow(opts: {
   // Cuentas por pagar (pendientes con vencimiento futuro)
   const { data: cpp } = await admin
     .from('cuentas_por_pagar')
-    .select('id, concepto, proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento, estado')
+    .select('id, concepto, proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').gte('created_at', OPERATION_RESET_AT)
     .neq('estado', 'pagada')
     .gte('fecha_vencimiento', hoy)
     .lte('fecha_vencimiento', ventanaHasta)
@@ -155,7 +156,7 @@ export async function proyectarCashFlow(opts: {
   // Cuentas por cobrar (pendientes)
   const { data: cpc } = await admin
     .from('cuentas_por_cobrar')
-    .select('id, concepto, cliente_nombre, monto_total, monto_cobrado, moneda, fecha_vencimiento, estado')
+    .select('id, concepto, cliente_nombre, monto_total, monto_cobrado, moneda, fecha_vencimiento, estado').gte('created_at', OPERATION_RESET_AT)
     .neq('estado', 'cobrada')
     .gte('fecha_vencimiento', hoy)
     .lte('fecha_vencimiento', ventanaHasta)
@@ -237,7 +238,7 @@ export async function proyectarCashFlow(opts: {
   const desdeHist = addDays(hoy, -30)
   const { data: txHist } = await admin
     .from('transacciones')
-    .select('tipo, monto, moneda, fecha, monto_mxn_equivalente')
+    .select('tipo, monto, moneda, fecha, monto_mxn_equivalente').gte('fecha', OPERATION_START)
     .gte('fecha', desdeHist)
     .lt('fecha', hoy)
   let entradasHist = 0, salidasHist = 0

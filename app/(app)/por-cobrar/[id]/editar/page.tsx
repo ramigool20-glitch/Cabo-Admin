@@ -1,3 +1,4 @@
+import { OPERATION_RESET_AT } from '@/lib/operacion'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
@@ -11,7 +12,7 @@ export default async function EditarCuentaPorCobrarPage(
   const supabase = await createClient()
 
   const [{ data: cuenta }, { data: negocios }] = await Promise.all([
-    supabase.from('cuentas_por_cobrar').select('*').eq('id', id).single(),
+    supabase.from('cuentas_por_cobrar').select('*').gte('created_at', OPERATION_RESET_AT).eq('id', id).single(),
     supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
   ])
 

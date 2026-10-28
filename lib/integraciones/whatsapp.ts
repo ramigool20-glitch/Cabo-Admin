@@ -108,7 +108,7 @@ export async function interpretarMensaje(
   cuentas: string[]
 ): Promise<TxInterpretada> {
   const system = `Eres el capturador de gastos/ingresos de Cabo Admin por WhatsApp.
-Recibes un mensaje (texto o transcripción de voz) de Miguel o Sergio describiendo un movimiento.
+Recibes un mensaje (texto o transcripción de voz) de Miguel, propietario único describiendo un movimiento.
 Extrae la transacción. Negocios disponibles: ${negocios.join(', ')}.
 Cuentas disponibles: ${cuentas.join(', ')}.
 
@@ -118,8 +118,8 @@ Reglas:
 - Detecta moneda (default MXN; si dice dólares/USD/dlls → USD).
 - negocio_nombre: el más parecido de la lista o null (Casa para gastos personales/hogar).
 - cuenta_nombre: el más parecido o null.
-- atribuido_a_nombre: solo si es gasto personal de Casa de un socio (Miguel/Sergio).
-- respuesta: confirmación corta y natural en mexicano, ej: "✅ Registré gasto de $500 gasolina en MP Sergio".
+- atribuido_a_nombre: solo si es gasto personal de Casa de un socio (Miguel).
+- respuesta: confirmación corta y natural en mexicano, ej: "✅ Registré gasto de $500 gasolina en MP Miguel".
 
 Responde SOLO JSON: {"es_transaccion": bool, "tipo": "gasto"|"ingreso"|null, "monto": num|null, "moneda": "MXN"|"USD", "concepto": str|null, "negocio_nombre": str|null, "cuenta_nombre": str|null, "categoria": str|null, "atribuido_a_nombre": str|null, "respuesta": str}`
 

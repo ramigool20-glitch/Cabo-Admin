@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -54,6 +56,7 @@ const RealizadoSchema = z.object({
 })
 
 export async function registrarServicioClinica(_prev: ClinicaState, formData: FormData): Promise<ClinicaState> {
+  await requireOwner()
   const ctx = await getRol()
   if (!ctx) return { error: 'No autenticado' }
   if (!ctx.rol) return { error: 'Rol no autorizado' }
@@ -110,6 +113,7 @@ const ResenaSchema = z.object({
 })
 
 export async function registrarResenaClinica(_prev: ClinicaState, formData: FormData): Promise<ClinicaState> {
+  await requireOwner()
   const ctx = await getRol()
   if (!ctx) return { error: 'No autenticado' }
   if (!ctx.rol) return { error: 'Rol no autorizado' }
@@ -162,6 +166,7 @@ export async function registrarResenaClinica(_prev: ClinicaState, formData: Form
 // Aprobar / rechazar registro de la enfermera (solo admin/socio)
 // ============================================================
 export async function aprobarRealizado(id: string): Promise<ClinicaState> {
+  await requireOwner()
   const ctx = await getRol()
   if (!ctx) return { error: 'No autenticado' }
   if (ctx.rol !== 'admin' && ctx.rol !== 'socio') return { error: 'Solo admin/socio puede aprobar' }
@@ -177,6 +182,7 @@ export async function aprobarRealizado(id: string): Promise<ClinicaState> {
 }
 
 export async function rechazarRealizado(id: string, motivo: string): Promise<ClinicaState> {
+  await requireOwner()
   const ctx = await getRol()
   if (!ctx) return { error: 'No autenticado' }
   if (ctx.rol !== 'admin' && ctx.rol !== 'socio') return { error: 'Solo admin/socio puede rechazar' }
@@ -198,6 +204,7 @@ export async function rechazarRealizado(id: string, motivo: string): Promise<Cli
 }
 
 export async function eliminarServicioClinica(id: string): Promise<ClinicaState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -211,6 +218,7 @@ export async function eliminarServicioClinica(id: string): Promise<ClinicaState>
 // Editar precio/comisión de un servicio del catálogo
 // ============================================================
 export async function actualizarServicioCatalogo(id: string, formData: FormData): Promise<ClinicaState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -237,6 +245,7 @@ export async function actualizarServicioCatalogo(id: string, formData: FormData)
 // Config enfermera (sueldo base, bono review)
 // ============================================================
 export async function guardarConfigEnfermera(_prev: ClinicaState, formData: FormData): Promise<ClinicaState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -261,6 +270,7 @@ export async function guardarConfigEnfermera(_prev: ClinicaState, formData: Form
 }
 
 export async function actualizarReviews(configId: string, reviews: number): Promise<ClinicaState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }

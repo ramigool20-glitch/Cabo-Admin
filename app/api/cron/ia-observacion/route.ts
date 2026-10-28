@@ -18,7 +18,7 @@ import { anthropic, CLAUDE_MODEL } from '@/lib/ai/anthropic'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-const SYSTEM = `Eres el Auditor IA de Cabo Admin (Miguel y Sergio, negocios en Los Cabos).
+const SYSTEM = `Eres el Auditor IA de Cabo Admin (Miguel, propietario único, negocios en Los Cabos).
 Te paso observaciones detectadas de SU data real (no inventes nada, usa solo lo que está).
 Redacta UNA notificación push:
 - Máximo 150 caracteres.

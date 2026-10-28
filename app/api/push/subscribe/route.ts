@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireSocio } from '@/lib/auth/require-socio'
 
 export const runtime = 'nodejs'
 
@@ -11,6 +12,8 @@ type Body = {
 }
 
 export async function POST(req: Request) {
+  const gate = await requireSocio()
+  if (gate instanceof NextResponse) return gate
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
@@ -42,6 +45,8 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const gate = await requireSocio()
+  if (gate instanceof NextResponse) return gate
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

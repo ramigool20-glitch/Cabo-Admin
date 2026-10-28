@@ -1,3 +1,4 @@
+import { OPERATION_RESET_AT } from '@/lib/operacion'
 import { formatInTimeZone } from 'date-fns-tz'
 import { createAdminClient } from './supabase/admin'
 import { TZ } from './fechas'
@@ -160,7 +161,7 @@ export async function eventosDelMes(año: number, mes: number): Promise<EventoCa
   // 2) Eventos Rancho McCoy
   const { data: ev } = await admin
     .from('eventos')
-    .select('id, cliente_nombre, tipo_evento, fecha_evento, monto_total, moneda, estado')
+    .select('id, cliente_nombre, tipo_evento, fecha_evento, monto_total, moneda, estado').gte('created_at', OPERATION_RESET_AT)
     .gte('fecha_evento', inicio)
     .lte('fecha_evento', fin)
     .neq('estado', 'cancelado')
@@ -181,7 +182,7 @@ export async function eventosDelMes(año: number, mes: number): Promise<EventoCa
   // 3) Cuentas por pagar (vencimientos en este mes)
   const { data: cpp } = await admin
     .from('cuentas_por_pagar')
-    .select('id, proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, estado, negocios(nombre)')
+    .select('id, proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, estado, negocios(nombre)').gte('created_at', OPERATION_RESET_AT)
     .gte('fecha_vencimiento', inicio)
     .lte('fecha_vencimiento', fin)
     .neq('estado', 'cancelado')
@@ -209,7 +210,7 @@ export async function eventosDelMes(año: number, mes: number): Promise<EventoCa
   const nextDia = new Date(año, mes + 1, 2).toISOString().slice(0, 10)  // 2 del mes siguiente
   const { data: tareas } = await admin
     .from('tareas')
-    .select('id, titulo, fecha_limite, prioridad, estado, multa_monto, moneda_multa')
+    .select('id, titulo, fecha_limite, prioridad, estado, multa_monto, moneda_multa').is('archivada_at', null)
     .gte('fecha_limite', `${prevDia}T00:00:00`)
     .lte('fecha_limite', `${nextDia}T23:59:59`)
     .in('estado', ['pendiente', 'en_progreso', 'vencida'])
@@ -232,7 +233,7 @@ export async function eventosDelMes(año: number, mes: number): Promise<EventoCa
   // 5) Multas pendientes
   const { data: multas } = await admin
     .from('multas')
-    .select('id, motivo, monto_propuesto, moneda, estado, created_at')
+    .select('id, motivo, monto_propuesto, moneda, estado, created_at').gte('created_at', OPERATION_RESET_AT)
     .in('estado', ['propuesta', 'justificada', 'reduccion_solicitada', 'pendiente_conversacion'])
   for (const m of multas ?? []) {
     const fecha = formatInTimeZone(new Date(m.created_at), TZ, 'yyyy-MM-dd')

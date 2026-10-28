@@ -1,3 +1,4 @@
+import { OPERATION_START } from '@/lib/operacion'
 /**
  * Sugerencias de categoría/negocio/cuenta basadas en histórico.
  *
@@ -44,7 +45,7 @@ export async function sugerirCategorizacion(
   const hace180 = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10)
   const { data: histRows } = await admin
     .from('transacciones')
-    .select('concepto, categoria, negocio_id, cuenta_id, metodo_pago, tipo, negocios(nombre), cuentas(nombre)')
+    .select('concepto, categoria, negocio_id, cuenta_id, metodo_pago, tipo, negocios(nombre), cuentas(nombre)').gte('fecha', OPERATION_START)
     .eq('tipo', input.tipo)
     .gte('fecha', hace180)
     .not('concepto', 'is', null)

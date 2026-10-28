@@ -8,9 +8,10 @@
  * ganancia automáticamente. Después abre el ticket PNG.
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Banknote, CreditCard, Smartphone, Loader2, CheckCircle2, Printer, Share2, DollarSign } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
+import { hoyEnCabos } from '@/lib/fechas'
 import { toast } from '@/components/ui/toast'
 import { crearVentaConItems } from '@/app/(app)/transacciones/venta-actions'
 import { agregarACola } from '@/lib/pos/offline-queue'
@@ -28,6 +29,7 @@ export function CobroSheet({
   items,
   totalMxn,
   negocioId,
+  saleKey,
   cuentas,
   rate = 17,
   onSuccess,
@@ -38,6 +40,7 @@ export function CobroSheet({
   items: VentaItemInput[]
   totalMxn: number
   negocioId: string
+  saleKey: string
   cuentas: Cuenta[]
   rate?: number
   onSuccess: () => void
@@ -47,6 +50,7 @@ export function CobroSheet({
   const totalUsd = totalMxn / rate
   const [metodo, setMetodo] = useState<Metodo>('efectivo')
   const [recibido, setRecibido] = useState<string>(String(Math.ceil(totalMxn)))
+  const requestKey = useRef<string | null>(null)
   const [cobrando, setCobrando] = useState(false)
   const [ventaId, setVentaId] = useState<string | null>(null)
 
@@ -111,8 +115,10 @@ export function CobroSheet({
       ? `Recibido ${monedaSimbolo} ${recibidoNum} · cambio ${monedaSimbolo} ${cambio.toFixed(2)}` + (metodo === 'efectivo_usd' ? ` · TC ${rate.toFixed(2)}` : '')
       : null
 
+    requestKey.current ??= saleKey
     const input = {
-      fecha: new Date().toISOString().slice(0, 10),
+      clave_idempotencia: requestKey.current,
+      fecha: hoyEnCabos(),
       negocio_id: negocioId,
       cuenta_id: cuentaId,
       metodo_pago: metodoPagoBd(),

@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -58,6 +60,7 @@ function parseEmpleado(formData: FormData) {
 }
 
 export async function createEmpleado(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const parsed = parseEmpleado(formData)
   if (!parsed.success) {
     return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
@@ -74,6 +77,7 @@ export async function createEmpleado(_prev: ActionState, formData: FormData): Pr
 }
 
 export async function updateEmpleado(id: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const parsed = parseEmpleado(formData)
   if (!parsed.success) return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
   const supabase = await createClient()
@@ -85,6 +89,7 @@ export async function updateEmpleado(id: string, _prev: ActionState, formData: F
 }
 
 export async function deleteEmpleado(id: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { error } = await supabase.from('empleados').update({ activo: false }).eq('id', id)
   if (error) return { error: error.message }
@@ -93,6 +98,7 @@ export async function deleteEmpleado(id: string) {
 }
 
 export async function addCompensacion(empleadoId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const raw = Object.fromEntries(formData.entries())
   const parsed = CompensacionSchema.safeParse({ ...raw, empleado_id: empleadoId })
   if (!parsed.success) return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
@@ -157,6 +163,7 @@ export async function addCompensacion(empleadoId: string, _prev: ActionState, fo
 }
 
 export async function deleteCompensacion(id: string, empleadoId: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   await supabase.from('empleado_compensacion').update({ activo: false }).eq('id', id)
   revalidatePath(`/nomina/${empleadoId}`)
@@ -164,6 +171,7 @@ export async function deleteCompensacion(id: string, empleadoId: string): Promis
 }
 
 export async function registrarPagoNomina(empleadoId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const raw = Object.fromEntries(formData.entries())
   const parsed = PagoNominaSchema.safeParse({ ...raw, empleado_id: empleadoId })
   if (!parsed.success) return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }

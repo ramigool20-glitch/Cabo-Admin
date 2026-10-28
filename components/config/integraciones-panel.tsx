@@ -222,7 +222,7 @@ function AgregarMPForm({ cuentas, negocios }: { cuentas: Cuenta[]; negocios: Neg
         <p className="text-xs font-bold text-sky-300">Nueva cuenta MP</p>
         <button type="button" onClick={() => setOpen(false)} className="text-zinc-500"><X className="h-4 w-4" /></button>
       </div>
-      <input name="nombre" placeholder="Nombre (ej: MP Sergio)" required className="input-base w-full h-9 text-xs" />
+      <input name="nombre" placeholder="Nombre (ej: MP Miguel)" required className="input-base w-full h-9 text-xs" />
       <input name="access_token" placeholder="Access Token (APP_USR-...)" required className="input-base w-full h-9 text-xs font-mono" />
       <div className="grid grid-cols-2 gap-2">
         <select name="cuenta_id" defaultValue="" className="input-base w-full h-9 text-xs">
@@ -270,7 +270,7 @@ function AgregarWAForm({ socios }: { socios: Socio[] }) {
         <button type="button" onClick={() => setOpen(false)} className="text-zinc-500"><X className="h-4 w-4" /></button>
       </div>
       <input name="numero" placeholder="Número con lada país (521624...)" required className="input-base w-full h-9 text-xs font-mono" />
-      <input name="nombre" placeholder="Nombre (Miguel, Sergio)" className="input-base w-full h-9 text-xs" />
+      <input name="nombre" placeholder="Nombre del propietario" className="input-base w-full h-9 text-xs" />
       <select name="profile_id" defaultValue="" className="input-base w-full h-9 text-xs">
         <option value="">— Vincular a socio (opcional) —</option>
         {socios.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}

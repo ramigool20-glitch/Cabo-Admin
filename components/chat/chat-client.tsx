@@ -337,8 +337,8 @@ export function ChatClient({
 
   const sugerencias = [
     '¿Cuánto llevo gastado este mes?',
-    'Pagué 350 de gasolina con MP Sergio',
-    'Agrega gasto fijo: renta farmacia $25000 al mes el día 1, paga Sergio',
+    'Pagué 350 de gasolina con mi cuenta',
+    'Agrega gasto fijo: renta farmacia $25000 al mes el día 1, lo pago yo',
     'Registra 1500 USD de IV Therapy en Stripe',
   ]
 

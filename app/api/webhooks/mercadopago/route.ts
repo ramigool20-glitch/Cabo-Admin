@@ -26,7 +26,7 @@ export const maxDuration = 30
  *   ts=1700000000,v1=<hex>
  * El v1 es HMAC-SHA256 sobre el "manifest":
  *   id:<dataId>;request-id:<xRequestId>;ts:<ts>;
- * Si falta secret en la integración → no validamos (true para no bloquear).
+ * Sin secreto, el webhook no está autenticado y se rechaza.
  */
 function validarFirmaMP(opts: {
   secret: string | null
@@ -34,7 +34,7 @@ function validarFirmaMP(opts: {
   xRequestId: string | null
   dataId: string | null
 }): { valida: boolean; razon?: string } {
-  if (!opts.secret) return { valida: true, razon: 'sin secret guardado' }
+  if (!opts.secret) return { valida: false, razon: 'sin secret guardado' }
   if (!opts.xSignature || !opts.dataId) return { valida: false, razon: 'falta header o data.id' }
 
   const parts = Object.fromEntries(
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     signatureValid = r.valida
 
     // Si tenemos secret guardado Y la firma es inválida, NO procesamos
-    if (integRow?.webhook_secret && !r.valida) {
+    if (!r.valida) {
       await logWebhook({
         fuente: 'webhook_mp',
         integracion_id: integ,
