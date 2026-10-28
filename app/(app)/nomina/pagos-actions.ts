@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -11,6 +13,7 @@ export type PagoState = { ok?: boolean; error?: string }
  * Marca un periodo como pagado para un empleado y genera la transacción de gasto.
  */
 export async function pagarNomina(formData: FormData): Promise<PagoState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -90,6 +93,7 @@ export async function pagarNomina(formData: FormData): Promise<PagoState> {
  * Agrega un extra/bono one-off (ej: $200 comida Doña Rossy).
  */
 export async function agregarExtra(formData: FormData): Promise<PagoState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }

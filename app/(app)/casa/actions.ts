@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -8,6 +10,7 @@ import { hoyEnCabos } from '@/lib/fechas'
 import { enviarPushAProfiles } from '@/lib/push/server'
 
 export async function agregarShoppingItem(formData: FormData) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -63,6 +66,7 @@ export async function agregarShoppingItem(formData: FormData) {
 }
 
 export async function marcarComprado(id: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
@@ -81,6 +85,7 @@ export async function marcarComprado(id: string) {
 }
 
 export async function reabrirItem(id: string) {
+  await requireOwner()
   const admin = createAdminClient()
   await admin
     .from('casa_shopping')
@@ -90,6 +95,7 @@ export async function reabrirItem(id: string) {
 }
 
 export async function eliminarItem(id: string) {
+  await requireOwner()
   const admin = createAdminClient()
   await admin.from('casa_shopping').delete().eq('id', id)
   revalidatePath('/casa')
@@ -105,6 +111,7 @@ export async function liquidarSaldoRoomates(
   monto: number,
   cuentaId: string | null
 ) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isActiveOwner } from './owner'
 
 export type SocioGate = { user: { id: string; email?: string }; rol: 'admin' | 'socio' }
 
@@ -22,11 +23,11 @@ export async function requireSocio(): Promise<SocioGate | NextResponse> {
     const admin = createAdminClient()
     const { data: prof } = await admin
       .from('profiles')
-      .select('roles(nombre)')
+      .select('activo, roles(nombre)')
       .eq('id', user.id)
       .single()
     const rol = (prof?.roles as unknown as { nombre: string } | null)?.nombre
-    if (rol !== 'admin' && rol !== 'socio') {
+    if (!isActiveOwner(user, prof) || (rol !== 'admin' && rol !== 'socio')) {
       return NextResponse.json({ error: 'Solo socios/admin' }, { status: 403 })
     }
     return { user: { id: user.id, email: user.email }, rol: rol as 'admin' | 'socio' }

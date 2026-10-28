@@ -13,6 +13,8 @@ import {
   interpretarMensaje, interpretarImagen, crearTxDesdeWhatsApp,
 } from '@/lib/integraciones/whatsapp'
 import { formatMoney } from '@/lib/utils'
+import { validWhatsAppSignature } from '@/lib/auth/webhook-signature'
+import { isActiveOwner } from '@/lib/auth/owner'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -33,8 +35,14 @@ export async function GET(req: Request) {
 
 // ---- Mensajes entrantes ----
 export async function POST(req: Request) {
+  const secret = process.env.WHATSAPP_APP_SECRET
+  if (!secret) return NextResponse.json({ error: 'Webhook no configurado' }, { status: 503 })
+  const rawBody = await req.text()
+  if (!validWhatsAppSignature(rawBody, req.headers.get('x-hub-signature-256'), secret)) {
+    return NextResponse.json({ error: 'Firma inválida' }, { status: 401 })
+  }
   let body: WAWebhookBody
-  try { body = await req.json() } catch { return NextResponse.json({ received: true }) }
+  try { body = JSON.parse(rawBody) } catch { return NextResponse.json({ error: 'JSON inválido' }, { status: 400 }) }
 
   // Estructura: entry[].changes[].value.messages[]
   try {
@@ -72,6 +80,12 @@ export async function POST(req: Request) {
         await enviarWhatsApp(from, '🔒 Este número no está autorizado para capturar en Cabo Admin. Pide que te den de alta en Configuración.')
         continue
       }
+
+      const [{ data: identity }, { data: profile }] = await Promise.all([
+        admin.auth.admin.getUserById(autorizado.profile_id),
+        admin.from('profiles').select('activo').eq('id', autorizado.profile_id).single(),
+      ])
+      if (!identity.user || !isActiveOwner(identity.user, profile)) continue
 
       // Contexto (negocios + cuentas)
       const [{ data: negocios }, { data: cuentas }] = await Promise.all([

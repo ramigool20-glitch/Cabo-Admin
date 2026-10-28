@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 /**
  * Server action para registrar una VENTA con items del inventario.
  *
@@ -56,6 +58,7 @@ const VentaSchema = z.object({
 })
 
 export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Promise<VentaActionState> {
+  await requireOwner()
   const parsed = VentaSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
 

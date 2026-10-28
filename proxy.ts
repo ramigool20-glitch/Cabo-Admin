@@ -7,6 +7,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    '/api/:path*',
     /*
      * Excluye assets estáticos, PWA, service worker y media.
      */

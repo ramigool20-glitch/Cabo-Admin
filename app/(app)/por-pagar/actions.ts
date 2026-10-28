@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -45,6 +47,7 @@ function parseForm(formData: FormData) {
 }
 
 export async function createCuentaPorPagar(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const parsed = parseForm(formData)
   if (!parsed.success) {
     return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
@@ -67,6 +70,7 @@ export async function createCuentaPorPagar(_prev: ActionState, formData: FormDat
 }
 
 export async function registrarPago(cuentaId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -138,6 +142,7 @@ export async function registrarPago(cuentaId: string, _prev: ActionState, formDa
 }
 
 export async function actualizarCuentaPorPagar(cuentaId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const parsed = parseForm(formData)
   if (!parsed.success) return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
 
@@ -158,6 +163,7 @@ export async function actualizarCuentaPorPagar(cuentaId: string, _prev: ActionSt
 }
 
 export async function eliminarCuentaPorPagar(cuentaId: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
@@ -171,6 +177,7 @@ export async function eliminarCuentaPorPagar(cuentaId: string): Promise<void> {
 }
 
 export async function cancelarCuenta(cuentaId: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   await supabase
     .from('cuentas_por_pagar')

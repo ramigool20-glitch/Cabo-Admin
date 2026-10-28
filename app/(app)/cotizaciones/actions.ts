@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -39,6 +41,7 @@ const codigoNegocio = (tipo: string, nombre: string): string => {
 }
 
 export async function crearCotizacion(input: z.infer<typeof CrearSchema>): Promise<ActionState> {
+  await requireOwner()
   const parsed = CrearSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
 
@@ -117,6 +120,7 @@ const ActualizarEstadoSchema = z.object({
 })
 
 export async function actualizarEstadoCotizacion(input: z.infer<typeof ActualizarEstadoSchema>): Promise<ActionState> {
+  await requireOwner()
   const parsed = ActualizarEstadoSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
 
@@ -137,6 +141,7 @@ export async function actualizarEstadoCotizacion(input: z.infer<typeof Actualiza
 }
 
 export async function eliminarCotizacion(id: string): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }

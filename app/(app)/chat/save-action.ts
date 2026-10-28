@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { aMxnEquivalente } from '@/lib/fx/server'
@@ -26,6 +28,7 @@ export type SavePayload = {
 }
 
 export async function saveAITransaccion(payload: SavePayload) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -100,6 +103,7 @@ export type SavePorPagarPayload = {
 }
 
 export async function saveCuentaPorPagarFromAI(payload: SavePorPagarPayload) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }

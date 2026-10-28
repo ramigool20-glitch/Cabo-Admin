@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 /**
  * Server actions para WebAuthn (huellas dactilares).
  *
@@ -37,6 +39,7 @@ const RegistrarSchema = z.object({
 })
 
 export async function registrarHuella(input: z.infer<typeof RegistrarSchema>): Promise<ActionState> {
+  await requireOwner()
   const parsed = RegistrarSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
 
@@ -88,6 +91,7 @@ const VerificarSchema = z.object({
 })
 
 export async function verificarHuella(input: z.infer<typeof VerificarSchema>): Promise<ActionState> {
+  await requireOwner()
   const parsed = VerificarSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
 
@@ -148,6 +152,7 @@ export async function listarHuellasEmpleado(profileId: string): Promise<Array<{
   usos_count: number
   created_at: string
 }>> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return []
@@ -163,6 +168,7 @@ export async function listarHuellasEmpleado(profileId: string): Promise<Array<{
 }
 
 export async function borrarHuella(huellaId: string): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }

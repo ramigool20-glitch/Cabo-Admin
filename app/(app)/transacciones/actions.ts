@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
@@ -110,6 +112,7 @@ export async function createTransaccion(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  await requireOwner()
   const parsed = parseFormData(formData)
   if (!parsed.success) {
     return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
@@ -304,6 +307,7 @@ export async function updateTransaccion(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  await requireOwner()
   const parsed = parseFormData(formData)
   if (!parsed.success) {
     return { error: 'Datos inválidos', fieldErrors: parsed.error.flatten().fieldErrors }
@@ -376,6 +380,7 @@ export async function updateTransaccion(
 }
 
 export async function deleteTransaccion(id: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }

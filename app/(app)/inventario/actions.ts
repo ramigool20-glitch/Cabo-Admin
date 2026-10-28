@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -20,6 +22,7 @@ const AjustarStockSchema = z.object({
 })
 
 export async function ajustarStock(input: z.infer<typeof AjustarStockSchema>): Promise<ActionState> {
+  await requireOwner()
   const parsed = AjustarStockSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
 
@@ -96,6 +99,7 @@ const ActualizarProductoSchema = z.object({
 })
 
 export async function actualizarProducto(input: z.infer<typeof ActualizarProductoSchema>): Promise<ActionState> {
+  await requireOwner()
   const parsed = ActualizarProductoSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
 
@@ -124,6 +128,7 @@ export async function actualizarProducto(input: z.infer<typeof ActualizarProduct
 
 /** Eliminar producto (soft delete: activo=false). Mantiene movimientos. */
 export async function eliminarProducto(producto_id: string): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -142,6 +147,7 @@ export async function eliminarProducto(producto_id: string): Promise<ActionState
 
 /** Sube foto al bucket 'productos' y guarda el path en foto_url. */
 export async function subirFotoProducto(formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const producto_id = formData.get('producto_id') as string | null
   const file = formData.get('foto') as File | null
   if (!producto_id || !file) return { error: 'Falta producto_id o archivo' }
@@ -193,6 +199,7 @@ export async function subirFotoProducto(formData: FormData): Promise<ActionState
 
 /** Quita la foto del producto */
 export async function quitarFotoProducto(producto_id: string): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }

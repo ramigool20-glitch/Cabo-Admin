@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
+import Link from 'next/link'
 import { Eye, EyeOff, User, Lock, ArrowRight, Loader2 } from 'lucide-react'
 import { loginAction } from './actions'
 
@@ -78,6 +79,7 @@ export function LoginForm() {
           <>Entrar <ArrowRight className="h-4 w-4" /></>
         )}
       </button>
+      <Link href="/recuperar" className="block text-center text-sm text-cyan-300">Olvidé mi contraseña</Link>
     </form>
   )
 }

@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -7,6 +9,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 // Schema actual: estado in ('abierta', 'contestada', 'descartada')
 // Mapeo: 'resuelta' (UI) → 'contestada' (DB)
 export async function cerrarPendiente(id: string, accion: 'resuelta' | 'descartada') {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -33,6 +36,7 @@ export async function cerrarPendiente(id: string, accion: 'resuelta' | 'descarta
 // Observaciones del feed (auditor_observaciones)
 // ============================================================
 export async function marcarObservacion(id: string, estado: 'vista' | 'resuelta' | 'archivada') {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -49,6 +53,7 @@ export async function marcarObservacion(id: string, estado: 'vista' | 'resuelta'
 
 // Responder una pregunta del auditor → se cierra Y se guarda en memoria (aprende)
 export async function responderPendiente(id: string, respuesta: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -84,6 +89,7 @@ export async function responderPendiente(id: string, respuesta: string) {
 // Memoria del auditor (memoria_ia)
 // ============================================================
 export async function agregarMemoria(contenido: string, importancia = 6) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -104,6 +110,7 @@ export async function agregarMemoria(contenido: string, importancia = 6) {
 }
 
 export async function borrarMemoria(id: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }
@@ -115,6 +122,7 @@ export async function borrarMemoria(id: string) {
 }
 
 export async function descartarTodosPendientes() {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'No autenticado' }

@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -37,6 +39,7 @@ function revalidarTodo() {
 
 /** Corte semanal combinado: comisiones + propinas de UNA semana (dom-sáb). */
 export async function hacerCorteSemanal(rango: { desde: string; hasta: string }): Promise<CorteState> {
+  await requireOwner()
   const user = await authUser()
   if (!user) return { error: 'No autenticado' }
   const cfg = await getEnfermera()
@@ -100,6 +103,7 @@ export async function hacerCorteSemanal(rango: { desde: string; hasta: string })
 
 /** Corte semanal: SOLO comisiones de servicios (propinas y reviews son aparte). */
 export async function hacerCorteComisiones(): Promise<CorteState> {
+  await requireOwner()
   const user = await authUser()
   if (!user) return { error: 'No autenticado' }
   const cfg = await getEnfermera()
@@ -147,6 +151,7 @@ export async function hacerCorteComisiones(): Promise<CorteState> {
 
 /** Corte de propinas (separado). */
 export async function hacerCortePropinas(): Promise<CorteState> {
+  await requireOwner()
   const user = await authUser()
   if (!user) return { error: 'No autenticado' }
   const cfg = await getEnfermera()
@@ -195,6 +200,7 @@ export async function hacerCortePropinas(): Promise<CorteState> {
 
 /** Corte de reviews — separado, se hace cuando quieras. */
 export async function hacerCorteReviews(): Promise<CorteState> {
+  await requireOwner()
   const user = await authUser()
   if (!user) return { error: 'No autenticado' }
   const cfg = await getEnfermera()
@@ -247,6 +253,7 @@ export async function hacerCorteReviews(): Promise<CorteState> {
 
 /** Corte de quincena — sueldo base, días 15 y 30. */
 export async function hacerCorteQuincena(): Promise<CorteState> {
+  await requireOwner()
   const user = await authUser()
   if (!user) return { error: 'No autenticado' }
   const cfg = await getEnfermera()
@@ -307,6 +314,7 @@ export async function marcarCortePagado(payload: {
   cuentaId?: string | null
   notas?: string | null
 }): Promise<CorteState> {
+  await requireOwner()
   const user = await authUser()
   if (!user) return { error: 'No autenticado' }
   const admin = createAdminClient()
@@ -378,6 +386,7 @@ export async function marcarCortePagado(payload: {
 // ============================================================
 
 export async function cancelarCorte(pagoId: string): Promise<CorteState> {
+  await requireOwner()
   const user = await authUser()
   if (!user) return { error: 'No autenticado' }
   const admin = createAdminClient()

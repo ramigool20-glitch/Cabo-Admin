@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -20,6 +22,7 @@ const CuentaSchema = z.object({
 })
 
 export async function agregarCuenta(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -55,6 +58,7 @@ const SaldoInicialSchema = z.object({
 })
 
 export async function capturarSaldoInicial(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -114,6 +118,7 @@ const AjusteSchema = z.object({
 })
 
 export async function crearAjusteSaldo(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -156,6 +161,7 @@ export async function crearAjusteSaldo(_prev: ActionState, formData: FormData): 
 // DESBLOQUEAR (para corregir saldo inicial mal capturado)
 // ============================================================
 export async function desbloquearSaldoInicial(cuentaId: string): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -175,6 +181,7 @@ export async function desbloquearSaldoInicial(cuentaId: string): Promise<ActionS
 // EDITAR SALDO INICIAL (corrige sin necesidad de desbloquear primero)
 // ============================================================
 export async function editarSaldoInicial(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -203,6 +210,7 @@ export async function editarSaldoInicial(_prev: ActionState, formData: FormData)
 }
 
 export async function desactivarCuenta(cuentaId: string): Promise<ActionState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }

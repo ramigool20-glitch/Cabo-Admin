@@ -7,6 +7,8 @@
  */
 
 import { ImageResponse } from 'next/og'
+import { NextResponse } from 'next/server'
+import { requireSocio } from '@/lib/auth/require-socio'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { temaDeNegocio, type NegocioBranding, type CotizacionItem } from '@/lib/cotizaciones/tipos'
 
@@ -29,6 +31,8 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const gate = await requireSocio()
+  if (gate instanceof NextResponse) return gate
   try {
     const { id } = await params
     const admin = createAdminClient()
@@ -287,7 +291,7 @@ export async function GET(
           </div>
         </div>
       ),
-      { width: WIDTH, height: HEIGHT },
+      { headers: { 'Cache-Control': 'private, no-store' }, width: WIDTH, height: HEIGHT },
     )
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error desconocido'

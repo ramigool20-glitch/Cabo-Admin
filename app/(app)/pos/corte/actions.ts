@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -28,6 +30,7 @@ const CorteSchema = z.object({
 })
 
 export async function crearCorteCaja(input: z.infer<typeof CorteSchema>): Promise<ActionState> {
+  await requireOwner()
   const parsed = CorteSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
 

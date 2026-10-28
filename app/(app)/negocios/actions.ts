@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -24,6 +26,7 @@ const VentaSchema = z.object({
 export type VentaState = { ok?: boolean; error?: string }
 
 export async function crearVenta(_prev: VentaState, formData: FormData): Promise<VentaState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -108,6 +111,7 @@ export async function crearVenta(_prev: VentaState, formData: FormData): Promise
 }
 
 export async function eliminarVenta(id: string, negocioId: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false }
@@ -155,6 +159,7 @@ const PLATAFORMA_CATEGORIA: Record<string, string> = {
 }
 
 export async function crearGastoAd(_prev: VentaState, formData: FormData): Promise<VentaState> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -219,6 +224,7 @@ export async function crearGastoAd(_prev: VentaState, formData: FormData): Promi
 }
 
 export async function eliminarGastoAd(id: string, negocioId: string) {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false }
@@ -241,5 +247,6 @@ export async function eliminarGastoAd(id: string, negocioId: string) {
 
 // Helper para defaults
 export async function getHoyDefault() {
+  await requireOwner()
   return hoyEnCabos()
 }

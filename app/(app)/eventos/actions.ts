@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -43,6 +45,7 @@ const EventoEditSchema = EventoSchema.extend({
 })
 
 export async function actualizarEvento(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const raw = Object.fromEntries(formData.entries())
   const parsed = EventoEditSchema.safeParse({
     ...raw,
@@ -76,6 +79,7 @@ export async function actualizarEvento(_prev: ActionState, formData: FormData): 
 }
 
 export async function eliminarEvento(eventoId: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
@@ -91,6 +95,7 @@ export async function eliminarEvento(eventoId: string): Promise<void> {
 }
 
 export async function createEvento(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const raw = Object.fromEntries(formData.entries())
   const parsed = EventoSchema.safeParse({
     ...raw,
@@ -125,6 +130,7 @@ export async function createEvento(_prev: ActionState, formData: FormData): Prom
 }
 
 export async function registrarPagoEvento(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireOwner()
   const raw = Object.fromEntries(formData.entries())
   const parsed = PagoSchema.safeParse({
     ...raw,
@@ -190,6 +196,7 @@ export async function registrarPagoEvento(_prev: ActionState, formData: FormData
  * - 75% va al proveedor → se crea gasto cuando se pague al proveedor
  */
 export async function realizarEvento(eventoId: string): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   await supabase.from('eventos').update({ estado: 'realizado' }).eq('id', eventoId)
   revalidatePath('/eventos')
@@ -197,6 +204,7 @@ export async function realizarEvento(eventoId: string): Promise<void> {
 }
 
 export async function pagarProveedor(eventoId: string, cuentaId: string | null): Promise<void> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return

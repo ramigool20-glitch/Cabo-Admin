@@ -1,5 +1,7 @@
 'use server'
 
+
+import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -22,6 +24,7 @@ const GuardarSchema = z.object({
 export type GuardarResult = { ok?: boolean; error?: string; id?: string }
 
 export async function guardarVoiceEvent(input: z.infer<typeof GuardarSchema>): Promise<GuardarResult> {
+  await requireOwner()
   const parsed = GuardarSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
 
@@ -81,6 +84,7 @@ export async function auditarVoz(): Promise<{
   porcentaje: number
   alerta: boolean
 }> {
+  await requireOwner()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado', total_escuchado: 0, total_cobrado: 0, diferencia: 0, porcentaje: 0, alerta: false }
