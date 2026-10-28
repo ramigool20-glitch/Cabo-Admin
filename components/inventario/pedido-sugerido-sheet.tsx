@@ -119,7 +119,7 @@ export function PedidoSugeridoSheet({
     const out: string[] = []
     out.push(`🛒 *PEDIDO SUGERIDO*`)
     out.push(`📅 ${fecha}`)
-    out.push(`💼 Cvu Pharmacy`)
+    out.push(`💼 Pedido de inventario`)
     out.push('')
     for (const p of ['alta', 'media', 'baja'] as const) {
       const arr = items.filter(i => i.prioridad === p)

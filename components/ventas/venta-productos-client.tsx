@@ -5,9 +5,10 @@
  * Descuenta stock + calcula ganancia automáticamente al guardar.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef } from 'react'
 import { Search, X, Plus, Minus, Trash2, Loader2, AlertTriangle, ShoppingBag, TrendingUp } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
+import { hoyEnCabos } from '@/lib/fechas'
 import { toast } from '@/components/ui/toast'
 import { crearVentaConItems } from '@/app/(app)/transacciones/venta-actions'
 import { calcularItem, calcularTotalesVenta, type VentaItemInput } from '@/lib/ventas/items'
@@ -53,10 +54,7 @@ export function VentaProductosClient({
   )
   const [metodoPago, setMetodoPago] = useState<string>('efectivo_mxn')
   // Fecha LOCAL del dispositivo (no UTC). Antes daba 1 día más adelante por timezone.
-  const [fecha, setFecha] = useState(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })
+  const [fecha, setFecha] = useState(hoyEnCabos)
   const [clienteNombre, setClienteNombre] = useState('')
   const [descuentoGlobal, setDescuentoGlobal] = useState(0)
   const [descontarStock, setDescontarStock] = useState(true)
@@ -65,6 +63,7 @@ export function VentaProductosClient({
   // Items del carrito
   const [items, setItems] = useState<VentaItemInput[]>([])
   const [q, setQ] = useState('')
+  const requestKey = useRef<string | null>(null)
   const [guardando, setGuardando] = useState(false)
 
   // Búsqueda
@@ -130,7 +129,9 @@ export function VentaProductosClient({
 
     setGuardando(true)
     try {
+      requestKey.current ??= crypto.randomUUID()
       const r = await crearVentaConItems({
+        clave_idempotencia: requestKey.current,
         fecha,
         negocio_id: negocioId,
         cuenta_id: cuentaId,

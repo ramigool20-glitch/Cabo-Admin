@@ -1,3 +1,4 @@
+import { OPERATION_START } from '@/lib/operacion'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowDownCircle, ArrowUpCircle, ChevronLeft, ChevronRight, Megaphone, ShoppingBag, TrendingUp } from 'lucide-react'
@@ -54,13 +55,13 @@ export default async function DetalleNegocioPage(
   ] = await Promise.all([
     supabase
       .from('transacciones')
-      .select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente, tipo_cambio_usado')
+      .select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente, tipo_cambio_usado').gte('fecha', OPERATION_START)
       .eq('negocio_id', id)
       .gte('fecha', r.desde)
       .lte('fecha', r.hasta),
     supabase
       .from('transacciones')
-      .select('id, tipo, monto, moneda, fecha, concepto, monto_mxn_equivalente, tipo_cambio_usado')
+      .select('id, tipo, monto, moneda, fecha, concepto, monto_mxn_equivalente, tipo_cambio_usado').gte('fecha', OPERATION_START)
       .eq('negocio_id', id)
       .order('created_at', { ascending: false })
       .limit(10),
@@ -85,7 +86,7 @@ export default async function DetalleNegocioPage(
       ? (async () => {
           const [{ count: c1 }, { count: c2 }] = await Promise.all([
             supabase.from('ventas').select('id', { count: 'exact', head: true }).eq('negocio_id', id),
-            supabase.from('transacciones').select('id', { count: 'exact', head: true })
+            supabase.from('transacciones').select('id', { count: 'exact', head: true }).gte('fecha', OPERATION_START)
               .eq('negocio_id', id).eq('tipo', 'ingreso').in('categoria', ['ventas', 'venta']),
           ])
           return { count: Math.max(c1 ?? 0, c2 ?? 0) }
@@ -96,7 +97,7 @@ export default async function DetalleNegocioPage(
       ? (async () => {
           const [{ count: c1 }, { data: txAds }] = await Promise.all([
             supabase.from('gastos_ads').select('id', { count: 'exact', head: true }).eq('negocio_id', id),
-            supabase.from('transacciones').select('id, categoria, concepto')
+            supabase.from('transacciones').select('id, categoria, concepto').gte('fecha', OPERATION_START)
               .eq('negocio_id', id).eq('tipo', 'gasto'),
           ])
           let c2 = 0

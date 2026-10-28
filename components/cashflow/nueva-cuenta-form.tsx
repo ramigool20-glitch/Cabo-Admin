@@ -42,7 +42,7 @@ export function NuevaCuentaForm() {
 
       <div className="space-y-2">
         <label className="label-caps">Nombre</label>
-        <input name="nombre" type="text" required placeholder="Cvu Pharmacy Fiscal, BBVA…" className="input-base w-full h-10 text-sm" />
+        <input name="nombre" type="text" required placeholder="Cuenta bancaria, efectivo, BBVA…" className="input-base w-full h-10 text-sm" />
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -68,7 +68,7 @@ export function NuevaCuentaForm() {
 
       <div className="space-y-2">
         <label className="label-caps">Titular (opcional)</label>
-        <input name="titular" type="text" placeholder="Miguel, Sergio, Sociedad…" className="input-base w-full h-10 text-sm" />
+        <input name="titular" type="text" placeholder="Miguel…" className="input-base w-full h-10 text-sm" />
       </div>
 
       <div className="space-y-2">

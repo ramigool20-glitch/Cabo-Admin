@@ -1,3 +1,4 @@
+import { OPERATION_START, OPERATION_RESET_AT } from '@/lib/operacion'
 import { NextResponse } from 'next/server'
 import { requireSocio } from '@/lib/auth/require-socio'
 import { openai, OPENAI_MODEL } from '@/lib/ai/openai'
@@ -63,13 +64,13 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'crear_pendiente',
-      description: 'Crea una pregunta pendiente dirigida a un socio (Miguel o Sergio). Úsala cuando necesites info que solo el otro socio puede dar.',
+      description: 'Crea una pregunta pendiente dirigida a un socio (Miguel). Úsala cuando necesites info que solo el otro socio puede dar.',
       parameters: {
         type: 'object',
         properties: {
           pregunta: { type: 'string' },
           contexto: { type: 'string' },
-          dirigida_a_nombre: { type: 'string', description: '"Miguel" o "Sergio"' },
+          dirigida_a_nombre: { type: 'string', description: '"Miguel"' },
           prioridad: { type: 'string', enum: ['alta', 'media', 'baja'] },
         },
         required: ['pregunta', 'dirigida_a_nombre'],
@@ -158,7 +159,7 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'crear_tarea',
-      description: 'Crea una tarea asignada a Miguel, Sergio o ambos.',
+      description: 'Crea una tarea asignada a Miguel.',
       parameters: {
         type: 'object',
         properties: {
@@ -486,20 +487,20 @@ async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
     { data: socios },
     { data: shoppingItems },
   ] = await Promise.all([
-    admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', desde).lte('fecha', hasta),
-    admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', new Date(new Date(desde).setMonth(new Date(desde).getMonth() - 1)).toISOString().slice(0, 10)).lt('fecha', desde),
+    admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', OPERATION_START).gte('fecha', desde).lte('fecha', hasta),
+    admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', OPERATION_START).gte('fecha', new Date(new Date(desde).setMonth(new Date(desde).getMonth() - 1)).toISOString().slice(0, 10)).lt('fecha', desde),
     admin.from('negocios').select('nombre, tipo, url').eq('activo', true).order('nombre'),
     admin.from('cuentas').select('nombre, moneda, tipo').eq('activo', true).order('nombre'),
-    admin.from('empleados').select('nombre, puesto, empleado_compensacion(sueldo_base, moneda, frecuencia_pago)').eq('activo', true),
+    admin.from('empleados').select('nombre, puesto, empleado_compensacion(sueldo_base, moneda, frecuencia_pago)').gte('created_at', OPERATION_RESET_AT).eq('activo', true),
     admin.from('gastos_recurrentes').select('nombre, monto, moneda, frecuencia, categoria, proximo_pago').eq('activo', true).order('proximo_pago'),
     admin.from('auditor_pendientes').select('pregunta, prioridad').eq('estado', 'abierta').limit(10),
-    admin.from('cuentas_por_pagar').select('proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').neq('estado', 'cancelado').neq('estado', 'pagado'),
+    admin.from('cuentas_por_pagar').select('proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').gte('created_at', OPERATION_RESET_AT).neq('estado', 'cancelado').neq('estado', 'pagado'),
     // Eventos con sus pagos (próximos 90 días)
-    admin.from('eventos').select('id, cliente_nombre, fecha_evento, monto_total, moneda, estado, paquete, num_personas, eventos_pagos(monto)').gte('fecha_evento', desde).lte('fecha_evento', en90).neq('estado', 'cancelado').order('fecha_evento').limit(20),
-    admin.from('multas').select('motivo, monto_propuesto, moneda, estado').in('estado', ['propuesta', 'justificada', 'reduccion_solicitada', 'pendiente_conversacion']).limit(5),
+    admin.from('eventos').select('id, cliente_nombre, fecha_evento, monto_total, moneda, estado, paquete, num_personas, eventos_pagos(monto)').gte('created_at', OPERATION_RESET_AT).gte('fecha_evento', desde).lte('fecha_evento', en90).neq('estado', 'cancelado').order('fecha_evento').limit(20),
+    admin.from('multas').select('motivo, monto_propuesto, moneda, estado').gte('created_at', OPERATION_RESET_AT).in('estado', ['propuesta', 'justificada', 'reduccion_solicitada', 'pendiente_conversacion']).limit(5),
     // Transacciones de Casa del mes (para balance)
     casaNeg
-      ? admin.from('transacciones').select('tipo, monto, moneda, capturado_por, atribuido_a, monto_mxn_equivalente').eq('negocio_id', casaNeg.id).gte('fecha', desde).lte('fecha', hasta)
+      ? admin.from('transacciones').select('tipo, monto, moneda, capturado_por, atribuido_a, monto_mxn_equivalente').gte('fecha', OPERATION_START).eq('negocio_id', casaNeg.id).gte('fecha', desde).lte('fecha', hasta)
       : Promise.resolve({ data: [] as Array<{ tipo: string; monto: number; moneda: string; capturado_por: string | null; atribuido_a: string | null; monto_mxn_equivalente: number | null }> }),
     admin.from('profiles').select('id, nombre, role_id, roles(nombre)').eq('activo', true),
     admin.from('casa_shopping').select('item, prioridad, comprado').eq('comprado', false).order('created_at', { ascending: false }).limit(10),
@@ -523,7 +524,7 @@ async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
     const { calcularSaldos } = await import('@/lib/saldos')
     const [{ data: cuentasSaldo }, { data: txAll }, { data: fxRow }] = await Promise.all([
       admin.from('cuentas').select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas').eq('activo', true),
-      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
+      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha').gte('fecha', OPERATION_START),
       admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
     ])
     const rate = fxRow ? Number(fxRow.rate_compra) : null
@@ -760,7 +761,7 @@ async function ejecutarTool(
 
     const { data: tx } = await admin
       .from('transacciones')
-      .select('tipo, monto, moneda, fecha, categoria, negocio_id')
+      .select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', OPERATION_START)
       .eq('negocio_id', neg.id)
       .gte('fecha', desdeISO)
 
@@ -796,8 +797,8 @@ async function ejecutarTool(
     const inicioActual = new Date(ahora); inicioActual.setDate(ahora.getDate() - dias)
     const inicioAnterior = new Date(ahora); inicioAnterior.setDate(ahora.getDate() - dias * 2)
 
-    let qActual = admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', inicioActual.toISOString().slice(0,10)).lte('fecha', ahora.toISOString().slice(0,10))
-    let qAnterior = admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', inicioAnterior.toISOString().slice(0,10)).lt('fecha', inicioActual.toISOString().slice(0,10))
+    let qActual = admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', OPERATION_START).gte('fecha', inicioActual.toISOString().slice(0,10)).lte('fecha', ahora.toISOString().slice(0,10))
+    let qAnterior = admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', OPERATION_START).gte('fecha', inicioAnterior.toISOString().slice(0,10)).lt('fecha', inicioActual.toISOString().slice(0,10))
     if (negId) {
       qActual = qActual.eq('negocio_id', negId)
       qAnterior = qAnterior.eq('negocio_id', negId)
@@ -845,7 +846,7 @@ async function ejecutarTool(
     // 2) Transacciones sin categoría
     const { count: sinCat } = await admin
       .from('transacciones')
-      .select('id', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true }).gte('fecha', OPERATION_START)
       .gte('fecha', desdeISO)
       .or('categoria.is.null,categoria.eq.')
     if ((sinCat ?? 0) >= 5) {
@@ -857,7 +858,7 @@ async function ejecutarTool(
     for (const n of negs ?? []) {
       const { count } = await admin
         .from('transacciones')
-        .select('id', { count: 'exact', head: true })
+        .select('id', { count: 'exact', head: true }).gte('fecha', OPERATION_START)
         .eq('negocio_id', n.id)
         .gte('fecha', desdeISO)
       if ((count ?? 0) === 0) {
@@ -877,7 +878,7 @@ async function ejecutarTool(
 
     const { data: tx } = await admin
       .from('transacciones')
-      .select('tipo, monto, moneda, categoria, negocio_id')
+      .select('tipo, monto, moneda, categoria, negocio_id').gte('fecha', OPERATION_START)
       .eq('tipo', tipo)
       .gte('fecha', desdeISO)
 
@@ -962,7 +963,7 @@ async function ejecutarTool(
 
     let q = admin
       .from('eventos')
-      .select('id, cliente_nombre, fecha_evento, monto_total, moneda, estado, paquete, num_personas, duracion_horas, cliente_telefono, eventos_pagos(monto)')
+      .select('id, cliente_nombre, fecha_evento, monto_total, moneda, estado, paquete, num_personas, duracion_horas, cliente_telefono, eventos_pagos(monto)').gte('created_at', OPERATION_RESET_AT)
       .gte('fecha_evento', desde)
       .lte('fecha_evento', hasta)
       .order('fecha_evento')
@@ -1014,7 +1015,7 @@ async function ejecutarTool(
     if (!casa) return JSON.stringify({ error: 'No existe negocio Casa' })
 
     const [{ data: txCasa }, { data: socios }] = await Promise.all([
-      admin.from('transacciones').select('tipo, monto, moneda, capturado_por, atribuido_a, monto_mxn_equivalente').eq('negocio_id', casa.id).gte('fecha', desdeISO),
+      admin.from('transacciones').select('tipo, monto, moneda, capturado_por, atribuido_a, monto_mxn_equivalente').gte('fecha', OPERATION_START).eq('negocio_id', casa.id).gte('fecha', desdeISO),
       admin.from('profiles').select('id, nombre, role_id, roles(nombre)').eq('activo', true),
     ])
 
@@ -1071,7 +1072,7 @@ async function ejecutarTool(
     if (!casa) return JSON.stringify({ error: 'No existe negocio Casa' })
 
     const [{ data: txCasa }, { data: socios }] = await Promise.all([
-      admin.from('transacciones').select('tipo, monto, moneda, capturado_por, atribuido_a, monto_mxn_equivalente').eq('negocio_id', casa.id).gte('fecha', desdeISO),
+      admin.from('transacciones').select('tipo, monto, moneda, capturado_por, atribuido_a, monto_mxn_equivalente').gte('fecha', OPERATION_START).eq('negocio_id', casa.id).gte('fecha', desdeISO),
       admin.from('profiles').select('id, nombre, role_id, roles(nombre)').eq('activo', true),
     ])
 
@@ -1358,7 +1359,7 @@ async function ejecutarTool(
     const { calcularSaldos } = await import('@/lib/saldos')
     const [{ data: cuentas }, { data: txs }, { data: fx }] = await Promise.all([
       admin.from('cuentas').select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas').eq('activo', true),
-      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
+      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha').gte('fecha', OPERATION_START),
       admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
     ])
     const fxRate = fx ? Number(fx.rate_compra) : null
@@ -1384,8 +1385,8 @@ async function ejecutarTool(
 
   if (name === 'consultar_por_cobrar') {
     const [{ data: cobr }, { data: ev }, { data: fx }] = await Promise.all([
-      admin.from('cuentas_por_cobrar').select('cliente_nombre, concepto, monto_total, monto_cobrado, moneda, fecha_vencimiento, estado').neq('estado', 'cobrado').neq('estado', 'cancelado'),
-      admin.from('eventos').select('cliente_nombre, monto_total, moneda, fecha_evento, estado, eventos_pagos(monto)').in('estado', ['reservado', 'confirmado']),
+      admin.from('cuentas_por_cobrar').select('cliente_nombre, concepto, monto_total, monto_cobrado, moneda, fecha_vencimiento, estado').gte('created_at', OPERATION_RESET_AT).neq('estado', 'cobrado').neq('estado', 'cancelado'),
+      admin.from('eventos').select('cliente_nombre, monto_total, moneda, fecha_evento, estado, eventos_pagos(monto)').gte('created_at', OPERATION_RESET_AT).in('estado', ['reservado', 'confirmado']),
       admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
     ])
     const rate = fx ? Number(fx.rate_compra) : 17
@@ -1415,7 +1416,7 @@ async function ejecutarTool(
 
   if (name === 'consultar_por_pagar') {
     const [{ data: pag }, { data: fx }] = await Promise.all([
-      admin.from('cuentas_por_pagar').select('proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').neq('estado', 'pagado').neq('estado', 'cancelado'),
+      admin.from('cuentas_por_pagar').select('proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, estado').gte('created_at', OPERATION_RESET_AT).neq('estado', 'pagado').neq('estado', 'cancelado'),
       admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
     ])
     const rate = fx ? Number(fx.rate_compra) : 17
@@ -1442,11 +1443,11 @@ async function ejecutarTool(
     const { calcularSaldos } = await import('@/lib/saldos')
     const [{ data: cuentas }, { data: txs }, { data: fx }, { data: cobr }, { data: ev }, { data: pag }] = await Promise.all([
       admin.from('cuentas').select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas').eq('activo', true),
-      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
+      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha').gte('fecha', OPERATION_START),
       admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
-      admin.from('cuentas_por_cobrar').select('monto_total, monto_cobrado, moneda, estado').neq('estado', 'cobrado').neq('estado', 'cancelado'),
-      admin.from('eventos').select('monto_total, moneda, estado, eventos_pagos(monto)').in('estado', ['reservado', 'confirmado']),
-      admin.from('cuentas_por_pagar').select('monto_total, monto_pagado, moneda, estado').neq('estado', 'pagado').neq('estado', 'cancelado'),
+      admin.from('cuentas_por_cobrar').select('monto_total, monto_cobrado, moneda, estado').gte('created_at', OPERATION_RESET_AT).neq('estado', 'cobrado').neq('estado', 'cancelado'),
+      admin.from('eventos').select('monto_total, moneda, estado, eventos_pagos(monto)').gte('created_at', OPERATION_RESET_AT).in('estado', ['reservado', 'confirmado']),
+      admin.from('cuentas_por_pagar').select('monto_total, monto_pagado, moneda, estado').gte('created_at', OPERATION_RESET_AT).neq('estado', 'pagado').neq('estado', 'cancelado'),
     ])
     const rate = fx ? Number(fx.rate_compra) : 17
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1612,7 +1613,7 @@ export async function POST(req: Request) {
         system: systemText,
         mensajes: body.messages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tools: TOOLS as any,
+        tools: TOOLS.filter(t => t.type === 'function' && !['crear_evento','consultar_eventos','consultar_casa_balance','consultar_avances','crear_shopping_item'].includes(t.function.name)) as any,
         ejecutarTool: (name, input) => ejecutarTool(admin, name, input),
         maxIters: MAX_ITERS,
         maxTokens: 1024,
@@ -1630,7 +1631,7 @@ export async function POST(req: Request) {
         const completion = await openai.chat.completions.create({
           model: OPENAI_MODEL,
           messages: oaiMessages,
-          tools: TOOLS,
+          tools: TOOLS.filter(t => t.type === 'function' && !['crear_evento','consultar_eventos','consultar_casa_balance','consultar_avances','crear_shopping_item'].includes(t.function.name)),
           tool_choice: 'auto',
           temperature: 0.4,
           max_tokens: 1024,

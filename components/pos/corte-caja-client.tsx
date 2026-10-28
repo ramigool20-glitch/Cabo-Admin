@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Loader2, TrendingUp, TrendingDown, AlertCircle, CheckCircle2, ShoppingBag } from 'lucide-react'
 import { cn, formatMoney } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { crearCorteCaja } from '@/app/(app)/pos/corte/actions'
 
 type Esperado = {
+  efectivoUsd: number
   efectivo: number
   mp: number
   tarjeta: number
@@ -17,6 +18,7 @@ type Esperado = {
 export function CorteCajaClient({
   negocioId,
   fecha,
+  rate,
   esperado,
   ventasCount,
   unidades,
@@ -24,11 +26,15 @@ export function CorteCajaClient({
 }: {
   negocioId: string
   fecha: string
+  rate: number
   esperado: Esperado
   ventasCount: number
   unidades: number
   ganancia: number
 }) {
+  const requestKey = useRef<string | null>(null)
+  const [contadoUsd, setContadoUsd] = useState(esperado.efectivoUsd.toFixed(2))
+  const [contadoTransfer, setContadoTransfer] = useState(esperado.transfer.toFixed(2))
   const [contadoEfectivo, setContadoEfectivo] = useState(esperado.efectivo.toFixed(2))
   const [contadoMp, setContadoMp] = useState(esperado.mp.toFixed(2))
   const [contadoTarjeta, setContadoTarjeta] = useState(esperado.tarjeta.toFixed(2))
@@ -38,7 +44,7 @@ export function CorteCajaClient({
   const contadoEfectivoNum = Number(contadoEfectivo) || 0
   const contadoMpNum = Number(contadoMp) || 0
   const contadoTarjetaNum = Number(contadoTarjeta) || 0
-  const totalContado = contadoEfectivoNum + contadoMpNum + contadoTarjetaNum
+  const totalContado = contadoEfectivoNum + (Number(contadoUsd) || 0) * rate + contadoMpNum + contadoTarjetaNum + (Number(contadoTransfer) || 0)
 
   const difEfectivo = esperado.efectivo - contadoEfectivoNum
   const difTotal = esperado.total - totalContado
@@ -46,7 +52,11 @@ export function CorteCajaClient({
   const guardar = async () => {
     setGuardando(true)
     try {
+      requestKey.current ??= crypto.randomUUID()
       const r = await crearCorteCaja({
+        clave_idempotencia: requestKey.current,
+        contado_efectivo_usd: Number(contadoUsd) || 0,
+        contado_transfer_mxn: Number(contadoTransfer) || 0,
         negocio_id: negocioId,
         fecha,
         esperado_efectivo_mxn: esperado.efectivo,
@@ -131,13 +141,14 @@ export function CorteCajaClient({
           onChange={setContadoTarjeta}
           diferencia={esperado.tarjeta - contadoTarjetaNum}
         />
+        <MetodoRow label="💵 Efectivo USD (dólares)" moneda="USD" esperado={esperado.efectivoUsd} contado={contadoUsd} onChange={setContadoUsd} diferencia={esperado.efectivoUsd - (Number(contadoUsd) || 0)} />
         {esperado.transfer > 0 && (
           <MetodoRow
             label="🏦 Transferencia"
             esperado={esperado.transfer}
-            contado={esperado.transfer.toFixed(2)}
-            onChange={() => {}}
-            diferencia={0}
+            contado={contadoTransfer}
+            onChange={setContadoTransfer}
+            diferencia={esperado.transfer - (Number(contadoTransfer) || 0)}
           />
         )}
       </div>
@@ -214,13 +225,14 @@ export function CorteCajaClient({
 }
 
 function MetodoRow({
-  label, esperado, contado, onChange, diferencia, editable = true,
+  label, esperado, contado, onChange, diferencia, editable = true, moneda = 'MXN',
 }: {
   label: string
   esperado: number
   contado: string
   onChange: (v: string) => void
   diferencia: number
+  moneda?: 'MXN' | 'USD'
   editable?: boolean
 }) {
   const cuadra = Math.abs(diferencia) < 0.5
@@ -228,7 +240,7 @@ function MetodoRow({
     <div className="p-3 space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-sm font-bold text-zinc-200">{label}</span>
-        <span className="text-xs text-zinc-500">Esperado: <span className="text-zinc-300 font-bold tabular-nums">{formatMoney(esperado, 'MXN')}</span></span>
+        <span className="text-xs text-zinc-500">Esperado: <span className="text-zinc-300 font-bold tabular-nums">{formatMoney(esperado, moneda)}</span></span>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
@@ -254,7 +266,7 @@ function MetodoRow({
               : diferencia > 0 ? 'bg-rose-500/10 text-rose-300'
               : 'bg-amber-500/10 text-amber-300'
           )}>
-            {cuadra ? '✓ cuadra' : (diferencia > 0 ? '-' : '+') + formatMoney(Math.abs(diferencia), 'MXN')}
+            {cuadra ? '✓ cuadra' : (diferencia > 0 ? '-' : '+') + formatMoney(Math.abs(diferencia), moneda)}
           </div>
         </div>
       </div>

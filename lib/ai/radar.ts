@@ -1,3 +1,4 @@
+import { OPERATION_START, OPERATION_RESET_AT } from '@/lib/operacion'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hoyEnCabos } from '@/lib/fechas'
 
@@ -41,8 +42,8 @@ export async function ejecutarRadar(): Promise<{ insights: RadarInsight[]; error
     const hastaPrev = finMesPrev.toISOString().slice(0, 10)
 
     const [{ data: txActual }, { data: txPrev }, { data: negocios }] = await Promise.all([
-      admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', inicioMesActual).lte('fecha', hoy),
-      admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', desdePrev).lte('fecha', hastaPrev),
+      admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', OPERATION_START).gte('fecha', inicioMesActual).lte('fecha', hoy),
+      admin.from('transacciones').select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', OPERATION_START).gte('fecha', desdePrev).lte('fecha', hastaPrev),
       admin.from('negocios').select('id, nombre, tipo').eq('activo', true),
     ])
 
@@ -120,7 +121,7 @@ export async function ejecutarRadar(): Promise<{ insights: RadarInsight[]; error
     const en30 = new Date(new Date(hoy + 'T00:00:00').getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const { data: eventos } = await admin
       .from('eventos')
-      .select('id, cliente_nombre, fecha_evento, monto_total, moneda, eventos_pagos(monto)')
+      .select('id, cliente_nombre, fecha_evento, monto_total, moneda, eventos_pagos(monto)').gte('created_at', OPERATION_RESET_AT)
       .in('estado', ['reservado', 'confirmado'])
       .gte('fecha_evento', hoy)
       .lte('fecha_evento', en30)
@@ -180,7 +181,7 @@ export async function ejecutarRadar(): Promise<{ insights: RadarInsight[]; error
     // ============================================================
     const { data: cppVencidas } = await admin
       .from('cuentas_por_pagar')
-      .select('id, proveedor, monto_total, monto_pagado, fecha_vencimiento')
+      .select('id, proveedor, monto_total, monto_pagado, fecha_vencimiento').gte('created_at', OPERATION_RESET_AT)
       .in('estado', ['pendiente', 'parcial'])
       .lt('fecha_vencimiento', hoy)
     if (cppVencidas && cppVencidas.length > 0) {
@@ -232,7 +233,7 @@ export async function ejecutarRadar(): Promise<{ insights: RadarInsight[]; error
     // ============================================================
     const { data: multas } = await admin
       .from('multas')
-      .select('id, motivo, monto_propuesto, moneda, estado')
+      .select('id, motivo, monto_propuesto, moneda, estado').gte('created_at', OPERATION_RESET_AT)
       .in('estado', ['propuesta', 'justificada', 'reduccion_solicitada', 'pendiente_conversacion'])
     if (multas && multas.length > 0) {
       const totalMultas = multas.reduce((s, m) => s + Number(m.monto_propuesto), 0)
@@ -254,7 +255,7 @@ export async function ejecutarRadar(): Promise<{ insights: RadarInsight[]; error
     // ============================================================
     const { data: tareasVenc } = await admin
       .from('tareas')
-      .select('id, titulo, fecha_limite, prioridad')
+      .select('id, titulo, fecha_limite, prioridad').is('archivada_at', null)
       .in('estado', ['pendiente', 'en_progreso'])
       .lt('fecha_limite', new Date().toISOString())
     if (tareasVenc && tareasVenc.length > 0) {

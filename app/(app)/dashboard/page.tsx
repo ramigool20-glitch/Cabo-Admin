@@ -1,3 +1,4 @@
+import { OPERATION_START, OPERATION_RESET_AT } from '@/lib/operacion'
 import Link from 'next/link'
 import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, Plus, ChevronRight, Sparkles, AlertCircle, DollarSign } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
@@ -8,7 +9,6 @@ import { isRangoId, rangoFechas, type RangoId } from '@/lib/rangos'
 import { totalizar, porDia, porNegocio } from '@/lib/agregaciones'
 import { desglosarCategorias } from '@/lib/categorias-grupos'
 import { calcularSaldos, fechaSaldoMasAntigua, type CuentaConSaldoInicial, type TxParaSaldo } from '@/lib/saldos'
-import { dispararPushesProgramados } from '@/lib/push/scheduler'
 import { RangoSelector } from '@/components/dashboard/rango-selector'
 import { UtilidadChart } from '@/components/dashboard/utilidad-chart'
 import { NegociosBar } from '@/components/dashboard/negocios-bar'
@@ -35,8 +35,6 @@ export default async function DashboardPage(
   const supabase = await createClient()
   const admin = createAdminClient()
 
-  // Disparar pushes programados (best-effort, no bloquea render)
-  dispararPushesProgramados().catch(() => {})
 
   // En 7 días desde hoy
   const en7Dias = new Date(new Date(hoy + 'T00:00:00').getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -69,18 +67,18 @@ export default async function DashboardPage(
   ] = await Promise.all([
     supabase
       .from('transacciones')
-      .select('tipo, monto, moneda, fecha, categoria, concepto, negocio_id, metodo_pago, monto_mxn_equivalente, tipo_cambio_usado')
+      .select('tipo, monto, moneda, fecha, categoria, concepto, negocio_id, metodo_pago, monto_mxn_equivalente, tipo_cambio_usado').gte('fecha', OPERATION_START)
       .gte('fecha', r.desde)
       .lte('fecha', r.hasta),
     supabase.from('negocios').select('id, nombre').eq('activo', true).order('nombre'),
     supabase
       .from('transacciones')
-      .select('id, tipo, monto, moneda, fecha, concepto, monto_mxn_equivalente, negocios(nombre)')
+      .select('id, tipo, monto, moneda, fecha, concepto, monto_mxn_equivalente, negocios(nombre)').gte('fecha', OPERATION_START)
       .order('created_at', { ascending: false })
       .limit(5),
     admin
       .from('tareas')
-      .select('id', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true }).is('archivada_at', null)
       .in('estado', ['pendiente', 'en_progreso', 'vencida']),
     admin
       .from('auditor_pendientes')
@@ -88,29 +86,29 @@ export default async function DashboardPage(
       .eq('estado', 'abierta'),
     admin
       .from('multas')
-      .select('id', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true }).gte('created_at', OPERATION_RESET_AT)
       .in('estado', ['propuesta', 'justificada', 'reduccion_solicitada', 'pendiente_conversacion']),
     supabase
       .from('eventos')
-      .select('id, cliente_nombre, fecha_evento, monto_total, moneda')
+      .select('id, cliente_nombre, fecha_evento, monto_total, moneda').gte('created_at', OPERATION_RESET_AT)
       .gte('fecha_evento', new Date().toISOString().slice(0, 10))
       .in('estado', ['reservado', 'confirmado'])
       .order('fecha_evento', { ascending: true })
       .limit(3),
     supabase
       .from('cuentas_por_pagar')
-      .select('monto_total, monto_pagado, moneda, fecha_vencimiento, estado')
+      .select('monto_total, monto_pagado, moneda, fecha_vencimiento, estado').gte('created_at', OPERATION_RESET_AT)
       .neq('estado', 'cancelado')
       .neq('estado', 'pagado'),
     supabase
       .from('cuentas_por_cobrar')
-      .select('monto_total, monto_cobrado, moneda, fecha_vencimiento, estado')
+      .select('monto_total, monto_cobrado, moneda, fecha_vencimiento, estado').gte('created_at', OPERATION_RESET_AT)
       .neq('estado', 'cancelado')
       .neq('estado', 'cobrado'),
     // Eventos con pendiente (para Por Cobrar)
     supabase
       .from('eventos')
-      .select('id, monto_total, moneda, fecha_evento, estado, eventos_pagos(monto)')
+      .select('id, monto_total, moneda, fecha_evento, estado, eventos_pagos(monto)').gte('created_at', OPERATION_RESET_AT)
       .in('estado', ['reservado', 'confirmado']),
     // Rate de hoy
     admin
@@ -136,7 +134,7 @@ export default async function DashboardPage(
     // Por pagar próximos a vencer en 7 días
     admin
       .from('cuentas_por_pagar')
-      .select('id, proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, negocios(nombre)')
+      .select('id, proveedor, concepto, monto_total, monto_pagado, moneda, fecha_vencimiento, negocios(nombre)').gte('created_at', OPERATION_RESET_AT)
       .in('estado', ['pendiente', 'parcial'])
       .gte('fecha_vencimiento', hoy)
       .lte('fecha_vencimiento', en7Dias)
@@ -145,7 +143,7 @@ export default async function DashboardPage(
     // Transacciones del periodo anterior para comparativo
     supabase
       .from('transacciones')
-      .select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente')
+      .select('tipo, monto, moneda, fecha, categoria, negocio_id, monto_mxn_equivalente').gte('fecha', OPERATION_START)
       .gte('fecha', previoDesde)
       .lte('fecha', previoHasta),
   ])
@@ -153,7 +151,7 @@ export default async function DashboardPage(
   // Cobros MP entrados automático sin categorizar (negocio o categoría faltantes)
   const { data: cobrosPendRows } = await admin
     .from('transacciones')
-    .select('id, monto, moneda, concepto, fecha, cuentas(nombre)')
+    .select('id, monto, moneda, concepto, fecha, cuentas(nombre)').gte('fecha', OPERATION_START)
     .eq('metodo_captura', 'api')
     .or('negocio_id.is.null,categoria.is.null')
     .order('fecha', { ascending: false })
@@ -232,7 +230,7 @@ export default async function DashboardPage(
     // 1. Total ventas del periodo actual
     const { data: ventasActual } = await admin
       .from('transacciones')
-      .select('id, monto, ganancia_estimada_mxn, costo_total_mxn')
+      .select('id, monto, ganancia_estimada_mxn, costo_total_mxn').gte('fecha', OPERATION_START)
       .eq('tiene_items', true)
       .eq('tipo', 'ingreso')
       .gte('fecha', r.desde)
@@ -255,7 +253,7 @@ export default async function DashboardPage(
 
       const { data: ventasAnterior } = await admin
         .from('transacciones')
-        .select('monto, ganancia_estimada_mxn')
+        .select('monto, ganancia_estimada_mxn').gte('fecha', OPERATION_START)
         .eq('tiene_items', true)
         .eq('tipo', 'ingreso')
         .gte('fecha', desdeAnterior)
@@ -395,7 +393,7 @@ export default async function DashboardPage(
     .eq('activo', true)
   const desdeSaldo = fechaSaldoMasAntigua((cuentasSaldo ?? []) as unknown as CuentaConSaldoInicial[])
   const { data: txTodas } = await admin.from('transacciones')
-    .select('tipo, monto, moneda, cuenta_id, fecha')
+    .select('tipo, monto, moneda, cuenta_id, fecha').gte('fecha', OPERATION_START)
     .gte('fecha', desdeSaldo)
     .limit(20000)
   const fxFallbackTemp = fxRateHoy ? Number(fxRateHoy.rate_compra) : (fxHistorial?.[0] ? Number(fxHistorial[0].rate_compra) : null)
@@ -412,7 +410,7 @@ export default async function DashboardPage(
   // Último resumen semanal IA (si existe, generado por cron lunes 8am)
   const { data: ultimoResumen } = await admin
     .from('resumen_semanal')
-    .select('id, semana_inicio, semana_fin, generado_at, resumen_md, datos')
+    .select('id, semana_inicio, semana_fin, generado_at, resumen_md, datos').gte('generado_at', OPERATION_RESET_AT)
     .order('semana_inicio', { ascending: false })
     .limit(1)
     .maybeSingle()

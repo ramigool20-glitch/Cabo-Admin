@@ -36,7 +36,7 @@ export function InventarioCard({ resumen }: { resumen: InventarioResumen }) {
           </span>
           <div className="leading-tight">
             <p className="text-sm font-bold text-zinc-100">Inventario</p>
-            <p className="text-[10px] text-zinc-500">Cvu Pharmacy local</p>
+            <p className="text-[10px] text-zinc-500">Existencias registradas</p>
           </div>
         </div>
 

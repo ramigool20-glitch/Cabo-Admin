@@ -7,7 +7,6 @@ import { stripe } from './client'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hoyEnCabos } from '@/lib/fechas'
 import { aMxnEquivalente } from '@/lib/fx/server'
-import { registrarHistorial } from '@/lib/historial'
 import { enviarPushAProfiles } from '@/lib/push/server'
 import { formatMoney } from '@/lib/utils'
 
@@ -33,47 +32,14 @@ export async function procesarCobroPagado(
 ): Promise<boolean> {
   const admin = createAdminClient()
 
-  // ATÓMICO: solo procesa si logra marcarlo cobrado desde 'pendiente'.
-  // Si dos webhooks llegan en paralelo (retry de Stripe), solo uno gana
-  // y el otro se queda sin hacer nada (evita doble transacción).
-  const { data: claimed } = await admin
-    .from('cobros_stripe')
-    .update({
-      estado: 'cobrado',
-      cobrado_at: new Date().toISOString(),
-      stripe_payment_intent_id: paymentIntentId,
-    })
-    .eq('id', cobro.id)
-    .eq('estado', 'pendiente')
-    .select('id')
-  if (!claimed || claimed.length === 0) return false
-
   const fechaHoy = hoyEnCabos()
   const fx = await aMxnEquivalente(Number(cobro.monto), cobro.moneda, fechaHoy)
-
-  const txInsert = {
-    tipo: 'ingreso' as const,
-    monto: cobro.monto,
-    moneda: cobro.moneda,
-    monto_mxn_equivalente: fx.monto_mxn_equivalente,
-    tipo_cambio_usado: fx.tipo_cambio_usado,
-    fecha: fechaHoy,
-    concepto: cobro.descripcion + (cobro.cliente_nombre ? ` - ${cobro.cliente_nombre}` : ''),
-    negocio_id: cobro.negocio_id || null,
-    categoria: 'stripe',
-    metodo_captura: 'api' as const,
-    metodo_pago: 'stripe' as const,
-    capturado_por: cobro.creado_por,
-    raw_ai_response: { stripe_payment_intent_id: paymentIntentId },
-  }
-  const { data: tx } = await admin.from('transacciones').insert(txInsert).select('id').single()
-
-  if (tx?.id) {
-    await admin.from('cobros_stripe').update({ transaccion_id: tx.id }).eq('id', cobro.id)
-    if (cobro.creado_por) {
-      await registrarHistorial(tx.id, 'creada', cobro.creado_por, null, txInsert)
-    }
-  }
+  const { data, error } = await admin.rpc('contabilizar_stripe_atomico', { p: {
+    id: cobro.id, payment_intent: paymentIntentId, fecha: fechaHoy,
+    equivalente: fx.monto_mxn_equivalente, tasa: fx.tipo_cambio_usado,
+  } })
+  if (error) throw new Error(`No se contabilizó el cobro Stripe: ${error.message}`)
+  if (!data?.creada) return false
 
   if (opts.push) {
     try {
@@ -112,7 +78,7 @@ export async function reconciliarCobrosStripe(): Promise<{ revisados: number; pa
   const { data: pend } = await admin
     .from('cobros_stripe')
     .select('*')
-    .eq('estado', 'pendiente')
+    .in('estado', ['pendiente', 'cobrado']).is('transaccion_id', null)
     .not('stripe_session_id', 'is', null)
 
   let revisados = 0

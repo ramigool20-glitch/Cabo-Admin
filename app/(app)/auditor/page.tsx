@@ -1,3 +1,4 @@
+import { OPERATION_START } from '@/lib/operacion'
 import { Sparkles } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -9,14 +10,6 @@ export default async function AuditorPage() {
   const admin = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
-
-  // Auto-cleanup: pendientes con más de 14 días sin tocar → 'descartada'
-  const hace14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
-  await admin
-    .from('auditor_pendientes')
-    .update({ estado: 'descartada', contestada_at: new Date().toISOString() })
-    .eq('estado', 'abierta')
-    .lt('created_at', hace14d)
 
   const hoy = hoyEnCabos()
   const inicioMes = hoy.slice(0, 7) + '-01'
@@ -42,7 +35,7 @@ export default async function AuditorPage() {
       .order('created_at', { ascending: false })
       .limit(50),
     admin.from('profiles').select('nombre').eq('id', user.id).single(),
-    admin.from('transacciones').select('tipo, monto, moneda, monto_mxn_equivalente').gte('fecha', inicioMes).lte('fecha', hoy),
+    admin.from('transacciones').select('tipo, monto, moneda, monto_mxn_equivalente').gte('fecha', OPERATION_START).gte('fecha', inicioMes).lte('fecha', hoy),
   ])
 
   const observaciones = (obsRes.data ?? []) as unknown as Observacion[]
@@ -65,7 +58,7 @@ export default async function AuditorPage() {
     preguntas: pendientes.length,
   }
 
-  const bienvenida = `Hola ${nombre}. Soy tu Auditor IA. Veo todos tus datos en tiempo real. Pregúntame lo que sea, dame contexto para que aprenda, o dime "analiza mis gastos del mes".`
+  const bienvenida = `Hola ${nombre}. Soy tu Auditor IA. Estoy listo para analizar tu nueva etapa. Pregúntame lo que sea, dame contexto para que aprenda, o dime "analiza mis gastos del mes".`
 
   const faltaTabla = obsRes.error && /does not exist/i.test(obsRes.error.message ?? '')
 

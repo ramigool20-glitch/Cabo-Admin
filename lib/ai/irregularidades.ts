@@ -1,3 +1,4 @@
+import { OPERATION_START, OPERATION_RESET_AT } from '@/lib/operacion'
 /**
  * Detector de irregularidades y errores en la data.
  * El cerebro proactivo: corre a diario, encuentra problemas de calidad
@@ -37,7 +38,7 @@ export async function detectarIrregularidades(): Promise<Irregularidad[]> {
   // ============================================================
   const { data: txRecientes } = await admin
     .from('transacciones')
-    .select('id, tipo, monto, moneda, fecha, concepto, categoria, cuenta_id, negocio_id')
+    .select('id, tipo, monto, moneda, fecha, concepto, categoria, cuenta_id, negocio_id').gte('fecha', OPERATION_START)
     .gte('fecha', hace30)
     .order('fecha', { ascending: false })
 
@@ -123,7 +124,7 @@ export async function detectarIrregularidades(): Promise<Irregularidad[]> {
     const { calcularSaldos } = await import('@/lib/saldos')
     const [{ data: cuentas }, { data: txAll }, { data: fx }] = await Promise.all([
       admin.from('cuentas').select('id, nombre, titular, tipo, moneda, saldo_inicial_mxn, saldo_inicial_usd, saldo_inicial_fecha, saldo_inicial_locked, saldo_inicial_notas').eq('activo', true),
-      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha'),
+      admin.from('transacciones').select('tipo, monto, moneda, cuenta_id, fecha').gte('fecha', OPERATION_START),
       admin.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),
     ])
     const rate = fx ? Number(fx.rate_compra) : null
@@ -167,7 +168,7 @@ export async function detectarIrregularidades(): Promise<Irregularidad[]> {
   const en7 = new Date(new Date(hoy + 'T00:00:00').getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const { data: eventosProx } = await admin
     .from('eventos')
-    .select('id, cliente_nombre, fecha_evento, monto_total, eventos_pagos(monto)')
+    .select('id, cliente_nombre, fecha_evento, monto_total, eventos_pagos(monto)').gte('created_at', OPERATION_RESET_AT)
     .in('estado', ['reservado', 'confirmado'])
     .gte('fecha_evento', hoy)
     .lte('fecha_evento', en7)
@@ -214,7 +215,7 @@ export async function detectarIrregularidades(): Promise<Irregularidad[]> {
   // ============================================================
   const { data: splits } = await admin
     .from('transacciones')
-    .select('id, split_grupo_id, concepto, fecha, monto')
+    .select('id, split_grupo_id, concepto, fecha, monto').gte('fecha', OPERATION_START)
     .not('split_grupo_id', 'is', null)
     .gte('fecha', hace30)
   type SplitRow = { id: string; split_grupo_id: string | null; concepto: string | null; fecha: string; monto: number }
@@ -241,7 +242,7 @@ export async function detectarIrregularidades(): Promise<Irregularidad[]> {
   // ============================================================
   const { data: cppV } = await admin
     .from('cuentas_por_pagar')
-    .select('id, concepto, proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento')
+    .select('id, concepto, proveedor, monto_total, monto_pagado, moneda, fecha_vencimiento').gte('created_at', OPERATION_RESET_AT)
     .neq('estado', 'pagada')
     .lt('fecha_vencimiento', hoy)
   for (const c of cppV ?? []) {
@@ -263,7 +264,7 @@ export async function detectarIrregularidades(): Promise<Irregularidad[]> {
   // ============================================================
   const { data: cpcV } = await admin
     .from('cuentas_por_cobrar')
-    .select('id, concepto, cliente_nombre, monto_total, monto_cobrado, moneda, fecha_vencimiento')
+    .select('id, concepto, cliente_nombre, monto_total, monto_cobrado, moneda, fecha_vencimiento').gte('created_at', OPERATION_RESET_AT)
     .neq('estado', 'cobrada')
     .lt('fecha_vencimiento', hoy)
   for (const c of cpcV ?? []) {

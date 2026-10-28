@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * POS para Cvu Pharmacy.
+ * POS para una farmacia local activa.
  *
  * Funcionalidades:
  *   - Layout 2 columnas desktop / bottom-sheet mobile
@@ -23,6 +23,7 @@ import { BarcodeScanner } from '@/components/inventario/barcode-scanner'
 import { calcularItem, calcularTotalesVenta, type VentaItemInput } from '@/lib/ventas/items'
 import { useRealtimeProductos } from '@/lib/pos/use-realtime-productos'
 import { usePosConnection } from '@/lib/pos/use-pos-connection'
+import { setOfflineOwnerScope } from '@/lib/pos/offline-queue'
 import { crearVentaConItems } from '@/app/(app)/transacciones/venta-actions'
 
 type Negocio = { id: string; nombre: string; tipo: string } | null
@@ -47,9 +48,9 @@ const EMOJI_CAT: Record<string, string> = {
   Choco: '🍫',
 }
 
-const LS_TICKETS = 'pos_tickets_v1'
+
 const LS_TEMA   = 'pos_tema_v1'
-const LS_ACTIVE = 'pos_active_tab_v1'
+
 
 const nuevoTicket = (n: number): Ticket => ({
   id: `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -64,6 +65,7 @@ export function PosClient({
   categorias,
   rate,
   userNombre,
+  storageScope,
   esCajera,
   favoritosIds = [],
 }: {
@@ -72,6 +74,7 @@ export function PosClient({
   productos: Producto[]
   categorias: string[]
   rate: number
+  storageScope: string
   userNombre: string
   esCajera: boolean
   favoritosIds?: string[]
@@ -94,6 +97,13 @@ export function PosClient({
   })
   // Si nunca falla la suscripción, dejamos el indicador encendido.
   useEffect(() => { setRealtimeActivo(true) }, [])
+
+  const LS_TICKETS = `pos:${storageScope}:tickets`
+  const LS_ACTIVE = `pos:${storageScope}:active`
+  useEffect(() => {
+    setOfflineOwnerScope(storageScope)
+    return () => setOfflineOwnerScope(null)
+  }, [storageScope])
 
   // POS-7 Offline: estado de conexión + cola pendiente + auto-sync
   const conn = usePosConnection(crearVentaConItems, (r) => {
@@ -284,14 +294,14 @@ export function PosClient({
 
   const iniciarCobro = () => {
     if (items.length === 0) return toast.error('Falta', 'Agrega productos al ticket')
-    if (!negocio) return toast.error('Sin negocio', 'Crea Cvu Pharmacy local')
+    if (!negocio) return toast.error('Sin negocio local', 'Activa un punto de venta local')
     if (cuentas.length === 0) return toast.error('Sin cuentas', 'Crea cuentas activas en MXN')
     setCobroOpen(true)
   }
 
   // ── VALIDACIONES PREVIAS ───────────────────────────────
   if (!negocio) {
-    return <PrerequisitoError mensaje="Falta el negocio Cvu Pharmacy local" detalle="El POS solo opera en ese negocio." tema={tema} />
+    return <PrerequisitoError mensaje="No hay farmacia local activa" detalle="El POS requiere un punto de venta local activo." tema={tema} />
   }
   if (cuentas.length === 0) {
     return <PrerequisitoError mensaje="No hay cuentas activas en MXN" detalle="Necesitas al menos una para asignar los ingresos." tema={tema} />
@@ -840,11 +850,12 @@ export function PosClient({
           items={items}
           totalMxn={tot.subtotal}
           negocioId={negocio.id}
+          saleKey={tickets[activeTabIdx].id}
           cuentas={cuentas}
           rate={rate}
           onOfflineQueued={() => conn.refrescarCola()}
           onSuccess={() => {
-            setItems([])
+            setTickets(prev => prev.map((ticket, idx) => idx === activeTabIdx ? { ...nuevoTicket(idx + 1), nombre: ticket.nombre } : ticket))
             setCobroOpen(false)
             setMobileTicketOpen(false)
             inputRef.current?.focus()

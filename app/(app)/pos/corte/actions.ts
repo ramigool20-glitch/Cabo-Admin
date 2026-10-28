@@ -7,10 +7,16 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { hoyEnCabos } from '@/lib/fechas'
+import { aMxnEquivalente } from '@/lib/fx/server'
+import { puedeHacerCorte } from '@/app/(app)/checador/actions'
 
 export type ActionState = { ok?: boolean; error?: string; id?: string }
 
 const CorteSchema = z.object({
+  clave_idempotencia: z.string().min(8).max(150),
+  contado_efectivo_usd: z.coerce.number().min(0).default(0),
+  contado_transfer_mxn: z.coerce.number().min(0).optional(),
   negocio_id: z.string().uuid(),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   // Calculados (los manda el cliente para verificación)
@@ -38,47 +44,20 @@ export async function crearCorteCaja(input: z.infer<typeof CorteSchema>): Promis
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
-  const admin = createAdminClient()
-  const { data: prof } = await admin
-    .from('profiles')
-    .select('nombre')
-    .eq('id', user.id)
-    .single()
-
+  const acceso = await puedeHacerCorte()
+  if (!acceso.permitido) return { error: acceso.mensaje ?? 'Corte no disponible' }
   const d = parsed.data
-  const difEfectivo = d.esperado_efectivo_mxn - d.contado_efectivo_mxn
-  const totalContado = d.contado_efectivo_mxn + (d.contado_mp_mxn ?? d.esperado_mp_mxn) + (d.contado_tarjeta_mxn ?? d.esperado_tarjeta_mxn)
-  const difTotal = d.esperado_total_mxn - totalContado
-
-  const { data, error } = await admin
-    .from('cortes_caja')
-    .insert({
-      negocio_id: d.negocio_id,
-      cajera_id: user.id,
-      cajera_nombre: prof?.nombre ?? null,
-      fecha: d.fecha,
-      cierre_at: new Date().toISOString(),
-      esperado_efectivo_mxn: d.esperado_efectivo_mxn,
-      esperado_mp_mxn: d.esperado_mp_mxn,
-      esperado_tarjeta_mxn: d.esperado_tarjeta_mxn,
-      esperado_transfer_mxn: d.esperado_transfer_mxn,
-      esperado_total_mxn: d.esperado_total_mxn,
-      contado_efectivo_mxn: d.contado_efectivo_mxn,
-      contado_mp_mxn: d.contado_mp_mxn ?? d.esperado_mp_mxn,
-      contado_tarjeta_mxn: d.contado_tarjeta_mxn ?? d.esperado_tarjeta_mxn,
-      diferencia_efectivo_mxn: difEfectivo,
-      diferencia_total_mxn: difTotal,
-      ventas_count: d.ventas_count,
-      unidades_vendidas: d.unidades_vendidas,
-      ganancia_estimada_mxn: d.ganancia_estimada_mxn,
-      notas: d.notas ?? null,
-      estado: 'cerrado',
-    })
-    .select('id')
-    .single()
-
-  if (error) return { error: error.message }
+  if (d.fecha !== hoyEnCabos()) return { error: 'El corte debe corresponder al día actual de Los Cabos.' }
+  const fx = await aMxnEquivalente(1, 'USD', d.fecha)
+  const { data, error } = await createAdminClient().rpc('cerrar_caja_atomica', { p: {
+    usuario_id: user.id, negocio_id: d.negocio_id, fecha: d.fecha,
+    clave_idempotencia: d.clave_idempotencia, tasa: fx.tipo_cambio_usado,
+    contado_efectivo_mxn: d.contado_efectivo_mxn, contado_efectivo_usd: d.contado_efectivo_usd,
+    contado_mp_mxn: d.contado_mp_mxn, contado_tarjeta_mxn: d.contado_tarjeta_mxn,
+    contado_transfer_mxn: d.contado_transfer_mxn, notas: d.notas,
+  } })
+  if (error || !data) return { error: error?.message ?? 'No se pudo cerrar la caja' }
   revalidatePath('/pos')
   revalidatePath('/pos/corte')
-  redirect(`/pos/corte/${data.id}`)
+  redirect(`/pos/corte/${data}`)
 }

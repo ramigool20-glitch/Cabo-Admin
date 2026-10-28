@@ -24,7 +24,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { aMxnEquivalente } from '@/lib/fx/server'
 import { calcularItem, calcularTotalesVenta } from '@/lib/ventas/items'
 import { enviarPushAProfiles } from '@/lib/push/server'
-import { logError, logFatal } from '@/lib/logger/server'
+
 
 export type VentaActionState = { ok?: boolean; error?: string; id?: string }
 
@@ -40,6 +40,7 @@ const ItemSchema = z.object({
 })
 
 const VentaSchema = z.object({
+  clave_idempotencia: z.string().min(8).max(150),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   negocio_id: z.string().uuid(),
   cuenta_id: z.string().uuid(),
@@ -94,7 +95,6 @@ export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Pr
   // 2. FX — si cobraste en USD, conviertes el total MXN a USD del día
   const monedaCobro = d.moneda_cobro ?? 'MXN'
   let montoTx = tot.subtotal
-  let montoMxnEquiv = tot.subtotal
   let rateUsado = 1
   if (monedaCobro === 'USD') {
     // Tomamos el rate como (USD recibido) = (MXN total / rate)
@@ -102,98 +102,22 @@ export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Pr
     const fxRef = await aMxnEquivalente(1, 'USD', d.fecha)
     rateUsado = Number(fxRef.tipo_cambio_usado ?? 17)
     montoTx = Number((tot.subtotal / rateUsado).toFixed(2))
-    montoMxnEquiv = tot.subtotal  // el valor real del producto vendido en MXN
   } else {
     const fx = await aMxnEquivalente(tot.subtotal, 'MXN', d.fecha)
     rateUsado = Number(fx.tipo_cambio_usado ?? 1)
-    montoMxnEquiv = fx.monto_mxn_equivalente
   }
 
-  // 3. Insert transacción
-  const conceptoFinal = d.concepto ?? (d.cliente_nombre
-    ? `Venta a ${d.cliente_nombre}`
-    : `Venta de ${itemsCalculados.length} producto${itemsCalculados.length === 1 ? '' : 's'}`)
-
-  const { data: nuevaTx, error: txErr } = await admin
-    .from('transacciones')
-    .insert({
-      tipo: 'ingreso',
-      monto: montoTx,
-      moneda: monedaCobro,
-      monto_mxn_equivalente: montoMxnEquiv,
-      tipo_cambio_usado: rateUsado,
-      fecha: d.fecha,
-      negocio_id: d.negocio_id,
-      cuenta_id: d.cuenta_id,
-      metodo_pago: d.metodo_pago ?? null,
-      categoria: 'Venta de productos',
-      concepto: conceptoFinal,
-      notas: d.notas ?? null,
-      metodo_captura: 'manual',
-      capturado_por: user.id,
-    })
-    .select('id')
-    .single()
-
-  if (txErr || !nuevaTx) {
-    await logFatal('venta-actions/crearVentaConItems', txErr ?? 'No se creó la transacción', {
-      user_id: user.id, monedaCobro, monto: tot.subtotal, items_count: itemsCalculados.length,
-    })
-    return { error: txErr?.message ?? 'No se creó la transacción' }
-  }
-  const txId = nuevaTx.id as string
-
-  // 4. Insert venta_items uno por uno (el trigger recalcula la TX en BD)
-  for (const it of itemsCalculados) {
-    const { error: viErr } = await admin
-      .from('venta_items')
-      .insert({
-        transaccion_id: txId,
-        producto_id: it.producto_id,
-        nombre_snapshot: it.nombre_snapshot,
-        codigo_barras_snapshot: it.codigo_barras_snapshot ?? null,
-        categoria_snapshot: it.categoria_snapshot ?? null,
-        costo_unitario_snapshot_mxn: it.costo_unitario_snapshot_mxn,
-        cantidad: it.cantidad,
-        precio_unitario_mxn: it.precio_unitario_mxn,
-        descuento_pct: it.descuento_pct,
-        descuento_mxn: it.descuento_mxn,
-        subtotal_mxn: it.subtotal_mxn,
-        ganancia_mxn: it.ganancia_mxn,
-      })
-    if (viErr) {
-      // Si falla, dejamos la transacción huérfana en lugar de revertir
-      // (la app es defensive con tiene_items=false hasta que el trigger corra)
-      await logError('venta-actions/insertVentaItem', viErr, {
-        user_id: user.id, txId, producto_id: it.producto_id, cantidad: it.cantidad,
-      })
-      return { error: 'Item: ' + viErr.message, id: txId }
-    }
-
-    // 5. Movimiento de inventario + descuento de stock (best-effort)
-    if (it.producto_id && d.descontar_stock) {
-      const { data: prod } = await admin
-        .from('inventario_productos')
-        .select('stock')
-        .eq('id', it.producto_id)
-        .single()
-      const stockActual = Number(prod?.stock ?? 0)
-      const stockNuevo = Math.max(0, stockActual - it.cantidad)
-
-      await admin.from('inventario_movimientos').insert({
-        producto_id: it.producto_id,
-        tipo: 'venta',
-        cantidad: -Math.abs(it.cantidad),
-        precio_unitario: it.precio_unitario_mxn,
-        motivo: `Venta ${conceptoFinal}`,
-        creado_por: user.id,
-      })
-      await admin
-        .from('inventario_productos')
-        .update({ stock: stockNuevo })
-        .eq('id', it.producto_id)
-    }
-  }
+  const conceptoFinal = d.concepto ?? (d.cliente_nombre ? `Venta a ${d.cliente_nombre}` : `Venta de ${itemsCalculados.length} productos`)
+  const { data: resultado, error: txErr } = await admin.rpc('registrar_venta_atomica', { p: {
+    usuario_id: user.id, clave_idempotencia: d.clave_idempotencia,
+    solicitud: d, fecha: d.fecha, negocio_id: d.negocio_id, cuenta_id: d.cuenta_id,
+    metodo_pago: d.metodo_pago, concepto: conceptoFinal, notas: d.notas,
+    moneda: monedaCobro, tasa: rateUsado, descontar_stock: d.descontar_stock,
+    items: itemsCalculados,
+  } })
+  if (txErr || !resultado?.id) return { error: txErr?.message ?? 'No se pudo registrar la venta completa' }
+  if (resultado.anulada) return { error: 'Este ticket ya fue anulado. Abre uno nuevo para registrar otra venta.' }
+  const txId = resultado.id as string
 
   revalidatePath('/transacciones')
   revalidatePath('/dashboard')
@@ -202,7 +126,7 @@ export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Pr
 
   // 🔔 Notificación push a admin/socio cuando venta viene del POS
   // (no_redirect=true significa que es desde el POS, no formulario manual)
-  if (d.no_redirect) {
+  if (d.no_redirect && !resultado.repetida) {
     try {
       const { data: admins } = await admin
         .from('profiles')
@@ -237,5 +161,6 @@ export async function crearVentaConItems(input: z.infer<typeof VentaSchema>): Pr
 
     return { ok: true, id: txId }
   }
+  if (d.no_redirect) return { ok: true, id: txId }
   redirect(`/transacciones/${txId}`)
 }

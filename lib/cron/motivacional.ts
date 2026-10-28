@@ -11,7 +11,7 @@ type Tema = { id: string; emoji: string; instruccion: string }
 const TEMAS: Tema[] = [
   { id: 'estoico', emoji: '🏛️', instruccion: 'Una frase estoica (estilo Marco Aurelio, Séneca o Epicteto) aplicada a la disciplina de un emprendedor. Profunda pero corta.' },
   { id: 'gym', emoji: '💪', instruccion: 'Un empujón para ir al gym / cuidar el cuerpo y la energía. Cuerpo fuerte, mente fuerte, negocio fuerte.' },
-  { id: 'equipo', emoji: '🤝', instruccion: 'Motivación de equipo para dos socios (Miguel y Sergio) que construyen negocios juntos en Los Cabos. Hermandad, lealtad, visión.' },
+  { id: 'equipo', emoji: '🤝', instruccion: 'Motivación breve para Miguel, propietario que está organizando sus negocios en Los Cabos.' },
   { id: 'buenos_dias', emoji: '☀️', instruccion: 'Un buenos días con energía para arrancar el día atacando las metas.' },
   { id: 'enfoque', emoji: '🎯', instruccion: 'Recordatorio de enfoque: una cosa a la vez, ejecutar, no dispersarse.' },
   { id: 'cierre', emoji: '🌙', instruccion: 'Reflexión de cierre del día: lo que se midió, se mejora. Descansar para volver más fuerte.' },
@@ -20,13 +20,13 @@ const TEMAS: Tema[] = [
 const FALLBACK: Record<string, { title: string; body: string }> = {
   estoico: { title: '🏛️ Estoico', body: '"No es que tengamos poco tiempo, es que perdemos mucho." — Séneca. Ataquen lo importante hoy.' },
   gym: { title: '💪 Al gym, babys', body: 'Cuerpo fuerte, mente fría, negocio imparable. Muévanse aunque sean 30 min.' },
-  equipo: { title: '🤝 Equipo Delta', body: 'Solos llegan rápido, juntos llegan lejos. A construir, Miguel y Sergio.' },
+  equipo: { title: '🤝 Equipo Delta', body: 'Un paso claro cada día. A construir tu nueva etapa, Miguel.' },
   buenos_dias: { title: '☀️ Buenos días', body: 'Cabo despierta y ustedes también. Hoy se gana. 🚀' },
   enfoque: { title: '🎯 Enfoque', body: 'Una cosa a la vez, bien hecha. Ejecuten.' },
   cierre: { title: '🌙 Cierre del día', body: 'Lo que se mide, se mejora. Descansen para volver más fuertes.' },
 }
 
-const SYSTEM = `Eres el coach del equipo Cabo Admin (Miguel y Sergio, socios con negocios en Los Cabos).
+const SYSTEM = `Eres el coach del equipo Cabo Admin (Miguel, propietario único con negocios en Los Cabos).
 Escribe UNA notificación push motivacional, mexicana, directa y con buena vibra.
 - Máximo 130 caracteres en el cuerpo.
 - Devuelve SOLO un JSON: {"title":"<emoji + 2-3 palabras>","body":"<mensaje>"}

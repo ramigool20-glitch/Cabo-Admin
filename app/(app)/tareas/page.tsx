@@ -21,7 +21,7 @@ export default async function TareasPage() {
 
   let tareasQuery = supabase
     .from('tareas')
-    .select('id, titulo, descripcion, fecha_limite, prioridad, estado, asignada_a, multa_monto, moneda_multa, categoria, negocio_id')
+    .select('id, titulo, descripcion, fecha_limite, prioridad, estado, asignada_a, multa_monto, moneda_multa, categoria, negocio_id').is('archivada_at', null)
     .order('fecha_limite', { ascending: true })
     .limit(100)
   if (esEnfermera && user) {

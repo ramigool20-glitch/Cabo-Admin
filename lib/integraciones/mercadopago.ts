@@ -3,6 +3,8 @@
  * Cuando MP notifica un pago, buscamos el detalle con el access_token de esa
  * cuenta y creamos una transacción de ingreso ligada.
  */
+import { formatInTimeZone } from 'date-fns-tz'
+import { TZ } from '@/lib/fechas'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { aMxnEquivalente } from '@/lib/fx/server'
 import { sugerirCategorizacion } from '@/lib/ai/sugerir-categorizacion'
@@ -69,10 +71,10 @@ export async function procesarPagoMP(
   // ¿Ya procesado?
   const { data: yaProc } = await admin
     .from('mp_pagos_procesados')
-    .select('id')
+    .select('id, transaccion_id, estado')
     .eq('mp_payment_id', paymentId)
     .maybeSingle()
-  if (yaProc) return { ok: true, creada: false }
+  if (yaProc?.transaccion_id) return { ok: true, creada: false }
 
   // Config de la integración
   const { data: integ } = await admin
@@ -95,20 +97,10 @@ export async function procesarPagoMP(
   }
 
   // Solo procesamos pagos aprobados
-  if (pago.status !== 'approved') {
-    // Registramos que lo vimos pero no creamos tx
-    await admin.from('mp_pagos_procesados').insert({
-      mp_payment_id: paymentId,
-      integracion_id: integracionId,
-      monto: pago.transaction_amount,
-      moneda: pago.currency_id,
-      estado: pago.status,
-    })
-    return { ok: true, creada: false }
-  }
+  if (pago.status !== 'approved') return { ok: true, creada: false }
 
   const moneda = (pago.currency_id === 'USD' ? 'USD' : 'MXN') as 'MXN' | 'USD'
-  const fecha = (pago.date_approved || pago.date_created).slice(0, 10)
+  const fecha = formatInTimeZone(new Date(pago.date_approved || pago.date_created), TZ, 'yyyy-MM-dd')
 
   // ── Detección de DIRECCIÓN del movimiento (ingreso vs gasto) ──────
   // Si soy collector → es ingreso (alguien me pagó)
@@ -116,54 +108,12 @@ export async function procesarPagoMP(
   const miUserId = String(integ.mp_user_id ?? '')
   const esIngreso = miUserId && String(pago.collector_id ?? '') === miUserId
   const esGasto = miUserId && !esIngreso && String(pago.payer?.id ?? '') === miUserId
+  if (!esIngreso && !esGasto) return { ok: false, creada: false, error: 'El pago no corresponde al titular verificado de esta integración' }
   const tipoMov: 'ingreso' | 'gasto' = esGasto ? 'gasto' : 'ingreso'
   const fx = await aMxnEquivalente(pago.transaction_amount, moneda, fecha)
 
   const concepto = pago.description
     || `Cobro MP Point${pago.payment_method_id ? ` (${pago.payment_method_id})` : ''}`
-
-  // ── Detección de duplicados: ¿el usuario ya capturó esto manualmente? ──
-  // Busca una tx no-api con mismo monto+cuenta+moneda+tipo dentro de ±2 días.
-  // Si existe, NO duplicamos: la enlazamos en mp_pagos_procesados y salimos.
-  const fechaMenos2 = new Date(new Date(fecha).getTime() - 2 * 86_400_000).toISOString().slice(0, 10)
-  const fechaMas2 = new Date(new Date(fecha).getTime() + 2 * 86_400_000).toISOString().slice(0, 10)
-  const { data: posibleDup } = await admin
-    .from('transacciones')
-    .select('id, fecha, concepto, metodo_captura')
-    .eq('cuenta_id', integ.cuenta_id)
-    .eq('tipo', tipoMov)
-    .eq('monto', pago.transaction_amount)
-    .eq('moneda', moneda)
-    .neq('metodo_captura', 'api')          // sólo tx que NO vinieron de MP
-    .gte('fecha', fechaMenos2)
-    .lte('fecha', fechaMas2)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (posibleDup) {
-    // Enlazar como ya procesado para evitar duplicado y registrar la conexión
-    await admin.from('mp_pagos_procesados').insert({
-      mp_payment_id: paymentId,
-      integracion_id: integracionId,
-      transaccion_id: posibleDup.id,
-      monto: pago.transaction_amount,
-      moneda,
-      estado: pago.status,
-    })
-    // Actualizar la tx manual con datos de MP (para conciliación)
-    await admin
-      .from('transacciones')
-      .update({
-        notas: `${posibleDup.concepto ?? ''}\n[Coincide con MP payment ${paymentId}]`.trim(),
-      })
-      .eq('id', posibleDup.id)
-    await admin
-      .from('integraciones_mp')
-      .update({ ultimo_sync: new Date().toISOString() })
-      .eq('id', integracionId)
-    return { ok: true, creada: false }
-  }
 
   // Categorización híbrida: consulta histórico+IA para sugerir negocio/categoría
   // según el concepto del cobro. 3 niveles de confianza:
@@ -190,85 +140,19 @@ export async function procesarPagoMP(
     ? `Gasto MP: ${concepto}`
     : concepto
 
-  // Crear la transacción
-  const { data: tx, error: txErr } = await admin
-    .from('transacciones')
-    .insert({
-      tipo: tipoMov,
-      monto: pago.transaction_amount,
-      moneda,
-      monto_mxn_equivalente: fx.monto_mxn_equivalente,
-      tipo_cambio_usado: fx.tipo_cambio_usado,
-      fecha,
-      negocio_id,
-      cuenta_id: integ.cuenta_id,
-      categoria,
-      concepto: conceptoFinal,
-      metodo_pago: 'mp_terminal',
-      metodo_captura: 'api',
-      notas: `Importado automático de Mercado Pago (payment ${paymentId}, op=${pago.operation_type ?? 'unknown'})`,
-    })
-    .select('id')
-    .single()
-
-  if (txErr) return { ok: false, creada: false, error: txErr.message }
-
-  // ── Comisión MP automática (solo para INGRESOS) ──────────────────
-  // MP devuelve fee_details[] con la comisión exacta. Creamos una tx
-  // de gasto por la misma cuenta con categoría 'comisiones'. El monto
-  // viene del payload, no es 4.06% hardcoded.
-  const totalFees = (pago.fee_details ?? []).reduce((sum, f) => sum + Number(f.amount || 0), 0)
+  const totalFees = tipoMov === 'ingreso' ? (pago.fee_details ?? []).reduce((sum, f) => sum + Number(f.amount || 0), 0) : 0
   const netoRecibido = pago.transaction_details?.net_received_amount ?? (pago.transaction_amount - totalFees)
-  let txComisionId: string | null = null
-  if (tipoMov === 'ingreso' && totalFees > 0 && tx?.id) {
-    const fxComision = await aMxnEquivalente(totalFees, moneda, fecha)
-    const { data: txCom } = await admin
-      .from('transacciones')
-      .insert({
-        tipo: 'gasto',
-        monto: Number(totalFees.toFixed(2)),
-        moneda,
-        monto_mxn_equivalente: fxComision.monto_mxn_equivalente,
-        tipo_cambio_usado: fxComision.tipo_cambio_usado,
-        fecha,
-        negocio_id, // mismo negocio que el cobro
-        cuenta_id: integ.cuenta_id, // misma cuenta
-        categoria: 'comisiones',
-        concepto: `Comisión MP — cobro #${String(paymentId).slice(-6)}`,
-        metodo_pago: 'mp_terminal',
-        metodo_captura: 'api',
-        notas: `Comisión Mercado Pago del cobro de ${moneda} ${pago.transaction_amount} (neto recibido: ${moneda} ${netoRecibido.toFixed(2)}). Tx asociada: ${tx.id}`,
-      })
-      .select('id')
-      .single()
-    txComisionId = txCom?.id ?? null
-
-    // Agregar a la tx principal una nota cruzada
-    if (txComisionId) {
-      await admin
-        .from('transacciones')
-        .update({
-          notas: `Importado automático de Mercado Pago (payment ${paymentId}). Bruto ${moneda} ${pago.transaction_amount}, comisión ${moneda} ${totalFees.toFixed(2)}, neto ${moneda} ${netoRecibido.toFixed(2)}. Comisión registrada como tx: ${txComisionId}`,
-        })
-        .eq('id', tx.id)
-    }
-  }
-
-  // Registrar como procesado
-  await admin.from('mp_pagos_procesados').insert({
-    mp_payment_id: paymentId,
-    integracion_id: integracionId,
-    transaccion_id: tx?.id ?? null,
-    monto: pago.transaction_amount,
-    moneda,
-    estado: pago.status,
-  })
-
-  // Actualizar contador + last sync
-  await admin
-    .from('integraciones_mp')
-    .update({ ultimo_sync: new Date().toISOString(), cobros_count: (integ.cobros_count ?? 0) + 1 })
-    .eq('id', integracionId)
+  const feeFx = totalFees > 0 ? await aMxnEquivalente(totalFees, moneda, fecha) : null
+  const { data: result, error: txErr } = await admin.rpc('contabilizar_mp_atomico', { p: {
+    payment_id: paymentId, integracion_id: integracionId, estado: pago.status,
+    comision: totalFees, comision_mxn: feeFx?.monto_mxn_equivalente ?? 0,
+    tx: { tipo: tipoMov, monto: pago.transaction_amount, moneda, fecha, negocio_id, categoria,
+      monto_mxn_equivalente: fx.monto_mxn_equivalente, tipo_cambio_usado: fx.tipo_cambio_usado,
+      concepto: conceptoFinal },
+  } })
+  if (txErr) return { ok: false, creada: false, error: txErr.message }
+  if (!result?.creada) return { ok: true, creada: false }
+  const tx = { id: result.id as string }
 
   // Sistema híbrido: pregunta / push según confianza. Best-effort, no rompe el flujo.
   // Loggea errores en webhook_log con fuente 'pregunta_push_mp' para diagnóstico.

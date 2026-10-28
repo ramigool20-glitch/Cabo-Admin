@@ -1,3 +1,4 @@
+import { OPERATION_RESET_AT } from '@/lib/operacion'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron/auth'
@@ -16,7 +17,7 @@ export async function GET(req: Request) {
   // 1) Encontrar tareas con fecha_limite pasada que sigan pendientes/en_progreso
   const { data: tareasVencidas, error } = await admin
     .from('tareas')
-    .select('id, titulo, asignada_a, multa_monto, moneda_multa, fecha_limite')
+    .select('id, titulo, asignada_a, multa_monto, moneda_multa, fecha_limite').is('archivada_at', null)
     .lt('fecha_limite', ahora)
     .in('estado', ['pendiente', 'en_progreso'])
 
@@ -37,7 +38,7 @@ export async function GET(req: Request) {
         // Dedup: ya existe multa para esta tarea y responsable?
         const { data: existente } = await admin
           .from('multas')
-          .select('id')
+          .select('id').gte('created_at', OPERATION_RESET_AT)
           .eq('tarea_id', t.id)
           .eq('responsable_id', responsableId)
           .maybeSingle()

@@ -1,3 +1,4 @@
+import { OPERATION_RESET_AT } from '@/lib/operacion'
 import Link from 'next/link'
 import { TrendingUp, AlertCircle, Clock, ChevronRight, PartyPopper, Plus, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
@@ -21,14 +22,14 @@ export default async function PorCobrarPage() {
     // Fetch FX rate for conversions
     supabase
       .from('cuentas_por_cobrar')
-      .select('id, cliente_nombre, concepto, monto_total, monto_cobrado, moneda, fecha_vencimiento, estado, negocios(nombre)')
+      .select('id, cliente_nombre, concepto, monto_total, monto_cobrado, moneda, fecha_vencimiento, estado, negocios(nombre)').gte('created_at', OPERATION_RESET_AT)
       .neq('estado', 'cancelado')
       .order('fecha_vencimiento', { ascending: true })
       .limit(200),
     // Eventos con potencial pago pendiente
     supabase
       .from('eventos')
-      .select('id, cliente_nombre, fecha_evento, monto_total, moneda, estado, paquete, num_personas, eventos_pagos(monto)')
+      .select('id, cliente_nombre, fecha_evento, monto_total, moneda, estado, paquete, num_personas, eventos_pagos(monto)').gte('created_at', OPERATION_RESET_AT)
       .in('estado', ['reservado', 'confirmado'])
       .order('fecha_evento', { ascending: true })
       .limit(100),

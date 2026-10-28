@@ -1,3 +1,4 @@
+import { OPERATION_RESET_AT } from '@/lib/operacion'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ChevronLeft, Trash2, Building, Phone, Mail, FileText, Pencil } from 'lucide-react'
@@ -23,7 +24,7 @@ export default async function DetalleCuentaPorCobrarPage(
   const supabase = await createClient()
 
   const [{ data: cuenta }, { data: cobros }, { data: cuentas }, { data: fxLatest }] = await Promise.all([
-    supabase.from('cuentas_por_cobrar').select('*, negocios(nombre)').eq('id', id).single(),
+    supabase.from('cuentas_por_cobrar').select('*, negocios(nombre)').gte('created_at', OPERATION_RESET_AT).eq('id', id).single(),
     supabase.from('cuentas_por_cobrar_cobros').select('*, cuentas(nombre)').eq('cuenta_id', id).order('fecha_cobro', { ascending: false }),
     supabase.from('cuentas').select('id, nombre, moneda').eq('activo', true).order('nombre'),
     supabase.from('fx_rates').select('rate_compra').order('fecha', { ascending: false }).limit(1).maybeSingle(),

@@ -17,7 +17,7 @@ import { anthropic, CLAUDE_MODEL } from '@/lib/ai/anthropic'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-const SYSTEM = `Eres el cerebro financiero de Cabo Admin (Miguel y Sergio, negocios en Los Cabos).
+const SYSTEM = `Eres el cerebro financiero de Cabo Admin (Miguel, propietario único, negocios en Los Cabos).
 Te paso insights e irregularidades de su data. Redacta UNA observación push:
 - Máximo 140 caracteres
 - Mexicano directo, útil, accionable

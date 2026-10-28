@@ -1,3 +1,4 @@
+import { OPERATION_START, OPERATION_RESET_AT } from '@/lib/operacion'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron/auth'
@@ -117,7 +118,7 @@ export async function GET(req: Request) {
   // ============================================================
   const { data: empleados } = await admin
     .from('empleados')
-    .select('id, nombre, empleado_compensacion(id, activo)')
+    .select('id, nombre, empleado_compensacion(id, activo)').gte('created_at', OPERATION_RESET_AT)
     .eq('activo', true)
 
   for (const e of empleados ?? []) {
@@ -137,7 +138,7 @@ export async function GET(req: Request) {
   // ============================================================
   const { data: txSinCat } = await admin
     .from('transacciones')
-    .select('id, concepto, monto, moneda, fecha')
+    .select('id, concepto, monto, moneda, fecha').gte('fecha', OPERATION_START)
     .gte('fecha', hace7dISO)
     .or('categoria.is.null,categoria.eq.')
     .limit(20)
@@ -163,7 +164,7 @@ export async function GET(req: Request) {
   for (const n of todosNegocios ?? []) {
     const { count } = await admin
       .from('transacciones')
-      .select('id', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true }).gte('fecha', OPERATION_START)
       .eq('negocio_id', n.id)
       .gte('fecha', hace7dISO)
     if ((count ?? 0) === 0) {

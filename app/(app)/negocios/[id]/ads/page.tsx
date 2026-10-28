@@ -1,3 +1,4 @@
+import { OPERATION_START } from '@/lib/operacion'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ChevronLeft, Megaphone, TrendingDown } from 'lucide-react'
@@ -76,7 +77,7 @@ export default async function AdsPage(props: { params: Promise<{ id: string }> }
   // 1) Trae todas las transacciones del negocio (cualquier categoría)
   const { data: txs } = await supabase
     .from('transacciones')
-    .select('id, tipo, monto, moneda, fecha, categoria, concepto, metodo_captura, notas, monto_mxn_equivalente, tipo_cambio_usado, created_at')
+    .select('id, tipo, monto, moneda, fecha, categoria, concepto, metodo_captura, notas, monto_mxn_equivalente, tipo_cambio_usado, created_at').gte('fecha', OPERATION_START)
     .eq('negocio_id', id)
     .eq('tipo', 'gasto')
     .order('fecha', { ascending: false })

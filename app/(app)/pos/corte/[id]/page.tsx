@@ -90,7 +90,9 @@ export default async function CorteDetallePage(
 
       {/* Desglose por método */}
       <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] divide-y divide-zinc-800">
-        <MetodoSummary label="💵 Efectivo" esperado={Number(corte.esperado_efectivo_mxn ?? 0)} contado={Number(corte.contado_efectivo_mxn ?? 0)} />
+        <MetodoSummary label="💵 Efectivo MXN" esperado={Number(corte.esperado_efectivo_mxn ?? 0)} contado={Number(corte.contado_efectivo_mxn ?? 0)} />
+        {Number(corte.esperado_efectivo_usd ?? 0) > 0 && <MetodoSummary label="💵 Efectivo USD" moneda="USD" esperado={Number(corte.esperado_efectivo_usd ?? 0)} contado={Number(corte.contado_efectivo_usd ?? 0)} />}
+        <MetodoSummary label="🏦 Transferencias" esperado={Number(corte.esperado_transfer_mxn ?? 0)} contado={Number(corte.contado_transfer_mxn ?? corte.esperado_transfer_mxn ?? 0)} />
         <MetodoSummary label="📱 Mercado Pago" esperado={Number(corte.esperado_mp_mxn ?? 0)} contado={Number(corte.contado_mp_mxn ?? 0)} />
         <MetodoSummary label="💳 Tarjeta" esperado={Number(corte.esperado_tarjeta_mxn ?? 0)} contado={Number(corte.contado_tarjeta_mxn ?? 0)} />
       </div>
@@ -114,7 +116,7 @@ export default async function CorteDetallePage(
   )
 }
 
-function MetodoSummary({ label, esperado, contado }: { label: string; esperado: number; contado: number }) {
+function MetodoSummary({ label, esperado, contado, moneda = 'MXN' }: { label: string; esperado: number; contado: number; moneda?: 'MXN' | 'USD' }) {
   const dif = esperado - contado
   const cuadra = Math.abs(dif) < 0.5
   return (
@@ -122,14 +124,14 @@ function MetodoSummary({ label, esperado, contado }: { label: string; esperado: 
       <div>
         <p className="text-sm font-bold text-zinc-200">{label}</p>
         <p className="text-[10px] text-zinc-500">
-          esperado <span className="tabular-nums">{formatMoney(esperado, 'MXN')}</span> · contado <span className="tabular-nums text-zinc-300">{formatMoney(contado, 'MXN')}</span>
+          esperado <span className="tabular-nums">{formatMoney(esperado, moneda)}</span> · contado <span className="tabular-nums text-zinc-300">{formatMoney(contado, moneda)}</span>
         </p>
       </div>
       <span className={cn(
         'text-sm font-bold tabular-nums',
         cuadra ? 'text-emerald-300' : dif > 0 ? 'text-rose-300' : 'text-amber-300'
       )}>
-        {cuadra ? '✓' : (dif > 0 ? '-' : '+') + formatMoney(Math.abs(dif), 'MXN')}
+        {cuadra ? '✓' : (dif > 0 ? '-' : '+') + formatMoney(Math.abs(dif), moneda)}
       </span>
     </div>
   )

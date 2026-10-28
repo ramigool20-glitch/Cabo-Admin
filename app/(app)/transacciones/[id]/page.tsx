@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { AnularVenta } from '@/components/ventas/anular-venta'
 import { ChevronLeft, History, Plus, Edit3, Trash2 as TrashIcon } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -17,7 +18,7 @@ export default async function EditarTransaccionPage(
   const admin = createAdminClient()
 
   // Defensive: si atribuido_a no existe, reintenta sin
-  const baseCols = 'id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado, foto_url'
+  const baseCols = 'clave_idempotencia, anulada_at, id, tipo, monto, moneda, fecha, negocio_id, cuenta_id, metodo_pago, categoria, concepto, notas, monto_mxn_equivalente, tipo_cambio_usado, foto_url'
   let tRes = await supabase.from('transacciones')
     .select(`${baseCols}, atribuido_a, ganancia_estimada_mxn, costo_total_mxn, tiene_items`)
     .eq('id', id)
@@ -56,7 +57,7 @@ export default async function EditarTransaccionPage(
     })
     .map((p) => ({ id: p.id, nombre: p.nombre }))
 
-  const editable = t.tipo === 'ingreso' || t.tipo === 'gasto'
+  const editable = !t.tiene_items && (t.tipo === 'ingreso' || t.tipo === 'gasto')
 
   // Si la transacción tiene foto guardada, generar signed URL para mostrarla en el form
   let fotoExistenteUrl: string | null = null
@@ -169,6 +170,8 @@ export default async function EditarTransaccionPage(
           Este tipo de transacción ({t.tipo}) se gestiona desde su módulo correspondiente, no desde aquí.
         </div>
       )}
+
+      {t.tiene_items && t.clave_idempotencia && <AnularVenta id={id} anulada={Boolean(t.anulada_at)} />}
 
       {/* Historial de cambios */}
       {historial.length > 0 && (

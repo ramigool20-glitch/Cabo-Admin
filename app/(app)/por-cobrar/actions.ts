@@ -1,6 +1,7 @@
 'use server'
 
 
+import { OPERATION_RESET_AT } from '@/lib/operacion'
 import { requireOwner } from '@/lib/auth/require-owner'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
@@ -83,7 +84,7 @@ export async function registrarCobro(cuentaId: string, _prev: ActionState, formD
 
   if (!monto || monto <= 0) return { error: 'Monto inválido' }
 
-  const { data: cuenta } = await supabase.from('cuentas_por_cobrar').select('*').eq('id', cuentaId).single()
+  const { data: cuenta } = await supabase.from('cuentas_por_cobrar').select('*').gte('created_at', OPERATION_RESET_AT).eq('id', cuentaId).single()
   if (!cuenta) return { error: 'No encontré la cuenta' }
 
   const restante = Number(cuenta.monto_total) - Number(cuenta.monto_cobrado)

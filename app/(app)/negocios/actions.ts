@@ -144,20 +144,6 @@ const AdSchema = z.object({
   foto_url: z.string().optional().nullable(),
 })
 
-const PLATAFORMA_LABEL: Record<string, string> = {
-  meta: 'Meta Ads (FB/IG)',
-  google: 'Google Ads',
-  tiktok: 'TikTok Ads',
-  otro: 'Otros Ads',
-}
-
-const PLATAFORMA_CATEGORIA: Record<string, string> = {
-  meta: 'ads-meta',
-  google: 'ads-google',
-  tiktok: 'ads-tiktok',
-  otro: 'ads-otros',
-}
-
 export async function crearGastoAd(_prev: VentaState, formData: FormData): Promise<VentaState> {
   await requireOwner()
   const supabase = await createClient()
@@ -175,46 +161,13 @@ export async function crearGastoAd(_prev: VentaState, formData: FormData): Promi
   const fx = await aMxnEquivalente(parsed.data.monto, parsed.data.moneda, parsed.data.fecha)
   const admin = createAdminClient()
 
-  // 1) Insertar el gasto_ads (especializado para métricas/ROAS)
-  const { data: gastoAd, error: errAd } = await admin
-    .from('gastos_ads')
-    .insert({
-      ...parsed.data,
-      monto_mxn: fx.monto_mxn_equivalente,
-      tipo_cambio_usado: fx.tipo_cambio_usado,
-      capturado_por: user.id,
-    })
-    .select('id')
-    .single()
-
-  if (errAd) {
-    if (/monto_mxn|tipo_cambio_usado/.test(errAd.message)) {
-      return { error: 'Falta pegar migración 0016_ventas_ads_mxn.sql en Supabase.' }
-    }
-    return { error: errAd.message }
-  }
-
-  // 2) Crear también la transacción ligada — así el gasto aparece en
-  //    dashboard, totales del negocio, categorías, etc.
-  const plat = parsed.data.plataforma || 'otro'
-  const platLabel = PLATAFORMA_LABEL[plat] ?? PLATAFORMA_LABEL.otro
-  const categoria = PLATAFORMA_CATEGORIA[plat] ?? 'ads-otros'
-
-  await admin.from('transacciones').insert({
-    tipo: 'gasto',
-    fecha: parsed.data.fecha,
-    monto: parsed.data.monto,
-    moneda: parsed.data.moneda,
-    monto_mxn_equivalente: fx.monto_mxn_equivalente,
-    tipo_cambio_usado: fx.tipo_cambio_usado,
-    negocio_id: parsed.data.negocio_id,
-    categoria,
-    concepto: platLabel,
-    metodo_pago: 'otro',
-    metodo_captura: 'api',
-    capturado_por: user.id,
-    notas: `Sincronizado desde gastos_ads (id: ${gastoAd?.id ?? '?'})`,
-  })
+  const clave = String(formData.get('clave_idempotencia') ?? '')
+  if (clave.length < 8 || clave.length > 150) return { error: 'Vuelve a abrir el formulario para identificar este gasto.' }
+  const { error } = await admin.rpc('registrar_publicidad_atomica', { p: {
+    usuario_id: user.id, clave, datos: parsed.data,
+    equivalente: fx.monto_mxn_equivalente, tasa: fx.tipo_cambio_usado,
+  } })
+  if (error) return { error: error.message }
 
   revalidatePath(`/negocios/${parsed.data.negocio_id}`)
   revalidatePath(`/negocios/${parsed.data.negocio_id}/ads`)

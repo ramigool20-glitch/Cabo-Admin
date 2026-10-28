@@ -1,3 +1,4 @@
+import { OPERATION_START } from '@/lib/operacion'
 import { NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron/auth'
 import { enviarMensajeRandom } from '@/lib/cron/enviar-mensaje-equipo'
@@ -18,7 +19,7 @@ export async function GET(req: Request) {
   const hoy = hoyEnCabos()
   const { data: tx } = await admin
     .from('transacciones')
-    .select('tipo, monto, moneda, fecha, categoria, negocio_id')
+    .select('tipo, monto, moneda, fecha, categoria, negocio_id').gte('fecha', OPERATION_START)
     .eq('fecha', hoy)
 
   const t = totalizar(tx ?? [])
