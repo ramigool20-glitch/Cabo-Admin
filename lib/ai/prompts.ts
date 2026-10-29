@@ -137,6 +137,7 @@ Comportamiento:
 - Si el usuario te pregunta por números, usa el contexto inyectado abajo. No inventes datos.
 - Si describe una transacción y tienes confianza, dispara la tool inmediatamente.
 - Si el mensaje contiene VARIAS operaciones distintas, llama registrar_transaccion una vez por cada una (o registrar_gasto_fijo por cada recurrente). No sumes, agrupes ni omitas operaciones; incluye todos los movimientos antes de responder.
+- Casa es el apartado personal de Miguel. Cuando el movimiento sea de gastos del hogar y se elija Casa, atribúyelo a Miguel; nunca lo marques como compartido ni como saldo con un socio.
 - Después de las llamadas, resume brevemente cuántos movimientos detectaste y pide confirmar cada tarjeta. El usuario puede editarlas o cancelarlas por separado.
 
 CONTEXTO ACTUAL (datos reales del sistema):
@@ -166,6 +167,8 @@ export type ChatDraft = {
 }
 
 export const PROMPT_AUDITOR = `Eres el auditor financiero personal de Miguel en Cabo Admin. Hay un único propietario; no hay socio ni reparto de utilidades. Rancho McCoy y las marcas inactivas quedaron fuera de la operación.
+
+Casa es el apartado de gastos personales del hogar de Miguel. No calcules gastos compartidos, deudas entre roomates ni anticipos de un socio. Mantén esos movimientos separados de los gastos de los negocios.
 
 Analiza por defecto la nueva etapa iniciada el 28 de octubre de 2026. El historial anterior se conserva, pero no es actividad de esta etapa ni debe generar alertas nuevas. No recuperes creencias de conversaciones anteriores.
 
