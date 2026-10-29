@@ -114,20 +114,34 @@ export function ChatClient({
       }
 
       const reply: string = data.reply || ''
-      const chatDraft: ChatDraft | null = data.draft
-      const gastoFijoDraft: ChatGastoFijoDraft | null = data.gastoFijoDraft
+      const chatDrafts: ChatDraft[] = Array.isArray(data.drafts)
+        ? data.drafts
+        : data.draft ? [data.draft] : []
+      const gastoFijoDrafts: ChatGastoFijoDraft[] = Array.isArray(data.gastoFijoDrafts)
+        ? data.gastoFijoDrafts
+        : data.gastoFijoDraft ? [data.gastoFijoDraft] : []
 
-      if (gastoFijoDraft) {
+      const cards: Mensaje[] = [
+        ...chatDrafts.map((d) => ({
+          id: newId(), rol: 'assistant' as const, tipo: 'confirmar' as const,
+          draft: draftFromChatDraft(d),
+        })),
+        ...gastoFijoDrafts.map((d) => ({
+          id: newId(), rol: 'assistant' as const, tipo: 'confirmar-gasto-fijo' as const, draft: d,
+        })),
+      ]
+
+      if (cards.length) {
+        // Un mensaje introductorio y una tarjeta independiente por movimiento.
         replaceLast(
           (m) => m.id === pensandoId,
-          { id: pensandoId, rol: 'assistant', tipo: 'confirmar-gasto-fijo', draft: gastoFijoDraft, introTexto: reply }
+          reply ? { id: pensandoId, rol: 'assistant', tipo: 'texto', texto: reply } : cards[0]
         )
-      } else if (chatDraft) {
-        const draft = draftFromChatDraft(chatDraft)
-        replaceLast(
-          (m) => m.id === pensandoId,
-          { id: pensandoId, rol: 'assistant', tipo: 'confirmar', draft, introTexto: reply }
-        )
+        const firstCardIsReplaced = !reply
+        setMensajes((prev) => [
+          ...prev,
+          ...(firstCardIsReplaced ? cards.slice(1) : cards),
+        ])
       } else {
         replaceLast(
           (m) => m.id === pensandoId,
@@ -135,7 +149,7 @@ export function ChatClient({
         )
       }
 
-      setConversation([...newConv, { role: 'assistant', content: reply }])
+      setConversation([...newConv, { role: 'assistant', content: reply || 'Preparé los movimientos para confirmar.' }])
     } catch (e) {
       replaceLast(
         (m) => m.id === pensandoId,

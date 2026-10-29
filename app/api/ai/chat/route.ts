@@ -37,7 +37,7 @@ const TOOL_PARAMS = {
 }
 
 const TOOL_DESC =
-  'Llama esta tool cuando el usuario describa una transacción SUELTA (ingreso o gasto puntual, ej: "pagué 350 de gasolina"). Devuelve un DRAFT a confirmar. NO uses esta tool si el usuario está describiendo un gasto FIJO/RECURRENTE — para eso usa registrar_gasto_fijo.'
+  'Llama una vez POR CADA transacción SUELTA distinta que mencione el usuario, incluso varias en el mismo mensaje (por ejemplo, una venta y dos gastos requieren tres llamadas). Nunca combines montos ni omitas movimientos. Devuelve un DRAFT por llamada; nada se guarda hasta confirmar. NO uses para gastos fijos/recurrentes.'
 
 const GASTO_FIJO_PARAMS = {
   type: 'object' as const,
@@ -61,7 +61,7 @@ const GASTO_FIJO_PARAMS = {
 }
 
 const GASTO_FIJO_TOOL_DESC =
-  'Llama esta tool cuando el usuario describa un GASTO FIJO o RECURRENTE (renta, sueldo, servicio mensual, suscripción). Devuelve un DRAFT a confirmar. NO uses esta tool para transacciones puntuales — para eso usa registrar_transaccion.'
+  'Llama una vez POR CADA gasto FIJO o RECURRENTE distinto que mencione el usuario. Nunca combines gastos. Devuelve un DRAFT por llamada; nada se guarda hasta confirmar. NO uses para transacciones puntuales.'
 
 function buildDraft(input: Record<string, unknown>): ChatDraft {
   return {
@@ -133,8 +133,8 @@ async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
 // Loop OpenAI
 // =============================================================
 async function chatOpenAI(systemText: string, messages: ChatMessage[]) {
-  let draft: ChatDraft | null = null
-  let gastoFijoDraft: ChatGastoFijoDraft | null = null
+  const drafts: ChatDraft[] = []
+  const gastoFijoDrafts: ChatGastoFijoDraft[] = []
   let finalReply = ''
   const MAX_ITERS = 3
 
@@ -183,13 +183,15 @@ async function chatOpenAI(systemText: string, messages: ChatMessage[]) {
       try { input = JSON.parse(tc.function.arguments || '{}') } catch {}
 
       if (tc.function.name === 'registrar_transaccion') {
-        draft = buildDraft(input)
+        const draft = buildDraft(input)
+        drafts.push(draft)
         oaiMessages.push({
           role: 'tool', tool_call_id: tc.id,
           content: `Draft transacción creado: ${draft.tipo} ${draft.monto} ${draft.moneda} (${draft.concepto}). Esperando confirmación.`,
         })
       } else if (tc.function.name === 'registrar_gasto_fijo') {
-        gastoFijoDraft = buildGastoFijoDraft(input)
+        const gastoFijoDraft = buildGastoFijoDraft(input)
+        gastoFijoDrafts.push(gastoFijoDraft)
         oaiMessages.push({
           role: 'tool', tool_call_id: tc.id,
           content: `Draft gasto fijo creado: ${gastoFijoDraft.nombre} ${gastoFijoDraft.monto} ${gastoFijoDraft.moneda} ${gastoFijoDraft.frecuencia}. Esperando confirmación.`,
@@ -203,7 +205,7 @@ async function chatOpenAI(systemText: string, messages: ChatMessage[]) {
     }
   }
 
-  return { reply: finalReply, draft, gastoFijoDraft }
+  return { reply: finalReply, drafts, gastoFijoDrafts }
 }
 
 // =============================================================
@@ -215,8 +217,8 @@ async function chatAnthropic(systemText: string, messages: ChatMessage[]) {
     { name: 'registrar_gasto_fijo',  description: GASTO_FIJO_TOOL_DESC, input_schema: GASTO_FIJO_PARAMS },
   ]
 
-  let draft: ChatDraft | null = null
-  let gastoFijoDraft: ChatGastoFijoDraft | null = null
+  const drafts: ChatDraft[] = []
+  const gastoFijoDrafts: ChatGastoFijoDraft[] = []
   let finalReply = ''
   const MAX_ITERS = 3
   const anMessages: Anthropic.MessageParam[] = messages.map((m) => ({
@@ -243,10 +245,10 @@ async function chatAnthropic(systemText: string, messages: ChatMessage[]) {
     const toolResults: Anthropic.ToolResultBlockParam[] = []
     for (const t of toolUses) {
       if (t.name === 'registrar_transaccion') {
-        draft = buildDraft(t.input as Record<string, unknown>)
+        drafts.push(buildDraft(t.input as Record<string, unknown>))
         toolResults.push({ type: 'tool_result', tool_use_id: t.id, content: 'Draft transacción creado. Esperando confirmación.' })
       } else if (t.name === 'registrar_gasto_fijo') {
-        gastoFijoDraft = buildGastoFijoDraft(t.input as Record<string, unknown>)
+        gastoFijoDrafts.push(buildGastoFijoDraft(t.input as Record<string, unknown>))
         toolResults.push({ type: 'tool_result', tool_use_id: t.id, content: 'Draft gasto fijo creado. Esperando confirmación.' })
       } else {
         toolResults.push({ type: 'tool_result', tool_use_id: t.id, content: 'No implementada.', is_error: true })
@@ -255,7 +257,7 @@ async function chatAnthropic(systemText: string, messages: ChatMessage[]) {
     anMessages.push({ role: 'user', content: toolResults })
   }
 
-  return { reply: finalReply, draft, gastoFijoDraft }
+  return { reply: finalReply, drafts, gastoFijoDrafts }
 }
 
 // =============================================================
@@ -291,11 +293,14 @@ export async function POST(req: Request) {
     return NextResponse.json({
       reply:
         result.reply ||
-        (result.draft || result.gastoFijoDraft
+        (result.drafts.length || result.gastoFijoDrafts.length
           ? '✓ Listo, confirma en la tarjeta de abajo.'
           : '…'),
-      draft: result.draft,
-      gastoFijoDraft: result.gastoFijoDraft,
+      drafts: result.drafts,
+      gastoFijoDrafts: result.gastoFijoDrafts,
+      // Compatibilidad con clientes antiguos.
+      draft: result.drafts.length === 1 ? result.drafts[0] : null,
+      gastoFijoDraft: result.gastoFijoDrafts.length === 1 ? result.gastoFijoDrafts[0] : null,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error desconocido'
