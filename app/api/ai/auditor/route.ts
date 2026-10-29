@@ -215,13 +215,13 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
     },
   },
   // ============================================================
-  // CASA — balance entre roomates
+  // CASA — gastos personales / balance de hogar
   // ============================================================
   {
     type: 'function',
     function: {
       name: 'consultar_casa_balance',
-      description: 'Devuelve el balance de Casa entre roomates (Miguel y Sergio): compartido, personal de cada uno, quién le debe a quién. Úsala para "¿cuánto debo en casa?", "¿cuánto puso Sergio?", "¿quién paga más?"',
+      description: 'Consulta gastos del apartado Casa. En la configuración actual Casa son gastos personales de Miguel; no calcules división ni deuda entre roomates.',
       parameters: {
         type: 'object',
         properties: {
@@ -234,7 +234,7 @@ const TOOLS: OpenAIType.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'consultar_avances',
-      description: 'CRÍTICO: La empresa cubre TODOS los gastos de Casa. Cuando un socio captura un gasto Casa "atribuido a él", eso es un AVANCE que recibió de la empresa y se DEDUCIRÁ de su utilidad al corte (mes/quincena). Esta tool devuelve avances por socio en el período. Úsala para "¿cuánto llevo de avance?", "¿cuánto me van a deducir del corte?", "¿cuánto sacó Sergio personal?"',
+      description: 'Consulta los gastos personales registrados en Casa durante el período. Miguel es el único propietario activo; trata todos los gastos de Casa como personales de Miguel, sin división ni saldo entre socios.',
       parameters: {
         type: 'object',
         properties: {
@@ -653,9 +653,12 @@ async function construirContexto(admin: ReturnType<typeof createAdminClient>) {
         ? evDetalle.slice(0, 8).map((e) => `  · ${e.cliente_nombre} ${e.fecha_evento}${e.paquete ? ` [${e.paquete}]` : ''}${e.num_personas ? ` ${e.num_personas}pax` : ''} — Total ${formatMoney(Number(e.monto_total), e.moneda as 'MXN' | 'USD')}, falta ${formatMoney(e.pendiente, e.moneda as 'MXN' | 'USD')}`).join('\n')
         : '- ninguno agendado',
       ``,
-      `🏠 BALANCE CASA (mes actual):`,
-      `- Compartido: ${formatMoney(casaCompartido, 'MXN')} (cuota /persona ${formatMoney(cuotaCompartida, 'MXN')})`,
-      casaReporte.length > 0
+      sociosFiltered.length === 1
+        ? `🏠 GASTOS PERSONALES DE CASA (mes actual):\n- Total de ${sociosFiltered[0].nombre}: ${formatMoney(casaCompartido + casaPersonal.get(sociosFiltered[0].id)!, 'MXN')}`
+        : `🏠 BALANCE CASA (mes actual):\n- Compartido: ${formatMoney(casaCompartido, 'MXN')} (cuota /persona ${formatMoney(cuotaCompartida, 'MXN')})`,
+      casaReporte.length > 0 && sociosFiltered.length === 1
+        ? casaReporte.map((b) => `  · ${b.nombre}: gasto personal ${formatMoney(b.personal + casaCompartido, 'MXN')}`).join('\n')
+        : casaReporte.length > 0
         ? casaReporte.map((b) => `  · ${b.nombre}: personal ${formatMoney(b.personal, 'MXN')} + ½ compartido = le toca ${formatMoney(b.leToca, 'MXN')}, pagó ${formatMoney(b.pago, 'MXN')} (${b.diff > 0.01 ? `le deben ${formatMoney(b.diff, 'MXN')}` : b.diff < -0.01 ? `debe ${formatMoney(Math.abs(b.diff), 'MXN')}` : 'empatado'})`).join('\n')
         : '- sin actividad en Casa este mes',
       shoppingItems && shoppingItems.length > 0
@@ -1038,6 +1041,16 @@ async function ejecutarTool(
     const cuota = compartido / N
     const totalCasa = compartido + Array.from(personal.values()).reduce((a, b) => a + b, 0)
 
+    if (sFiltered.length === 1) {
+      return JSON.stringify({
+        dias_revisados: dias,
+        tipo: 'gastos_personales',
+        propietario: sFiltered[0].nombre,
+        gastos_personales_mxn: totalCasa,
+        nota: 'Casa es el apartado personal de Miguel. No hay división ni saldos entre socios.',
+      })
+    }
+
     return JSON.stringify({
       dias_revisados: dias,
       total_casa_mxn: totalCasa,
@@ -1093,6 +1106,20 @@ async function ejecutarTool(
       } else {
         compartido += equiv
       }
+    }
+
+    if (sFiltered.length === 1) {
+      const gastosPersonales = (txCasa ?? [])
+        .filter((t) => t.tipo === 'gasto' || t.tipo === 'multa_interna')
+        .reduce((sum, t) => sum + (t.monto_mxn_equivalente != null ? Number(t.monto_mxn_equivalente) : (t.moneda === 'MXN' ? Number(t.monto) : 0)), 0)
+      return JSON.stringify({
+        periodo_dias: dias,
+        desde: desdeISO,
+        tipo: 'gastos_personales',
+        propietario: sFiltered[0].nombre,
+        gastos_personales_mxn: gastosPersonales,
+        nota: 'Los movimientos de Casa se registran como gastos personales de Miguel; no son un saldo o anticipo entre socios.',
+      })
     }
 
     const reporte = sFiltered.map((s) => ({

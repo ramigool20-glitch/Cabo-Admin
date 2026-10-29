@@ -35,12 +35,22 @@ export async function saveAITransaccion(payload: SavePayload) {
 
   const fx = await aMxnEquivalente(payload.monto, payload.moneda, payload.fecha)
 
-  // Resolver atribuido_a desde nombre si vino (para Casa personal)
+  // Casa funciona como categoría personal cuando hay un único propietario activo.
   let atribuidoA = payload.atribuido_a ?? null
-  if (!atribuidoA && payload.atribuido_a_nombre) {
-    const { data: socios } = await supabase.from('profiles').select('id, nombre').eq('activo', true)
+  const [{ data: negocio }, { data: perfiles }] = await Promise.all([
+    supabase.from('negocios').select('tipo').eq('id', payload.negocio_id).maybeSingle(),
+    supabase.from('profiles').select('id, nombre, role_id, roles(nombre)').eq('activo', true),
+  ])
+  const propietarios = (perfiles ?? []).filter((p) => {
+    const role = p.roles as unknown as { nombre: string } | null
+    return role?.nombre === 'admin' || role?.nombre === 'socio'
+  })
+
+  if (negocio?.tipo === 'casa' && propietarios.length === 1) {
+    atribuidoA = propietarios[0].id
+  } else if (!atribuidoA && payload.atribuido_a_nombre) {
     const h = payload.atribuido_a_nombre.toLowerCase().trim()
-    atribuidoA = (socios ?? []).find((s) => s.nombre.toLowerCase().includes(h) || h.includes(s.nombre.toLowerCase()))?.id ?? null
+    atribuidoA = propietarios.find((s) => s.nombre.toLowerCase().includes(h) || h.includes(s.nombre.toLowerCase()))?.id ?? null
   }
 
   // Separar atribuido_a_nombre del insert (no es columna)

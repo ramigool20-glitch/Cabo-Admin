@@ -31,7 +31,7 @@ const TOOL_PARAMS = {
     categoria:      { type: 'string' as const, description: 'Categoría' },
     metodo_pago:    { type: 'string' as const, description: 'mp_terminal, stripe, efectivo_mxn, etc.' },
     fecha:          { type: 'string' as const, description: 'YYYY-MM-DD, default hoy' },
-    atribuido_a_nombre: { type: 'string' as const, description: 'SOLO para gastos de Casa que sean PERSONALES de un socio: "Miguel". Si es compartido o no es Casa, déjalo vacío.' },
+    atribuido_a_nombre: { type: 'string' as const, description: 'Si pertenece a Casa, atribuye el gasto personal a Miguel. No hay gastos compartidos ni saldo entre socios en la configuración actual.' },
   },
   required: ['tipo', 'monto', 'concepto'],
 }

@@ -24,7 +24,7 @@ export default async function CasaPage(
   const sp = await searchParams
   const rangoId: RangoId = isRangoId(sp.rango) ? sp.rango : 'mes_actual'
   const r = rangoFechas(rangoId, sp.desde, sp.hasta)
-  const vista = sp.vista ?? 'todo'
+  const vistaSolicitada = sp.vista ?? 'todo'
 
   const supabase = await createClient()
   const admin = createAdminClient()
@@ -65,6 +65,9 @@ export default async function CasaPage(
     const r = p.roles as unknown as { nombre: string } | null
     return r?.nombre === 'admin' || r?.nombre === 'socio'
   })
+  const soloPropietario = sociosFiltered.length === 1
+  const propietario = sociosFiltered[0]
+  const vista = soloPropietario && vistaSolicitada === 'compartido' ? 'todo' : vistaSolicitada
 
   // === FETCH transacciones ===
   type CasaTx = {
@@ -145,10 +148,8 @@ export default async function CasaPage(
 
   const rows = txs
 
-  // === MODELO NUEVO ===
-  // Compartido = se REPARTE 50/50 (o N partes iguales) entre socios → suma a cada avance
-  // Personal de X = 100% al avance de X
-  // Liquidación = reduce el avance del que paga
+  // Con un solo propietario, todos los gastos de Casa se agrupan como personales.
+  // Si hay más de uno, se conserva el modelo compartido/individual existente.
   function equivMxn(t: CasaTx): number {
     if (t.monto_mxn_equivalente != null) return Number(t.monto_mxn_equivalente)
     if (t.moneda === 'MXN') return Number(t.monto)
@@ -168,7 +169,9 @@ export default async function CasaPage(
       const equiv = equivMxn(t)
       if (t.tipo === 'gasto' || t.tipo === 'multa_interna') {
         totalSalido += equiv
-        if (t.atribuido_a) {
+        if (soloPropietario && propietario) {
+          avancePor.set(propietario.id, (avancePor.get(propietario.id) ?? 0) + equiv)
+        } else if (t.atribuido_a) {
           // Personal: 100% al socio
           avancePor.set(t.atribuido_a, (avancePor.get(t.atribuido_a) ?? 0) + equiv)
         } else if (nSocios > 0) {
@@ -223,13 +226,13 @@ export default async function CasaPage(
     if (rep.deltaPct !== null && Math.abs(rep.deltaPct) >= 40 && rep.avance >= 500) {
       recos.push({
         tipo: rep.deltaPct > 0 ? 'warning' : 'success',
-        texto: `Avances personales de ${rep.nombre}: ${rep.deltaPct > 0 ? '+' : ''}${rep.deltaPct}% vs período anterior (${formatMoney(rep.avance, 'MXN')} vs ${formatMoney(rep.avancePrev, 'MXN')}).`,
+        texto: `${soloPropietario ? `Gastos personales de ${rep.nombre}` : `Avances personales de ${rep.nombre}`}: ${rep.deltaPct > 0 ? '+' : ''}${rep.deltaPct}% vs período anterior (${formatMoney(rep.avance, 'MXN')} vs ${formatMoney(rep.avancePrev, 'MXN')}).`,
       })
     }
   }
 
   // Compartido creció/bajó
-  if (prev.compartido > 1000 && Math.abs(actual.compartido - prev.compartido) / prev.compartido > 0.2) {
+  if (!soloPropietario && prev.compartido > 1000 && Math.abs(actual.compartido - prev.compartido) / prev.compartido > 0.2) {
     const pct = Math.round(((actual.compartido - prev.compartido) / prev.compartido) * 100)
     recos.push({
       tipo: pct > 0 ? 'warning' : 'success',
@@ -261,12 +264,14 @@ export default async function CasaPage(
     })
   }
 
-  // Reco: si un socio acumuló mucho avance personal
+  // Reco: si el propietario acumuló mucho gasto personal o un socio mucho avance.
   for (const rep of reportes) {
     if (rep.avance >= 10000) {
       recos.push({
         tipo: 'warning',
-        texto: `${rep.nombre} acumula ${formatMoney(rep.avance, 'MXN')} en avances personales este período. Asegúrate de tener utilidad suficiente para cubrirlo al corte.`,
+        texto: soloPropietario
+          ? `${rep.nombre} lleva ${formatMoney(rep.avance, 'MXN')} en gastos personales de Casa este período.`
+          : `${rep.nombre} acumula ${formatMoney(rep.avance, 'MXN')} en avances personales este período. Asegúrate de tener utilidad suficiente para cubrirlo al corte.`,
       })
     }
   }
@@ -276,6 +281,7 @@ export default async function CasaPage(
   const rowsFiltered = [...rows]
     .filter((t) => {
       if (vista === 'todo') return true
+      if (soloPropietario && vista === propietario?.id) return true
       if (vista === 'compartido') return !t.atribuido_a
       return t.atribuido_a === vista
     })
@@ -284,6 +290,7 @@ export default async function CasaPage(
   const topCats = porCategoria(
     rows.filter((t) => {
       if (vista === 'todo') return true
+      if (soloPropietario && vista === propietario?.id) return true
       if (vista === 'compartido') return !t.atribuido_a
       return t.atribuido_a === vista
     }).map((t) => ({ ...t, negocio_id: casa.id })),
@@ -302,7 +309,9 @@ export default async function CasaPage(
           <span className="chip chip-cyan text-[10px]">{rows.length} mov</span>
         </div>
         <p className="text-xs sm:text-sm text-zinc-400">
-          La empresa cubre todo. Compartidos son operativos. Personales son adelantos que se deducen al corte.
+          {soloPropietario
+            ? `Los gastos del hogar se registran como personales de ${propietario.nombre}, separados de los gastos de negocio.`
+            : 'Los gastos compartidos y personales se muestran por separado.'}
         </p>
         <RangoSelector actual={rangoId} customDesde={sp.desde} customHasta={sp.hasta} />
       </header>
@@ -310,14 +319,16 @@ export default async function CasaPage(
       {/* HERO: Total salido */}
       <section className="card-glow p-4 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="label-caps text-[9px]">Total casa salido de la empresa · {r.label}</span>
+          <span className="label-caps text-[9px]">{soloPropietario ? 'Gastos personales de Casa' : 'Total casa salido de la empresa'} · {r.label}</span>
           <ArrowDownCircle className="h-3.5 w-3.5 text-rose-400/60" />
         </div>
         <p className="text-3xl sm:text-4xl font-black tabular-nums text-rose-300">
           {formatMoney(actual.totalSalido, 'MXN')}
         </p>
         <p className="text-[10px] text-zinc-500">
-          {formatMoney(actual.compartido, 'MXN')} compartido (50/50) + personales
+          {soloPropietario
+            ? `Todo se atribuye a ${propietario.nombre} como gasto personal.`
+            : `${formatMoney(actual.compartido, 'MXN')} compartido + personales`}
         </p>
       </section>
 
@@ -325,11 +336,11 @@ export default async function CasaPage(
       <section className="space-y-2">
         <h2 className="label-caps inline-flex items-center gap-1.5 text-purple-300">
           <PiggyBank className="h-3 w-3" />
-          Avances por socio (compartido/2 + personal)
+          {soloPropietario ? `Gasto personal · ${propietario.nombre}` : 'Avances por socio (compartido + personal)'}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {reportes.map((b) => {
-            const cuotaCompartida = sociosFiltered.length > 0 ? actual.compartido / sociosFiltered.length : 0
+            const cuotaCompartida = !soloPropietario && sociosFiltered.length > 0 ? actual.compartido / sociosFiltered.length : 0
             const personalSolo = b.avance - cuotaCompartida
             return (
               <div key={b.id} className="card-glow border-purple-500/30 p-3 space-y-1.5">
@@ -368,7 +379,7 @@ export default async function CasaPage(
                   </p>
                 )}
                 <p className="text-[10px] text-purple-300/60">
-                  Se restará de su utilidad al cierre
+                  {soloPropietario ? 'Gasto personal de Casa' : 'Se restará de su utilidad al cierre'}
                 </p>
               </div>
             )
@@ -376,7 +387,7 @@ export default async function CasaPage(
         </div>
 
         {/* Diferencia entre avances */}
-        {necesitaEquilibrar && adelantoMas && adelantoMenos && (
+        {!soloPropietario && necesitaEquilibrar && adelantoMas && adelantoMenos && (
           <div className="card border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
             <div className="flex items-center gap-1.5">
               <Scale className="h-3.5 w-3.5 text-amber-300" />
@@ -400,7 +411,7 @@ export default async function CasaPage(
       </section>
 
       {/* GASTO COMPARTIDO */}
-      <section className="card border-cyan-500/30 bg-cyan-500/5 p-3 space-y-1">
+      {!soloPropietario && <section className="card border-cyan-500/30 bg-cyan-500/5 p-3 space-y-1">
         <div className="flex items-center justify-between">
           <p className="label-caps text-cyan-300 inline-flex items-center gap-1.5">
             ⚖ Gasto compartido (se reparte 50/50)
@@ -415,7 +426,7 @@ export default async function CasaPage(
             Cada socio carga {formatMoney(actual.compartido / sociosFiltered.length, 'MXN')} como avance personal.
           </p>
         )}
-      </section>
+      </section>}
 
       {/* Recomendaciones */}
       {recos.length > 0 && (
@@ -473,8 +484,12 @@ export default async function CasaPage(
       <div className="flex flex-wrap gap-1">
         {[
           { key: 'todo', label: 'Todos' },
-          { key: 'compartido', label: '⚖ Compartido' },
-          ...sociosFiltered.map((s) => ({ key: s.id, label: `👤 ${s.nombre}` })),
+          ...(soloPropietario
+            ? [{ key: propietario.id, label: `👤 Personal ${propietario.nombre}` }]
+            : [
+                { key: 'compartido', label: '⚖ Compartido' },
+                ...sociosFiltered.map((s) => ({ key: s.id, label: `👤 ${s.nombre}` })),
+              ]),
         ].map((opt) => {
           const active = vista === opt.key
           const qs = new URLSearchParams({ rango: rangoId })
@@ -505,7 +520,7 @@ export default async function CasaPage(
       <section className="space-y-2">
         <div className="flex items-center justify-between px-1">
           <h2 className="label-caps">
-            {vista === 'todo' ? 'Últimas por día' :
+            {vista === 'todo' ? 'Últimas por día' : soloPropietario ? `Últimos gastos personales · ${propietario.nombre}` :
              vista === 'compartido' ? 'Últimas compartidas' :
              `Últimas de ${sociosFiltered.find((s) => s.id === vista)?.nombre ?? '—'}`}
           </h2>
@@ -516,6 +531,8 @@ export default async function CasaPage(
             rows={rowsFiltered}
             sociosFiltered={sociosFiltered}
             fxRate={fxRate}
+            soloPropietario={soloPropietario}
+            propietarioNombre={propietario?.nombre ?? 'Miguel'}
           />
         ) : (
           <EmptyState
@@ -550,10 +567,14 @@ function DiaGroups({
   rows,
   sociosFiltered,
   fxRate,
+  soloPropietario,
+  propietarioNombre,
 }: {
   rows: DiaGroupTx[]
   sociosFiltered: Array<{ id: string; nombre: string }>
   fxRate: number | null
+  soloPropietario: boolean
+  propietarioNombre: string
 }) {
   // Agrupar por fecha (YYYY-MM-DD)
   const byDate = new Map<string, DiaGroupTx[]>()
@@ -591,7 +612,9 @@ function DiaGroups({
             <ul className="card divide-y divide-[var(--border-subtle)] overflow-hidden">
               {items.map((u) => {
                 const isGasto = u.tipo === 'gasto' || u.tipo === 'multa_interna'
-                const atribuidoSocio = u.atribuido_a ? sociosFiltered.find((s) => s.id === u.atribuido_a) : null
+                const atribuidoSocio = soloPropietario
+                  ? { id: '', nombre: propietarioNombre }
+                  : u.atribuido_a ? sociosFiltered.find((s) => s.id === u.atribuido_a) : null
                 const eq = eqMxn(u)
                 return (
                   <li key={u.id}>
@@ -600,7 +623,7 @@ function DiaGroups({
                         <p className="text-sm font-semibold truncate text-zinc-100">{u.concepto || u.categoria || 'Sin concepto'}</p>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           {atribuidoSocio ? (
-                            <span className="chip text-[9px] h-4 px-1.5 chip-purple">Avance {atribuidoSocio.nombre}</span>
+                            <span className="chip text-[9px] h-4 px-1.5 chip-purple">{soloPropietario ? `Personal · ${atribuidoSocio.nombre}` : `Avance ${atribuidoSocio.nombre}`}</span>
                           ) : (
                             <span className="chip text-[9px] h-4 px-1.5 chip-cyan">⚖ Compartido 50/50</span>
                           )}

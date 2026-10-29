@@ -156,7 +156,7 @@ export function TransactionList({
                             <span className="text-[9px] tracking-tight">
                               {t.atribuido_a
                                 ? <span className="text-purple-300/90">👤 {perfilesMap[t.atribuido_a] ?? 'Personal'}</span>
-                                : <span className="text-cyan-300/80">⚖ Compartido</span>}
+                                : <span className="text-purple-300/90">🏠 Personal</span>}
                             </span>
                           )}
                         </div>
