@@ -245,11 +245,15 @@ export function TransactionForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipo, esCasa])
 
-  // Si cambias a Casa, default a "compartido" (NULL). Si sales de Casa, limpia atribución.
+  // Si Casa tiene un solo propietario activo, los gastos del hogar son personales de esa persona.
   useEffect(() => {
-    if (!esCasa && atribuidoA) setAtribuidoA('')
+    if (!esCasa) {
+      if (atribuidoA) setAtribuidoA('')
+    } else if (socios.length === 1 && atribuidoA !== socios[0].id) {
+      setAtribuidoA(socios[0].id)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [esCasa])
+  }, [esCasa, socios])
 
   const handleDelete = async () => {
     if (!defaults.id) return
@@ -550,6 +554,14 @@ export function TransactionForm({
       {/* Atribución (solo cuando es Casa) */}
       {esCasa && socios.length > 0 && (
         <div className="card-glow border-purple-500/40 bg-purple-500/5 p-3 space-y-2">
+          {socios.length === 1 ? (
+            <>
+              <input type="hidden" name="atribuido_a" value={socios[0].id} />
+              <p className="text-sm font-bold text-purple-200">🏠 Gasto personal · {socios[0].nombre}</p>
+              <p className="text-[11px] text-purple-200/70">Se guarda en Casa para mantener los gastos del hogar separados de los negocios.</p>
+            </>
+          ) : (
+            <>
           <div className="flex items-center justify-between">
             <label className="text-sm font-bold text-purple-200 inline-flex items-center gap-1.5">
               🏠 ¿Es compartido o avance personal?
@@ -592,6 +604,8 @@ export function TransactionForm({
               ? '⚖ Compartido: gasto operativo de la sociedad. No se deduce a nadie.'
               : `💵 Avance de ${socios.find((s) => s.id === atribuidoA)?.nombre ?? '—'}: se deducirá de su utilidad al corte.`}
           </p>
+            </>
+          )}
         </div>
       )}
 
